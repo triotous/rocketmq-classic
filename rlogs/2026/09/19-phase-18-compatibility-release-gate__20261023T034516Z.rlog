@@ -43,3 +43,11 @@ On code revision `05e51237`, both current-tree compile checks passed:
 - `cargo test --offline --target x86_64-pc-windows-gnu -p rocketmq-classic-consumer --lib stack::tests::jstack_includes_current_and_other_named_threads --no-run --locked`
 
 The test binary was cross-compiled only; native Windows execution and remote Ubuntu CI remain pending. The results were added to `docs/release-checklist.md`.
+
+## MQClientInstance scheduled-executor caller API — 2026-10-23T03:57:38Z
+
+Pinned source audit confirmed that `MQClientInstance.getScheduledExecutorService()` returns the same single-thread executor used by its periodic client callbacks. `PullMessageService` has a separate executor and a separate getter. Rust now exposes `ClientRuntime::scheduled_executor_service() -> RuntimeScheduler` for immediate/delayed async work, fixed-rate/fixed-delay callbacks, per-task cancellation, and runtime-owned shutdown. The public handle uses the owned client scheduler and accepts work before runtime start.
+
+Code revision: `5c808754` (`feat(runtime): expose client task scheduler handle`). Validation passed: `cargo test -p rocketmq-classic-core --lib` (218 tests), `cargo clippy -p rocketmq-classic-core --all-targets --all-features -- -D warnings`, `cargo fmt --all`, and `git diff --check`. The new paused-time test covers pre-start work, one-shot delay, both repeating modes, cancellation, and shutdown.
+
+The row remains partial: Java's result-bearing `Future` and executor-wide lifecycle APIs are not yet exposed, and the separate `PullMessageService.getScheduledExecutorService()` handle remains unmapped. Broad P18-V01 source/API/settings/input/error/control-flow and reverse-export reconciliation, current-revision remote Ubuntu CI, native Windows execution, and Phase 19 Broker/Docker validation remain open. No remote CI, push, Broker, or Docker action was performed; protected Phase 19 worktree files remain unchanged and unstaged.

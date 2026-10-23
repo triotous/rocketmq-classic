@@ -8067,3 +8067,24 @@ owner-specific checks belong in the manual handoff.
   current-revision remote Ubuntu CI remain pending. No external CI or push was
   run. Follow-up record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V01 client scheduled-executor caller tasks — 2026-10-23 (`5c808754`)
+
+- [x] Added `ClientRuntime::scheduled_executor_service()` and the public
+  `RuntimeScheduler` handle for immediate/delayed async tasks, fixed-rate and
+  fixed-delay callbacks, task cancellation, and runtime-owned shutdown. The
+  worker is the same serial scheduler that runs the client's internal periodic
+  callbacks and can run caller work before `ClientRuntime::start()`.
+- [x] The core library suite passed (218 tests), strict all-target/all-feature
+  Core Clippy passed, and formatting plus `git diff --check` passed on the code
+  change. The new paused-time regression covers pre-start execution, delays,
+  repeating modes, cancellation, and shutdown.
+- [ ] Pinned Java also exposes executor-wide lifecycle and result-bearing
+  `Future` methods; those capabilities remain unreconciled. The separate
+  `PullMessageService.getScheduledExecutorService()` handle is not exposed yet.
+  Broad P18-V01 source/API/settings/input/error/control-flow and reverse-export
+  reconciliation, current-revision remote Ubuntu CI, native Windows runtime,
+  and Phase 19 Broker/Docker validation remain open. No remote CI, push, Broker,
+  or Docker action was performed. The protected Phase 19 worktree files remain
+  untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
