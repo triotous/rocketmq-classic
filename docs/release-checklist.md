@@ -8682,3 +8682,24 @@ owner-specific checks belong in the manual handoff.
   validation remains separate. No push or remote CI was run; the four
   user-owned Phase 19 paths remain untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-factory-refresh-rejection-order__20261023T121346Z.rlog`.
+
+
+## P18-V01 MQClientAPIFactory null scheduler input and P18-V02 local refresh — 2026-10-23 (`8fd5822e`)
+
+- [x] Added `with_optional_refresh_scheduler(None)` to represent Java's nullable
+  constructor input. Static-address startup succeeds without using the
+  scheduler; domain startup returns the Java-equivalent null-pointer outcome
+  after initial discovery and leaves the current slot null.
+- [x] The invoked Java fixture covers both cases; its SHA-256 is
+  `747b7af85d91eab83ac1764e2521754dbbe0f2eec183582af0c324a012404af2`. The
+  focused Core factory suite passed (10 tests), as did both locked workspace
+  suites/doctests, strict workspace Clippy, Maven `verify` (37 scenarios),
+  direct fixture verification, differential self-test/37-scenario manifest,
+  metadata and seven package listings, stress smoke (17 cases × 3), fuzz
+  smoke (163 frame seeds, 11 message seeds, 2,784 mutations), release examples,
+  benchmark, Core Windows GNU cross-check, Rustdoc JSON, format and diff checks.
+- [ ] Broad P18-V01 reconciliation remains PARTIAL. Current-revision remote
+  Ubuntu CI and native Windows execution remain open; Phase 19 Broker/Docker
+  work remains outside scope. No push or remote CI was run. The four existing
+  user-owned Phase 19 paths remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-factory-null-scheduler__20261023T123306Z.rlog`.
