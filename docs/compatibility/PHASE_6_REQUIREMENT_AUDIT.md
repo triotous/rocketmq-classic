@@ -1,8 +1,8 @@
 # Phase 6 requirement and handoff audit
 
-## Current Phase 18 server-free rerun — 2026-10-22
+## Current Phase 18 server-free rerun — 2026-10-23
 
-At code revision `2ce652e7`, the server-free gates pass on macOS AArch64 with
+At code revision `8bf6ee40`, the server-free gates pass on macOS AArch64 with
 Rust 1.85.0 and pinned Java 5.5.1. Default and all-feature locked workspace
 tests, strict all-target/all-feature workspace Clippy,
 `cargo fmt --all -- --check`, and `git diff --check` pass. Offline Maven
@@ -86,6 +86,20 @@ preservation. Fixture SHA-256:
 and all-feature workspace tests, strict Clippy, pinned Maven verify, and the
 focused facade comparison pass. This closes these named state transitions
 only; broad P18-V01 reconciliation remains PARTIAL.
+
+P18-V01 `ProcessQueue` duplicate-offset parity (`8bf6ee40`): pinned Java uses
+separate ready and orderly in-flight maps, so `putMessage` can insert a ready
+copy at an offset that is still being consumed. Rust now retains that copy,
+exposes it through the message-tree view, and matches Java's commit, rollback,
+remove, counter, and `queueOffsetMax` transitions. Invoked facade cases check
+the ready body before/after commit, rollback overwrite, removal of the ready
+copy, and an existing-offset replacement. An internal batch regression checks
+that terminal completion retains a repulled message. Fixture SHA-256:
+`f4c918d58b0fd0104511281b8380a13356cd0dfb5bd1d2d370fe9b890e32bb31`. Default
+and all-feature workspace tests, strict Clippy, pinned Maven verify, fuzz and
+race/leak smoke, release examples, and the offline benchmark pass. This closes
+these duplicate-offset flows only; broad P18-V01 reconciliation remains
+PARTIAL.
 
 ## Direct runtime API reconciliation — 2026-10-20
 
