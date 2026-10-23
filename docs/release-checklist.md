@@ -8530,3 +8530,20 @@ owner-specific checks belong in the manual handoff.
   remote CI or push was run; the four existing Phase 19 worktree paths remain
   untouched. Run record:
   `rlogs/2026/10/23-phase-18-factory-null-slot-parity__20261023T101220Z.rlog`.
+
+## P18-V01 MQClientAPIFactory public-provider surface correction — 2026-10-23
+
+- [x] `with_top_addressing` is now a private unit-test seam. The pinned Java
+  factory has no public custom-provider injection method; the default domain
+  discovery behavior and provider callback tests remain unchanged.
+- [x] A compile-fail Rustdoc example guards the external API boundary. All
+  seven factory unit tests, all 20 Core doctests, strict Core all-target /
+  all-feature Clippy, workspace all-feature Rustdoc JSON, formatting, and
+  diff checks passed. The distinct Core public-name count remains 740 because
+  the `with_top_addressing` name still appears on a separate Java-mapped
+  runtime manager method.
+- [ ] This closes one reverse-export discrepancy only. Broad P18-V01,
+  current-revision remote Ubuntu CI, native Windows execution, and Phase 19
+  Broker/Docker evidence remain open. No remote CI or push was run; existing
+  Phase 19 worktree files remain untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T102257Z.rlog`.

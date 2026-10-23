@@ -3975,3 +3975,16 @@ benchmark, and Windows GNU cross-compilation passed. This closes the null-slot
 failure-order slice only; broad P18-V01 reconciliation remains PARTIAL, with
 native Windows execution, remote Ubuntu CI, and Phase 19 Broker/Docker
 evidence open.
+
+## P18-V01 `MQClientAPIFactory` provider-injection export — 2026-10-23
+
+The Rust-only `MQClientApiFactory::with_top_addressing` setter was public even
+though pinned Java 5.5.1 has no corresponding factory API. It is now compiled
+only for unit tests and remains private; its provider-backed tests still
+exercise Java's per-client lookup, refresh, callback, and shutdown behavior.
+A compile-fail Rustdoc example verifies an external caller cannot use this
+setter. Seven factory tests, all 20 Core doctests, strict all-target/all-feature
+Core Clippy, all-feature workspace Rustdoc JSON, formatting, and diff checks
+passed. This closes the provider-injection reverse-export discrepancy only;
+the Phase 6 runtime row and broad P18-V01 source/API/settings/input/error/flow
+audit remain PARTIAL.
