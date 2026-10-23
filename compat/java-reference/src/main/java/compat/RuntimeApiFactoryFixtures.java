@@ -279,6 +279,24 @@ public final class RuntimeApiFactoryFixtures {
                 emptyScheduler.shutdownNow();
             }
 
+            ScheduledExecutorService negativeScheduler = Executors.newSingleThreadScheduledExecutor();
+            MQClientAPIFactory negativeFactory = new MQClientAPIFactory(
+                new NameserverAccessConfig("127.0.0.1:9876", "", null),
+                "negative-", -1, null, null, negativeScheduler);
+            try {
+                String negativeCountStartError;
+                try {
+                    negativeFactory.start();
+                    negativeCountStartError = "NONE";
+                } catch (Throwable error) {
+                    negativeCountStartError = error.getClass().getSimpleName();
+                }
+                fixture.put("negativeClientCountStartError", negativeCountStartError);
+                fixture.put("clientsNullAfterNegativeCountStart", negativeFactory.getClients() == null);
+            } finally {
+                negativeScheduler.shutdownNow();
+            }
+
             System.setProperty(domainProperty, "factory-domain.example");
             System.setProperty(subgroupProperty, "factory-subgroup");
             ScheduledExecutorService domainScheduler = Executors.newSingleThreadScheduledExecutor();

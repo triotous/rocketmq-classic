@@ -1756,6 +1756,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn factory_defers_negative_client_count_failure_until_start() {
+        let java: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/api-factory.json"
+        ))
+        .unwrap();
+        let factory =
+            MQClientApiFactory::new(static_access("127.0.0.1:9876"), "negative-", -1, None, None)
+                .unwrap();
+
+        assert!(factory.get_clients().is_none());
+        assert!(matches!(
+            factory.start().await,
+            Err(MQClientApiFactoryError::NegativeClientCount(-1))
+        ));
+        assert_eq!(
+            java["negativeClientCountStartError"],
+            "NegativeArraySizeException"
+        );
+        assert_eq!(java["clientsNullAfterNegativeCountStart"], true);
+        assert!(factory.get_clients().is_none());
+    }
+
+    #[tokio::test]
     async fn factory_ignores_java_blank_discovery_and_null_change_inputs() {
         struct BlankProvider;
         impl TopAddressing for BlankProvider {
