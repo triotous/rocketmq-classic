@@ -4482,3 +4482,25 @@ The focused Protocol test passes on the current tree. Current
 `0fcad65ecc00a9c55657113ed494d0d818621f5dcd4fa11e5da87e49c61d9470`.
 This closes the stale documented clone-identity caveat only; broad P18-V01
 reconciliation remains PARTIAL.
+
+## P18-V01 `MessageQueueAssignment` nullable attachment keys — 2026-10-23 (`5dffd30b`)
+
+Pinned Java `setAttachments(Map<String, String>)` accepts a null key and
+`getAttachments()` returns the same map. Its fixture distinguishes that null
+key from a literal `"null"` key and records mutation visibility and Fastjson
+output, including duplicate `"null"` properties when both keys coexist.
+`AssignmentAttachments` now represents nullable keys explicitly inside the
+shared setter/getter handle. The DTO serializer writes a null key as `"null"`,
+preserves a decoded property named `"null"` as a string key, retains null map
+values in snapshots, and omits those values from the encoded DTO as Java does.
+The refreshed `fixtures/runtime/lookup.json` SHA-256 is
+`42af689aed0d150ee19fef5d8138627bb09db9085139b5221d579e57a0053283`.
+
+Full serial offline workspace tests, Protocol/Core package tests, strict
+all-target/all-feature workspace Clippy, pinned offline Maven `verify`, and
+format/diff checks pass. A parallel workspace attempt first hit the consumer
+local-offset test's `AlreadyOpen` error; that test passed alone, and the full
+serial workspace run passed. This closes this attachment-key API/input/output
+gap only; broad P18-V01 source/API/settings/input/error/control-flow and
+reverse-export reconciliation remains PARTIAL. Phase 6 remains PARTIAL and
+P6-V04 remains `PENDING_PHASE_19`.
