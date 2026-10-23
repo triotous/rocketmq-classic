@@ -3083,3 +3083,16 @@ failure-order mapping only; broad P18-V01 reconciliation remains partial.
 | --- | --- |
 | Common: `TOPIC_MESSAGE_TYPE_ATTRIBUTE`, `LITE_EXPIRATION_ATTRIBUTE`, `TopicMessageType::topic_message_type_set`, `parse_from_message_property`, and `metrics_value` | `TopicAttributes.TOPIC_MESSAGE_TYPE_ATTRIBUTE` / `LITE_EXPIRATION_ATTRIBUTE` and `TopicMessageType.topicMessageTypeSet`, `parseFromMessageProperty`, and `getMetricsValue`. The `TopicConfig`/`TopicMessageType` row above records the reflected fixtures and behavior coverage. |
 | Producer: `ProducerTopicList::{new,snapshot,len,is_empty,contains,push,insert,set,remove,clear,with_read,with_mut}` | `DefaultMQProducer.getTopics()` and `setTopics(List<String>)` retain and return the same live list. `ProducerTopicList` is the shared Rust handle; its list operations map ordinary `List` reads and mutations, `with_read` / `with_mut` provide lock-scoped access to the aliased collection, and `snapshot` returns an owned point-in-time copy. They do not add a Producer operation or setting. |
+
+## P18-V01 `MQClientAPIFactory` protected-hook scope — 2026-10-23
+
+Pinned Java also declares protected `init()` and `createAndStart(String)`
+subclass hooks. The base `init` constructor call maps to Rust factory `build`;
+per-slot base creation maps to `start`. The pinned client source/tests contain
+no subclass of `MQClientAPIFactory`, and `createAndStart` is called only by
+the base `start` loop. These protected overrides are not Java-public client
+methods or settings, and Rust has no Java-style subclass dispatch. Public
+construction and lifecycle behavior plus its remoting-creator and scheduler
+dependencies remain mapped. Third-party Java subclass source compatibility
+is outside this public API parity scope; see the runtime inventory for the
+source scan and full disposition.

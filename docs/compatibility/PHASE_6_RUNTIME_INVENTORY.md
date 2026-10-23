@@ -506,9 +506,9 @@ all-feature tests and strict all-target/all-feature workspace Clippy passed
 after the API implementation; after the callback correction, Core library
 tests (237), strict Core Clippy, focused Java fixture verify, and full offline
 Maven `verify` (exit 0) passed. This closes the direct factory public API
-slice only; protected Java subclass hooks and broad P18-V01
-source/API/input/error/control-flow/reverse-export reconciliation remain
-review items.
+slice only; the protected-hook boundary is resolved in the follow-up below.
+Broad P18-V01 source/API/input/error/control-flow/reverse-export
+reconciliation remains open.
 
 ### P18-V01 factory per-client domain discovery — 2026-10-23 (`df87b7b2`)
 
@@ -578,6 +578,25 @@ all-feature workspace tests, strict workspace Clippy, pinned offline Maven
 release examples, benchmark, and Windows GNU cross-compilation pass. This
 closes this failure-order slice only; broad P18-V01 and platform/Phase 19
 evidence remain open.
+
+### P18-V01 factory protected-hook scope disposition — 2026-10-23
+
+Pinned Java declares protected `init()` and `createAndStart(String)` hooks.
+`init()` is called from the constructor; `createAndStart` is called once for
+each pool slot during `start`. A scan of the pinned `client` source and tests
+found no subclass of `MQClientAPIFactory`; the only `createAndStart` callsite
+is the factory's own `start` loop. In the base class, Rust `build` performs the
+constructor initialization and Rust `start` performs per-slot client
+construction. Remoting transport creation and refresh scheduling are exposed
+as the corresponding caller-injected Rust dependencies.
+
+These protected override points are not Java-public methods or client
+settings, and Rust structs do not have Java-style subclass dispatch. The
+public factory constructors, lifecycle, client-array, address-change,
+remoting-creator, and scheduler surfaces remain mapped and tested. Third-party
+Java subclass source compatibility is outside the public API parity contract;
+this resolves the prior hook review item without asserting Rust can host a
+Java subclass. The broader P18-V01 audit remains open.
 
 The plan's blank-local-serve phrase is now resolved to upstream `00e45b8a6db23efbe756d0306f10716156cfd4dd` (issue10025/PR10663), an ancestor of pinned5.5.1. Its diff and pinned source/test affect only `proxy/.../config/ProxyConfig.initData/localServeAddr` and `ProxyConfigTest.initDataShouldResolveBlankLocalServeAddr`, not the client. The [requirement audit](PHASE_6_REQUIREMENT_AUDIT.md) records exact source branches, ancestor/exact-word checks and read-not-run upstream test evidence. Proxy server implementation is explicitly outside the plan's client-only contract; no new client setting or proxy dependency is invented. Actual client IP initialization is `common/.../utils/NetworkUtil.getLocalAddress` and explicit `ClientConfig.setClientIP`; empty explicit client IP remains the actual Java identity behavior, not a substitute for Proxy config.
 

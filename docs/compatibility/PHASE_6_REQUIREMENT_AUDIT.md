@@ -4090,3 +4090,22 @@ capability or Rust-only Producer operation was found in these names. Mapping:
 This closes only this reverse-name disposition. The token scan is not a
 semantic API proof; broad P18-V01 Java source/API/settings/input/error/
 control-flow and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 `MQClientAPIFactory` protected-hook scope — 2026-10-23
+
+Pinned Java source declares protected `init()` and `createAndStart(String)`.
+The factory invokes `init` from its constructor and calls `createAndStart`
+once per pool slot from `start`. A source/test scan at
+`efa1be59d6fc747ad220f036c86030f05f0419f9` found no factory subclass in the
+pinned client module and no other `createAndStart` callsite. The base
+constructor/start flows map to Rust `build`/`start`; Java's remoting creator
+and scheduler dependencies have their own Rust injection points.
+
+The protected override seam is outside the Java-public client API parity
+contract. Rust does not support Java-style subclass dispatch, and this
+disposition makes no claim of third-party Java subclass source compatibility.
+The direct public constructor, pool, address-change, scheduler, and lifecycle
+surfaces remain mapped. The source/scope record is in
+[`PHASE_6_RUNTIME_INVENTORY.md`](PHASE_6_RUNTIME_INVENTORY.md) and the
+[`PHASE_6_API_CONFIG_MAP.md`](PHASE_6_API_CONFIG_MAP.md). Broad P18-V01
+reconciliation remains PARTIAL.
