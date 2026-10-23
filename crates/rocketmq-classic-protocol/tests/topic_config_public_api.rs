@@ -271,6 +271,7 @@ fn topic_config_methods_and_type_helpers_match_invoked_java_551() {
         TopicConfig::decode_nullable(None),
         Err(TopicConfigError::NullInput)
     ));
+    assert_eq!(fixture["nullDecodeError"], "NullPointerException");
 
     let mut invalid_expiration = TopicConfig::new("orders");
     invalid_expiration.set_attributes(Some(attributes(&[

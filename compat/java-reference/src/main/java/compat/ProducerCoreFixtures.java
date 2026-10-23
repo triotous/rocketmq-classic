@@ -2943,6 +2943,12 @@ public final class ProducerCoreFixtures {
         decoded.setReadQueueNums(40);
         String decodeInput = "wire-topic 7 8 6 MULTI_TAG {\"lite.topic.expiration\":\"31\",\"message.type\":\"LITE\"}";
         result.put("decodeInput", decodeInput);
+        try {
+            new TopicConfig("retained").decode(null);
+            result.put("nullDecodeError", "none");
+        } catch (RuntimeException error) {
+            result.put("nullDecodeError", error.getClass().getSimpleName());
+        }
         result.put("decodeResult", decoded.decode(decodeInput));
         result.put("decoded", topicConfigModelState(decoded));
         result.put("decodedEncoded", decoded.encode());
