@@ -34,14 +34,15 @@ service object's strong `MQClientInstance` field: retaining the service handle
 keeps its client owner available for lifecycle calls.
 
 The handle exposes `service_name`, `join_time_millis`, `is_stopped`,
-`make_stop`, `wakeup`, `is_daemon`, and `set_daemon`. Initial stopped/daemon
-values, pre-start stop/shutdown behavior, repeated start, daemon changes,
-restart after a full runtime shutdown, and retained-owner behavior are covered
-by the runtime integration tests. `make_stop()` only sets the worker flag and
-never wakes or joins. The
-rebalance worker observes the flag after its current wait/run cycle. The pull
-worker waits for its queue; a queue item that wakes an already-blocked pull
-worker is processed before the stop flag takes effect.
+`make_stop`, `wakeup`, `is_daemon`, and `set_daemon`; `shutdown()` and
+`shutdown_with_interrupt(bool)` map Java's two shutdown overloads. Initial
+stopped/daemon values, pre-start stop/shutdown behavior, repeated start, daemon
+changes, restart after a full runtime shutdown, and retained-owner behavior
+are covered by the runtime integration tests. `make_stop()` is a pre-start
+no-op. On a started service it sets the stop flag and wakes the rebalance
+worker without joining it. PullMessageService's inherited wakeup does not
+release its blocking message-queue take; a queue item that wakes an already-
+blocked pull worker is processed before the stop flag takes effect.
 
 `shutdown(interrupt)` sets the stopped flag, performs the source worker's
 wakeup, and waits up to the pinned 90,000ms interval when the thread's daemon
