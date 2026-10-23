@@ -8892,3 +8892,14 @@ owner-specific checks belong in the manual handoff.
   validation remains outside scope. No push or remote CI was run; the four
   existing user-owned Phase 19 paths remain untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-rpc-header-parity-guard__20261023T145016Z.rlog`.
+
+## P18-V04 Windows GNU workspace cross-target check — 2026-10-23 (`77587adc`)
+
+- [x] On macOS AArch64, the complete workspace passed all-target/all-feature
+  `cargo check` and strict Clippy for `x86_64-pc-windows-gnu`, including the
+  Integration crate and test targets.
+- [ ] This is compile-only cross-target evidence. Native Windows runtime and
+  current-revision remote Ubuntu CI remain open; Phase 19 Broker/Docker work
+  remains outside scope. No push or remote CI was run. The four existing
+  user-owned Phase 19 paths remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-windows-gnu-workspace-cross-target__20261023T145158Z.rlog`.

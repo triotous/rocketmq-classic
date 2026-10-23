@@ -4280,6 +4280,15 @@ changed. This closes the request-header identity/API inventory gap only; broad
 P18-V01 remains PARTIAL, with native Windows runtime and current-revision
 remote Ubuntu CI open. Phase 19 Broker/Docker work remains outside scope.
 
+## P18-V04 current workspace Windows GNU cross-target check — 2026-10-23 (`77587adc`)
+
+On the current macOS AArch64 tree, the complete workspace passed
+`cargo check` and strict Clippy for `x86_64-pc-windows-gnu`, with all targets
+and features enabled. This extends the earlier Core-only Windows GNU compile
+check to every workspace crate, including integration tests. It is compile
+evidence only; native Windows execution and current-revision remote Ubuntu CI
+remain unverified. Phase 19 Broker/Docker work remains outside scope.
+
 ## P18-V01 Lite request-header Core call-site update — 2026-10-23 (`8288cc98`)
 
 Changing `LiteSubscriptionCtlRequestHeader` from a unit struct to a value with
