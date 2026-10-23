@@ -4406,3 +4406,27 @@ remains PARTIAL. Native Windows runtime and current-revision remote Ubuntu CI
 remain open; Phase 19 Broker/Docker work remains out of scope. No push or
 remote CI was run. Run record:
 `rlogs/2026/10/23-phase-18-current-tree-server-free-gate__20261023T154720Z.rlog`.
+
+## P18-V01 `ConsumerConnection` and `ProducerConnection` Set mismatch — 2026-10-23 (`05207a17`)
+
+Direct pinned-Java API/behavior probes confirmed both DTOs expose
+`HashSet<Connection>` and that `Connection` inherits identity-based
+`Object.equals/hashCode`. The previous Rust `Vec` representation retained
+duplicate same-reference and null entries. Rust now uses
+`HashSet<Option<SharedValue<Connection>>>` with pointer identity for
+`SharedValue<Connection>` equality/hash, reuses the identity-set JSON decoder,
+and keeps the getter/setter container alias. Consumer and Producer fixtures
+record duplicate insertion, distinct same-field objects, null membership,
+and decode outcomes. Fixture SHA-256 values:
+`9e011a55e633140ed06209762aec715cf88b14dfd8724f7239fe24effee7309c`
+(`fixtures/admin/query-consume-time-span.json`) and
+`d635048972229fa1ba2c03b3e2ad0e4600c6de32493ad927543be75a9aaa6de2`
+(`fixtures/producer/core.json`).
+
+Default and all-feature workspace tests passed; the final Protocol library
+suite passed 160 tests; the ConsumerConnection admin RPC regression passed;
+strict all-target/all-feature workspace Clippy and offline Maven `verify`
+passed. Maven verified the 37-scenario manifest, fixture drift, and Java/Rust
+cross-decodes. The change closes this two-DTO collection mismatch only; broad
+P18-V01 reconciliation, current-revision remote CI, and native Windows runtime
+evidence remain open. Phase 19 remains out of scope.

@@ -484,6 +484,30 @@ This closes this response DTO method slice only. All 19 source-backed
 `MqClientAdmin` RPC slices are present, but the broader P18-V01 Java/Rust
 source/API/settings/input/error/flow and reverse-export audit remains open.
 
+## P18-V01 `ConsumerConnection` and `ProducerConnection` Set semantics — 2026-10-23 (`05207a17`)
+
+Pinned Java exposes `HashSet<Connection>` from both DTOs. `Connection` inherits
+`Object.equals` and `Object.hashCode`, so set membership follows object
+identity: adding one reference twice or adding null twice keeps one member,
+while separate objects with identical fields remain separate. Rust previously
+used `Vec` for these fields. Both DTOs now use an identity-keyed
+`HashSet<Option<SharedValue<Connection>>>`; cloned handles represent one Java
+object, independently decoded objects remain distinct, and nullable Set
+fields plus getter/setter aliasing are preserved. The invoked fixtures test
+direct Java membership and decode `[null,null,{"version":7},{"version":7}]`;
+Protocol regressions cover both DTO decoders and the ConsumerConnection RPC
+path. Fixture SHA-256 values are
+`9e011a55e633140ed06209762aec715cf88b14dfd8724f7239fe24effee7309c`
+(`query-consume-time-span.json`) and
+`d635048972229fa1ba2c03b3e2ad0e4600c6de32493ad927543be75a9aaa6de2`
+(`core.json`).
+
+Default and all-feature workspace tests, the final Protocol unit suite (160
+tests), strict all-target/all-feature Clippy, offline Maven `verify` (37
+scenarios and Java/Rust fixture cross-decodes), formatting, and diff checks
+pass. This closes the two DTO Set collection mappings only; broad P18-V01
+reconciliation remains open.
+
 ## P18-V01 `ClusterInfo` DTO surface — 2026-10-18 (`6b40e86c`)
 
 Pinned Java `ClusterInfo` declares private broker/cluster tables with public

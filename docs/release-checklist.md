@@ -9004,3 +9004,21 @@ owner-specific checks belong in the manual handoff.
   four existing user-owned Phase 19 paths remain untouched and unstaged. Run
   record:
   `rlogs/2026/10/23-phase-18-current-tree-server-free-gate__20261023T154720Z.rlog`.
+
+## P18-V01 Consumer/Producer connection Set DTO parity — 2026-10-23 (`05207a17`)
+
+- [x] Replaced the two Rust `Vec` DTO fields with an identity-keyed HashSet
+  representation matching Java `HashSet<Connection>`, including repeated
+  references, null members, decoded same-field objects, and shared-container
+  getter/setter behavior. The Java oracle records direct API and JSON outcomes.
+- [x] Default and all-feature workspace tests, the final Protocol library
+  suite (160 tests), the ConsumerConnection admin RPC regression, strict
+  all-target/all-feature workspace Clippy, offline Maven `verify`, formatting,
+  and diff checks passed. Maven verified 37 scenarios and Java/Rust fixture
+  cross-decodes.
+- [ ] This closes the two DTO Set collection mismatch only. Broad P18-V01
+  remains open; current-revision remote CI and native Windows runtime evidence
+  remain outstanding. Phase 19 remains out of scope. No push or remote CI was
+  run. The four protected Phase 19 worktree paths remain untouched and
+  unstaged. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T162602Z.rlog`.
