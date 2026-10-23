@@ -614,6 +614,76 @@ fn pop_process_queue_public_methods_match_pinned_java_behavior() {
 }
 
 #[test]
+fn every_pinned_java_process_queue_method_has_owner_mapping_or_disposition() {
+    let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
+    let methods = fixture["implementationApis"]["ProcessQueue"]["declaredPublicMethods"]
+        .as_array()
+        .expect("pinned ProcessQueue methods");
+    assert_eq!(methods.len(), 32);
+
+    let crosswalk =
+        include_str!("../../../docs/compatibility/PHASE_18_REBALANCE_PROCESS_QUEUE_API.md");
+    let process_queue_source = include_str!("../src/process_queue.rs");
+    let mappings = [
+        ("containsMessage", "contains_message"),
+        ("hasTempMessage", "has_temp_message"),
+        ("isDropped", "is_dropped"),
+        ("isLockExpired", "is_lock_expired"),
+        ("isLocked", "is_locked"),
+        ("isPullExpired", "is_pull_expired"),
+        ("putMessage", "put_message"),
+        ("takeMessages", "take_messages"),
+        ("getMsgTreeMap", "get_msg_tree_map"),
+        ("getMsgCount", "get_msg_count"),
+        ("getMsgSize", "get_msg_size"),
+        ("getConsumeLock", "get_consume_lock"),
+        ("commit", "commit"),
+        ("getLastConsumeTimestamp", "get_last_consume_timestamp"),
+        ("getLastLockTimestamp", "get_last_lock_timestamp"),
+        ("getLastPullTimestamp", "get_last_pull_timestamp"),
+        ("getMaxSpan", "get_max_span"),
+        ("getMsgAccCnt", "get_msg_acc_cnt"),
+        ("getTryUnlockTimes", "get_try_unlock_times"),
+        ("removeMessage", "remove_message"),
+        ("cleanExpiredMsg", "clean_expired_msg"),
+        ("clear", "clear"),
+        ("fillProcessQueueInfo", "fill_process_queue_info"),
+        ("incTryUnlockTimes", "inc_try_unlock_times"),
+        ("makeMessageToConsumeAgain", "make_message_to_consume_again"),
+        ("rollback", "rollback"),
+        ("setDropped", "set_dropped"),
+        ("setLastConsumeTimestamp", "set_last_consume_timestamp"),
+        ("setLastLockTimestamp", "set_last_lock_timestamp"),
+        ("setLastPullTimestamp", "set_last_pull_timestamp"),
+        ("setLocked", "set_locked"),
+        ("setMsgAccCnt", "set_msg_acc_cnt"),
+    ];
+
+    for (java_method, rust_method) in mappings {
+        assert!(
+            methods.iter().any(|signature| {
+                signature
+                    .as_str()
+                    .is_some_and(|signature| signature.contains(&format!(".{java_method}(")))
+            }),
+            "pinned Java ProcessQueue.{java_method} is inventoried"
+        );
+        assert!(
+            crosswalk.contains(java_method),
+            "ProcessQueue.{java_method} has a documented crosswalk"
+        );
+        assert!(
+            crosswalk.contains(rust_method),
+            "ProcessQueue.{java_method} documents Rust {rust_method}"
+        );
+        assert!(
+            process_queue_source.contains(&format!("fn {rust_method}(")),
+            "Rust owner implements {rust_method}"
+        );
+    }
+}
+
+#[test]
 fn process_queue_public_methods_match_pinned_java_behavior() {
     let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
     let expected = &fixture["implementationBehaviors"]["processQueue"];
