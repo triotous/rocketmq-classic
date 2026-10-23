@@ -2588,25 +2588,28 @@ pub struct TopicConfig {
     write_queue_nums: i32,
 }
 
-/// Java `TopicConfig.attributes`, including nullable map values.
-pub type TopicConfigAttributeMap = IndexMap<String, Option<String>>;
+/// Java `TopicConfig.attributes`, including nullable keys and values.
+/// `None` keys represent Java's null key; JSON object keys decode as `Some`.
+pub type TopicConfigAttributeMap = IndexMap<Option<String>, Option<String>>;
 
-fn java_topic_attribute_bucket(key: &str, capacity: usize) -> usize {
-    let hash = key.encode_utf16().fold(0_u32, |hash, unit| {
-        hash.wrapping_mul(31).wrapping_add(u32::from(unit))
+fn java_topic_attribute_bucket(key: Option<&str>, capacity: usize) -> usize {
+    let hash = key.map_or(0, |key| {
+        key.encode_utf16().fold(0_u32, |hash, unit| {
+            hash.wrapping_mul(31).wrapping_add(u32::from(unit))
+        })
     });
     ((hash ^ (hash >> 16)) as usize) & (capacity - 1)
 }
 
 fn java_topic_attribute_entries(
     attributes: &TopicConfigAttributeMap,
-) -> Vec<(&String, &Option<String>)> {
+) -> Vec<(&Option<String>, &Option<String>)> {
     let mut capacity = 16_usize;
     while attributes.len() > (capacity * 3) / 4 {
         capacity *= 2;
     }
     let mut entries = attributes.iter().collect::<Vec<_>>();
-    entries.sort_by_key(|(key, _)| java_topic_attribute_bucket(key, capacity));
+    entries.sort_by_key(|(key, _)| java_topic_attribute_bucket(key.as_deref(), capacity));
     entries
 }
 
@@ -2617,13 +2620,32 @@ impl Serialize for JavaTopicAttributes<'_> {
     where
         S: Serializer,
     {
-        let entries = java_topic_attribute_entries(self.0);
+        let entries = java_topic_attribute_entries(self.0)
+            .into_iter()
+            .filter(|(_, value)| value.is_some())
+            .collect::<Vec<_>>();
         let mut map = serializer.serialize_map(Some(entries.len()))?;
         for (key, value) in entries {
-            map.serialize_entry(key, value)?;
+            map.serialize_entry(key.as_deref().unwrap_or("null"), value)?;
         }
         map.end()
     }
+}
+
+fn deserialize_optional_topic_config_attribute_map<'de, D>(
+    deserializer: D,
+) -> Result<Option<TopicConfigAttributeMap>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    serde_fastjson::deserialize_optional_nullable_string_index_map(deserializer).map(|attributes| {
+        attributes.map(|attributes| {
+            attributes
+                .into_iter()
+                .map(|(key, value)| (Some(key), value))
+                .collect()
+        })
+    })
 }
 
 fn serialize_topic_config_attributes<S>(
@@ -2648,7 +2670,7 @@ fn deserialize_topic_config_attributes<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    serde_fastjson::deserialize_optional_nullable_string_index_map(deserializer)
+    deserialize_optional_topic_config_attribute_map(deserializer)
         .map(|attributes| attributes.map(SharedValue::new))
 }
 
@@ -2849,7 +2871,11 @@ impl TopicConfig {
             return Ok(TopicMessageType::Normal);
         };
         attributes
-            .with(|values| values.get(TOPIC_MESSAGE_TYPE_ATTRIBUTE).cloned())
+            .with(|values| {
+                values
+                    .get(&Some(TOPIC_MESSAGE_TYPE_ATTRIBUTE.to_owned()))
+                    .cloned()
+            })
             .flatten()
             .map_or(Ok(TopicMessageType::Normal), |value| {
                 TopicMessageType::value_of_name(Some(&value))
@@ -2869,7 +2895,7 @@ impl TopicConfig {
             .ok_or(TopicConfigError::NullAttributes)?;
         attributes.with_mut(|values| {
             values.insert(
-                TOPIC_MESSAGE_TYPE_ATTRIBUTE.to_owned(),
+                Some(TOPIC_MESSAGE_TYPE_ATTRIBUTE.to_owned()),
                 Some(topic_message_type.get_value().to_owned()),
             );
         });
@@ -2889,7 +2915,7 @@ impl TopicConfig {
             .ok_or(TopicConfigError::NullAttributes)?;
         attributes.with_mut(|values| {
             values.insert(
-                LITE_EXPIRATION_ATTRIBUTE.to_owned(),
+                Some(LITE_EXPIRATION_ATTRIBUTE.to_owned()),
                 Some(lite_topic_expiration.to_string()),
             );
         });
@@ -2905,7 +2931,11 @@ impl TopicConfig {
             .as_ref()
             .ok_or(TopicConfigError::NullAttributes)?;
         Ok(attributes
-            .with(|values| values.get(LITE_EXPIRATION_ATTRIBUTE).cloned())
+            .with(|values| {
+                values
+                    .get(&Some(LITE_EXPIRATION_ATTRIBUTE.to_owned()))
+                    .cloned()
+            })
             .flatten()
             .as_deref()
             .and_then(crate::header::parse_java_i32)
@@ -2964,9 +2994,14 @@ impl TopicConfig {
         });
         if fields.len() >= 6 {
             if let Ok(attributes) =
-                serde_fastjson::from_fastjson_str::<TopicConfigAttributeMap>(fields[5])
+                serde_fastjson::from_fastjson_str::<IndexMap<String, Option<String>>>(fields[5])
             {
-                self.attributes = Some(SharedValue::new(attributes));
+                self.attributes = Some(SharedValue::new(
+                    attributes
+                        .into_iter()
+                        .map(|(key, value)| (Some(key), value))
+                        .collect(),
+                ));
             }
         }
         Ok(true)
@@ -2987,7 +3022,13 @@ impl TopicConfig {
                     "{{{}}}",
                     java_topic_attribute_entries(&values)
                         .iter()
-                        .map(|(key, value)| format!("{key}={}", value.as_deref().unwrap_or("null")))
+                        .map(|(key, value)| {
+                            format!(
+                                "{}={}",
+                                key.as_deref().unwrap_or("null"),
+                                value.as_deref().unwrap_or("null")
+                            )
+                        })
                         .collect::<Vec<_>>()
                         .join(", "),
                 )
@@ -4155,7 +4196,7 @@ pub struct TopicConfigAndQueueMapping {
 struct TopicConfigAndQueueMappingFields {
     #[serde(
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_index_map"
+        deserialize_with = "deserialize_optional_topic_config_attribute_map"
     )]
     attributes: Option<TopicConfigAttributeMap>,
     #[serde(deserialize_with = "serde_fastjson::deserialize_bool")]

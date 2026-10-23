@@ -15,6 +15,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.Comparator;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
@@ -2906,6 +2907,52 @@ public final class ProducerCoreFixtures {
         setterState.setOrder(true);
         setterState.setAttributes(new HashMap<>(Map.of("message.type", "FIFO")));
         result.put("setterState", topicConfigModelState(setterState));
+
+        Map<String, String> nullableAttributeMap = new HashMap<>();
+        nullableAttributeMap.put(null, "null-key");
+        nullableAttributeMap.put("null", "string-null-key");
+        nullableAttributeMap.put("nullable-value", null);
+        TopicConfig nullableAttributeConfig = new TopicConfig("nullable-attributes");
+        nullableAttributeConfig.setAttributes(nullableAttributeMap);
+        Map<String, Object> nullableAttributeApi = new TreeMap<>();
+        Map<String, String> nullableAttributeGetter = nullableAttributeConfig.getAttributes();
+        nullableAttributeApi.put("setterKeepsMapIdentity", nullableAttributeGetter == nullableAttributeMap);
+        nullableAttributeApi.put("getterKeepsMapIdentity",
+            nullableAttributeConfig.getAttributes() == nullableAttributeMap);
+        nullableAttributeGetter.put("from-getter", "getter-mutation");
+        nullableAttributeMap.put("from-caller", "caller-mutation");
+        nullableAttributeApi.put("mutationsVisibleThroughGetter",
+            nullableAttributeConfig.getAttributes().containsKey("from-caller"));
+        nullableAttributeApi.put("mutationsVisibleThroughCaller",
+            nullableAttributeMap.containsKey("from-getter"));
+        List<Map.Entry<String, String>> nullableAttributeEntries =
+            new ArrayList<>(nullableAttributeMap.entrySet());
+        nullableAttributeEntries.sort(Map.Entry.comparingByKey(
+            Comparator.nullsFirst(String::compareTo)));
+        List<Map<String, Object>> nullableAttributeEntryStates = new ArrayList<>();
+        for (Map.Entry<String, String> entry : nullableAttributeEntries) {
+            Map<String, Object> entryState = new TreeMap<>();
+            entryState.put("keyIsNull", entry.getKey() == null);
+            entryState.put("key", entry.getKey() == null ? "" : entry.getKey());
+            entryState.put("valueIsNull", entry.getValue() == null);
+            entryState.put("value", entry.getValue() == null ? "" : entry.getValue());
+            nullableAttributeEntryStates.add(entryState);
+        }
+        nullableAttributeApi.put("entries", nullableAttributeEntryStates);
+        nullableAttributeApi.put("attributesJson", JSON.toJSONString(nullableAttributeMap));
+        nullableAttributeApi.put("encoded", nullableAttributeConfig.encode());
+        nullableAttributeApi.put("toString", nullableAttributeConfig.toString());
+        String nullableKeyDecodeInput =
+            "decoded-null-key 1 2 6 SINGLE_TAG {\"null\":\"decoded-string-key\"}";
+        TopicConfig nullableKeyDecoded = new TopicConfig("before");
+        nullableAttributeApi.put("decodeInput", nullableKeyDecodeInput);
+        nullableAttributeApi.put("decodeResult", nullableKeyDecoded.decode(nullableKeyDecodeInput));
+        nullableAttributeApi.put("decodedStringNullKeyPresent",
+            nullableKeyDecoded.getAttributes().containsKey("null"));
+        nullableAttributeApi.put("decodedJavaNullKeyPresent",
+            nullableKeyDecoded.getAttributes().containsKey(null));
+        nullableAttributeApi.put("decodedEncoded", nullableKeyDecoded.encode());
+        result.put("nullableAttributeApi", nullableAttributeApi);
 
         Map<String, String> attributes = new HashMap<>();
         attributes.put("lite.topic.expiration", "17");

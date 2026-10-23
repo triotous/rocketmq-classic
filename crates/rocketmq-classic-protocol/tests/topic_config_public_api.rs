@@ -47,7 +47,14 @@ fn assert_config_fields(config: &TopicConfig, expected: &Value) {
 fn attributes(entries: &[(&str, Option<&str>)]) -> TopicConfigAttributeMap {
     entries
         .iter()
-        .map(|(key, value)| ((*key).to_owned(), value.map(str::to_owned)))
+        .map(|(key, value)| (Some((*key).to_owned()), value.map(str::to_owned)))
+        .collect()
+}
+
+fn nullable_attributes(entries: &[(Option<&str>, Option<&str>)]) -> TopicConfigAttributeMap {
+    entries
+        .iter()
+        .map(|(key, value)| (key.map(str::to_owned), value.map(str::to_owned)))
         .collect()
 }
 
@@ -112,8 +119,8 @@ fn topic_config_methods_and_type_helpers_match_invoked_java_551() {
     );
 
     let mut collision_attributes = TopicConfigAttributeMap::new();
-    collision_attributes.insert("BB".into(), Some("second".into()));
-    collision_attributes.insert("Aa".into(), Some("first".into()));
+    collision_attributes.insert(Some("BB".into()), Some("second".into()));
+    collision_attributes.insert(Some("Aa".into()), Some("first".into()));
     let mut collision = TopicConfig::new("collision");
     collision.set_attributes(Some(collision_attributes));
     assert_eq!(
@@ -126,8 +133,8 @@ fn topic_config_methods_and_type_helpers_match_invoked_java_551() {
     );
 
     let mut reverse_collision_attributes = TopicConfigAttributeMap::new();
-    reverse_collision_attributes.insert("Aa".into(), Some("first".into()));
-    reverse_collision_attributes.insert("BB".into(), Some("second".into()));
+    reverse_collision_attributes.insert(Some("Aa".into()), Some("first".into()));
+    reverse_collision_attributes.insert(Some("BB".into()), Some("second".into()));
     let mut reverse_collision = TopicConfig::new("collision");
     reverse_collision.set_attributes(Some(reverse_collision_attributes));
     assert_eq!(
@@ -162,7 +169,10 @@ fn topic_config_methods_and_type_helpers_match_invoked_java_551() {
     copied.hash(&mut copied_hash);
     assert_eq!(lite_hash.finish(), copied_hash.finish());
     copied.attributes().unwrap().with_mut(|values| {
-        values.insert(LITE_EXPIRATION_ATTRIBUTE.to_owned(), Some("29".to_owned()));
+        values.insert(
+            Some(LITE_EXPIRATION_ATTRIBUTE.to_owned()),
+            Some("29".to_owned()),
+        );
     });
     assert_eq!(lite.lite_topic_expiration().unwrap(), 29);
     assert_eq!(fixture["copyRetainsAttributeAlias"], true);
@@ -282,6 +292,97 @@ fn topic_config_methods_and_type_helpers_match_invoked_java_551() {
 }
 
 #[test]
+fn topic_config_nullable_attribute_keys_match_invoked_java_551() {
+    let expected = fixture()["nullableAttributeApi"].clone();
+    let shared_attributes = SharedValue::new(nullable_attributes(&[
+        (None, Some("null-key")),
+        (Some("null"), Some("string-null-key")),
+        (Some("nullable-value"), None),
+    ]));
+    let mut config = TopicConfig::new("nullable-attributes");
+    config.set_attributes_shared(Some(shared_attributes.clone()));
+
+    let getter_attributes = config.attributes().unwrap();
+    assert_eq!(
+        shared_attributes.ptr_eq(&getter_attributes),
+        expected["setterKeepsMapIdentity"]
+    );
+    assert_eq!(
+        shared_attributes.ptr_eq(&getter_attributes),
+        expected["getterKeepsMapIdentity"]
+    );
+    getter_attributes.with_mut(|values| {
+        values.insert(
+            Some("from-getter".to_owned()),
+            Some("getter-mutation".to_owned()),
+        );
+    });
+    shared_attributes.with_mut(|values| {
+        values.insert(
+            Some("from-caller".to_owned()),
+            Some("caller-mutation".to_owned()),
+        );
+    });
+    assert_eq!(
+        config
+            .attributes()
+            .unwrap()
+            .with(|values| values.contains_key(&Some("from-caller".to_owned()))),
+        expected["mutationsVisibleThroughGetter"]
+    );
+    assert_eq!(
+        shared_attributes.with(|values| values.contains_key(&Some("from-getter".to_owned()))),
+        expected["mutationsVisibleThroughCaller"]
+    );
+
+    let mut entries = shared_attributes.with(|values| {
+        values
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect::<Vec<_>>()
+    });
+    entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+    let actual_entries = entries
+        .into_iter()
+        .map(|(key, value)| {
+            json!({
+                "keyIsNull": key.is_none(),
+                "key": key.unwrap_or_default(),
+                "valueIsNull": value.is_none(),
+                "value": value.unwrap_or_default(),
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(json!(actual_entries), expected["entries"]);
+
+    let encoded = config.encode().unwrap();
+    assert_eq!(encoded, expected["encoded"]);
+    let attributes_json = expected["attributesJson"].as_str().unwrap();
+    assert!(encoded.ends_with(attributes_json));
+    let dto_json = serde_json::to_string(&config).unwrap();
+    assert!(dto_json.contains(&format!("\"attributes\":{attributes_json},")));
+    assert_eq!(config.java_to_string(), expected["toString"]);
+
+    let mut decoded = TopicConfig::new("before");
+    assert_eq!(
+        decoded
+            .decode(expected["decodeInput"].as_str().unwrap())
+            .unwrap(),
+        expected["decodeResult"]
+    );
+    let decoded_attributes = decoded.attributes().unwrap();
+    assert_eq!(
+        decoded_attributes.with(|values| values.contains_key(&Some("null".to_owned()))),
+        expected["decodedStringNullKeyPresent"]
+    );
+    assert_eq!(
+        decoded_attributes.with(|values| values.contains_key(&None)),
+        expected["decodedJavaNullKeyPresent"]
+    );
+    assert_eq!(decoded.encode().unwrap(), expected["decodedEncoded"]);
+}
+
+#[test]
 fn topic_config_and_queue_mapping_constructor_and_methods_match_java_551() {
     let fixture = fixture()["topicConfigAndQueueMappingApi"].clone();
     let api: Value =
@@ -392,7 +493,7 @@ fn topic_config_and_queue_mapping_constructor_and_methods_match_java_551() {
     source.set_topic_name(Some("source-mutated".to_owned()));
     source.set_read_queue_nums(99);
     shared_attributes.with_mut(|values| {
-        values.insert("owner".to_owned(), Some("updated".to_owned()));
+        values.insert(Some("owner".to_owned()), Some("updated".to_owned()));
     });
     assert_config_fields(
         wrapper.topic_config(),
