@@ -4193,3 +4193,19 @@ The API map now distinguishes and records both surfaces. This corrects one
 reverse-export documentation omission; it does not identify a new runtime
 behavior or close the broad P18-V01 source/API/settings/input/error/control-
 flow audit.
+
+## P18-V01 Remoting response/error factory reverse-name crosswalk — 2026-10-23
+
+An exact-token scan of the compatibility Markdown found three public Remoting
+names not written out in the map: `create_response_command`,
+`create_response_command_with_header`, and `build_error_response`. Source
+review confirms these are the direct Rust forms of pinned Java 5.5.1
+`RemotingCommand.createResponseCommand(int, String)`,
+`createResponseCommandWithHeader(int, CommandCustomHeader)`, and
+`buildErrorResponse(int, String)`. They were covered by an existing grouped
+response/error factory row and invoked fixture, but the Rust declarations were
+not spelled out. The API map now lists these plus the typed-header factory
+adapters explicitly.
+
+This closes an exact-name crosswalk omission only; no runtime behavior or
+tests changed, and broad P18-V01 remains PARTIAL.

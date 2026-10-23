@@ -8741,3 +8741,17 @@ owner-specific checks belong in the manual handoff.
   remote CI was run; the four existing user-owned Phase 19 paths remain
   untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-manager-addressing-export-crosswalk__20261023T132628Z.rlog`.
+
+## P18-V01 Remoting response/error factory reverse-name crosswalk — 2026-10-23
+
+- [x] Added explicit Rust method names for response/error factory helpers and
+  their Java `RemotingCommand` overloads. The existing grouped fixture and
+  differential evidence already covers the corresponding behavior.
+- [x] Reviewed pinned Java declarations, Rust methods/call sites, the fixture
+  coverage, and `git diff --check`. No runtime code or tests changed.
+- [ ] This closes one exact-name crosswalk omission only; broad P18-V01 remains
+  open. Native Windows execution and current-revision remote Ubuntu CI remain
+  pending. Phase 19 Broker/Docker validation remains outside scope. No push or
+  remote CI was run; the four existing user-owned Phase 19 paths remain
+  untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-remoting-factory-export-crosswalk__20261023T132731Z.rlog`.
