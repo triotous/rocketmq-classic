@@ -4495,6 +4495,8 @@ preserves a decoded property named `"null"` as a string key, retains null map
 values in snapshots, and omits those values from the encoded DTO as Java does.
 The refreshed `fixtures/runtime/lookup.json` SHA-256 is
 `42af689aed0d150ee19fef5d8138627bb09db9085139b5221d579e57a0053283`.
+Test follow-up `1b8c0d7d` also checks the raw encoded JSON text retains both
+duplicate `"null"` properties rather than relying only on a parsed JSON value.
 
 Full serial offline workspace tests, Protocol/Core package tests, strict
 all-target/all-feature workspace Clippy, pinned offline Maven `verify`, and

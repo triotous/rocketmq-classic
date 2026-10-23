@@ -14,6 +14,8 @@ property `"null"` remains a string key; output maps the null key to `"null"`.
 Snapshots retain null values while the assignment DTO encoder omits them.
 Java oracle was added to `fixtures/runtime/lookup.json` as
 `assignmentNullAttachmentApiCase`.
+Test follow-up commit 1b8c0d7d compares the raw DTO JSON and asserts both
+duplicate `"null"` property names survive Rust serialization.
 
 Implementation commit: 5dffd30b (fix: preserve null assignment attachment keys)
 Lookup fixture SHA-256: 42af689aed0d150ee19fef5d8138627bb09db9085139b5221d579e57a0053283

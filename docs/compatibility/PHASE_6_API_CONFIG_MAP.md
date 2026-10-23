@@ -3266,6 +3266,8 @@ shared handle, preserving caller/getter aliasing. Its DTO encoder writes
 `None` as `"null"`, keeps decoded JSON property `"null"` as a string key, and
 omits null-valued entries while snapshots retain them. Fixture SHA-256
 `42af689aed0d150ee19fef5d8138627bb09db9085139b5221d579e57a0053283`.
+The Protocol regression parses the encoded value and also checks raw JSON text
+contains both duplicate `"null"` properties (test follow-up `1b8c0d7d`).
 
 Full serial offline workspace tests, strict all-target/all-feature Clippy,
 Protocol/Core tests, pinned offline Maven `verify`, formatting, and diff checks
