@@ -89,6 +89,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   the constructor-queue count delta only; statistics log output and broad
   P18-V01 reconciliation remain open. Native Windows runtime and
   current-revision remote CI were not run.
+- P18-V01 client stats log follow-up (`4251b2b3`, 2026-10-23): the scheduled
+  minute, hour, and day print callbacks now emit `tracing::info!` events under
+  Java's stats logger target. Metric summary fields are emitted for all five
+  groups; the daily window keeps 25 hourly samples. Workspace default and
+  all-feature tests/doctests, strict all-target/all-feature Clippy, Windows GNU
+  workspace check/Clippy, offline Maven `verify`, formatting, and diff checks
+  pass. Backend timestamp/thread formatting may differ; this closes the missing
+  stats-event gap only, and broad P18-V01 remains open.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. Remoting after-response
   hooks now mutate request/response commands on outbound and inbound paths;

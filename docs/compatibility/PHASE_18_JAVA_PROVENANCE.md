@@ -72,12 +72,16 @@ The invoked fixture uses a `ScheduledExecutorService` proxy to retain the five
 `57b6f19d68fb3460e7fa86bd6b08bf16f43a03d28cce2558716f88c110ccb369`.
 Rust's client scheduler now queues the same 30 manager-wide jobs before
 runtime start. Sampling jobs advance the Rust metric windows, with status reads
-also advancing them lazily for deterministic snapshots. Log jobs occupy their
-Java-matching cadence but do not yet emit statistics log lines. The
-`scheduled-executor-shutdown` fixture and Rust scheduler regression verify the
-same 32 returned entries in the pre-start case with two submitted calls. Core
-tests use deterministic timestamps, while consumer-flow tests wait for their
-first real sample when they assert positive TPS/RT values.
+also advancing them lazily for deterministic snapshots. Minute, hour, and day
+print jobs emit `tracing::info!` events under the Java
+`org.apache.rocketmq.client.stat.ConsumerStatsManager` target. They include the
+same metric groups and summary fields; the day window samples hourly and keeps
+25 samples. Subscriber-provided timestamp, thread, and formatting decorations
+remain backend-specific. The `scheduled-executor-shutdown` fixture and Rust
+scheduler regression verify the same 32 returned entries in the pre-start
+case with two submitted calls. Core tests use deterministic timestamps, while
+consumer-flow tests wait for their first real sample when they assert positive
+TPS/RT values.
 
 ## Rust package graph
 
