@@ -81,7 +81,7 @@ pub enum RuntimeError {
     InvalidSchedule,
     #[error("cannot invoke an empty task set")]
     EmptyTaskSet,
-    #[error("all invoked tasks failed or were cancelled")]
+    #[error("no invoked task returned a value")]
     NoSuccessfulTask,
     #[error("periodic callback panicked")]
     TaskCallbackFailed,

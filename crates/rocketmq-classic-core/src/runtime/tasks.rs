@@ -485,12 +485,13 @@ impl RuntimeScheduler {
         Ok(results)
     }
 
-    /// Returns the first successful result from the scheduled tasks.
+    /// Returns the value from the first task that completes normally.
     ///
     /// Tasks run on this scheduler's single worker, so they are considered in
-    /// submission order. Failed or panicking tasks are skipped. If this future
-    /// is cancelled, all accepted tasks are cancelled as well. Wrap the future
-    /// in `tokio::time::timeout` to apply a caller-selected deadline.
+    /// submission order. Panicking or cancelled tasks are skipped. A returned
+    /// value such as `Result::Err` is still a normal task result. If this
+    /// future is cancelled, all accepted tasks are cancelled as well. Wrap the
+    /// future in `tokio::time::timeout` to apply a caller-selected deadline.
     pub async fn invoke_any<T, Fut, Tasks>(&self, tasks: Tasks) -> Result<T, RuntimeError>
     where
         T: Send + 'static,
