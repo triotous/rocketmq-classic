@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod consumer;
 pub mod extensions;
+pub mod factory;
 pub mod producer;
 pub mod route;
 
@@ -14,6 +15,11 @@ use serde::de::DeserializeOwned;
 use tokio::time::Instant;
 
 const JAVA_CLIENT_API_VERSION_5_5_1: i32 = 515;
+
+pub use factory::{
+    ClientApiArrayError, MQClientApiFactory, MQClientApiFactoryError, NameserverAccessConfig,
+    RemotingClientCreator, SharedClientApiArray,
+};
 
 #[derive(Clone)]
 pub struct MQClientApi {

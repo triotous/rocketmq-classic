@@ -317,6 +317,10 @@ public final class Main {
             RuntimeOffsetFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "runtime-api-factory-fixtures".equals(args[0])) {
+            RuntimeApiFactoryFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "runtime-consumer-operations-fixtures".equals(args[0])) {
             RuntimeConsumerOperationsFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;

@@ -450,6 +450,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-runtime-api-factory-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.RuntimeApiFactoryFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/runtime/api-factory.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-invoked-pop-ack-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>
