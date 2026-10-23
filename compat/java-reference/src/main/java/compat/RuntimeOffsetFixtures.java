@@ -21,6 +21,19 @@ import org.apache.rocketmq.common.message.MessageQueue;
 public final class RuntimeOffsetFixtures {
     private RuntimeOffsetFixtures() { }
     public static void main(String[] args) throws Exception {
+        String storeRootProperty = "rocketmq.client.localOffsetStoreDir";
+        String previousStoreRoot = System.getProperty(storeRootProperty);
+        String previousUserHome = System.getProperty("user.home");
+        System.clearProperty(storeRootProperty);
+        System.setProperty("user.home", "java-home-before-store-class-init");
+        String storeRootAtInitialization = LocalFileOffsetStore.LOCAL_OFFSET_STORE_DIR;
+        System.setProperty("user.home", "java-home-after-store-class-init");
+        String storeRootAfterHomeChange = LocalFileOffsetStore.LOCAL_OFFSET_STORE_DIR;
+        if (previousStoreRoot == null) System.clearProperty(storeRootProperty);
+        else System.setProperty(storeRootProperty, previousStoreRoot);
+        if (previousUserHome == null) System.clearProperty("user.home");
+        else System.setProperty("user.home", previousUserHome);
+
         ClientConfig config = new ClientConfig(); config.setClientIP("offset-client"); config.setNamespace("ignored-config-namespace");
         MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
         List<Object> cases = new ArrayList<>();
@@ -128,6 +141,13 @@ public final class RuntimeOffsetFixtures {
         fixture.put("serverBaselineContacted", false); fixture.put("cases", cases);
         fixture.put("nullableCases", nullableCases);
         fixture.put("cloneOffsetTableBlankTopicCodeUnits", blankTopicCodeUnits);
+        Map<String, Object> storeRootPropertyCase = new TreeMap<>();
+        storeRootPropertyCase.put("initialSystemProperty", null);
+        storeRootPropertyCase.put("userHomeAtInitialization", "java-home-before-store-class-init");
+        storeRootPropertyCase.put("valueAtInitialization", storeRootAtInitialization);
+        storeRootPropertyCase.put("userHomeAfterInitialization", "java-home-after-store-class-init");
+        storeRootPropertyCase.put("valueAfterHomeChange", storeRootAfterHomeChange);
+        fixture.put("localOffsetStoreDirProperty", storeRootPropertyCase);
         fixture.put("consumerStatusCases", statusCases);
         fixture.put("consumerStatusStoreTransitions", statusStoreTransitions);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";

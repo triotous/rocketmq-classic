@@ -4,7 +4,7 @@ use std::{
     io::{Read, Write},
     path::{Component, Path, PathBuf},
     sync::{
-        Mutex, OnceLock,
+        LazyLock, Mutex, OnceLock,
         atomic::{AtomicU64, Ordering},
     },
 };
@@ -18,8 +18,47 @@ use super::{
 const STORE_FILE_NAME: &str = "offsets.json";
 const STORE_ROOT_PROPERTY: &str = "rocketmq.client.localOffsetStoreDir";
 
+struct StoreRootSnapshot {
+    java_value: String,
+    path: PathBuf,
+}
+
+static STORE_ROOT_SNAPSHOT: LazyLock<StoreRootSnapshot> = LazyLock::new(read_store_root_snapshot);
+
 static ACTIVE_STORE_PATHS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn read_store_root_snapshot() -> StoreRootSnapshot {
+    if let Some(root) = std::env::var_os(STORE_ROOT_PROPERTY) {
+        let java_value = root.to_string_lossy().into_owned();
+        let path = if root.is_empty() {
+            PathBuf::from(std::path::MAIN_SEPARATOR.to_string())
+        } else {
+            PathBuf::from(root)
+        };
+        return StoreRootSnapshot { java_value, path };
+    }
+
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+    let Some(home) = home else {
+        let java_value = format!("null{}{}", std::path::MAIN_SEPARATOR, ".rocketmq_offsets");
+        return StoreRootSnapshot {
+            path: PathBuf::from(&java_value),
+            java_value,
+        };
+    };
+
+    let mut java_value = home.to_string_lossy().into_owned();
+    java_value.push(std::path::MAIN_SEPARATOR);
+    java_value.push_str(".rocketmq_offsets");
+    let mut path = if home.is_empty() {
+        PathBuf::from(std::path::MAIN_SEPARATOR.to_string())
+    } else {
+        PathBuf::from(home)
+    };
+    path.push(".rocketmq_offsets");
+    StoreRootSnapshot { java_value, path }
+}
 
 /// Stores offsets in Java 5.5.1 `OffsetSerializeWrapper` JSON format.
 ///
@@ -87,21 +126,21 @@ enum PersistStep {
 }
 
 impl LocalFileOffsetStore {
+    /// Returns Java's public `LOCAL_OFFSET_STORE_DIR` value.
+    ///
+    /// The value is captured on first access, matching Java's static field
+    /// initialization. Rust reads the same-named process environment variable
+    /// as its system-property adapter and falls back to the home directory.
+    pub fn local_offset_store_dir() -> &'static str {
+        &STORE_ROOT_SNAPSHOT.java_value
+    }
+
     /// Uses the configured/default offset root and Java-compatible file layout.
     pub fn new(
         client_id: impl AsRef<str>,
         group_name: impl AsRef<str>,
     ) -> Result<Self, OffsetStoreError> {
-        let root = std::env::var_os(STORE_ROOT_PROPERTY)
-            .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".rocketmq_offsets"))
-            })
-            .or_else(|| {
-                std::env::var_os("USERPROFILE")
-                    .map(|home| PathBuf::from(home).join(".rocketmq_offsets"))
-            })
-            .ok_or_else(|| OffsetStoreError::Runtime("home directory is not configured".into()))?;
+        let root = STORE_ROOT_SNAPSHOT.path.clone();
         Self::with_root(root, client_id, group_name)
     }
 
@@ -728,6 +767,7 @@ fn encode_offset_store(values: &HashMap<MessageQueue, i64>) -> Result<Vec<u8>, O
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     #[test]
     fn clone_topic_filter_matches_pinned_java_for_every_bmp_scalar() {
@@ -744,6 +784,115 @@ mod tests {
             std::process::id(),
             TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ))
+    }
+
+    fn run_store_root_child(mode: &str, property: Option<&str>, home: Option<&str>) {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "offset::local::tests::local_offset_store_dir_snapshots_like_java",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("ROCKETMQ_CLASSIC_OFFSET_ROOT_CHILD", mode)
+            .env_remove(STORE_ROOT_PROPERTY)
+            .env_remove("HOME")
+            .env_remove("USERPROFILE");
+        if let Some(property) = property {
+            command.env(STORE_ROOT_PROPERTY, property);
+        }
+        if let Some(home) = home {
+            command.env("HOME", home);
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "offset root child {mode} failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn local_offset_store_dir_snapshots_like_java() {
+        if let Some(mode) = std::env::var_os("ROCKETMQ_CLASSIC_OFFSET_ROOT_CHILD") {
+            match mode.to_string_lossy().as_ref() {
+                "override" => {
+                    let original = std::env::var(STORE_ROOT_PROPERTY).unwrap();
+                    assert_eq!(LocalFileOffsetStore::local_offset_store_dir(), original);
+
+                    // SAFETY: this subprocess runs only this exact test with one
+                    // test thread and has no other code reading environment variables.
+                    unsafe {
+                        std::env::set_var(STORE_ROOT_PROPERTY, "changed-after-class-init");
+                    }
+                    assert_eq!(LocalFileOffsetStore::local_offset_store_dir(), original);
+
+                    let store = LocalFileOffsetStore::new("client", "group").unwrap();
+                    let expected_parent =
+                        fs::canonicalize(Path::new(&original).join("client").join("group"))
+                            .unwrap();
+                    assert_eq!(store.path, expected_parent.join(STORE_FILE_NAME));
+                    drop(store);
+                    fs::remove_dir_all(original).unwrap();
+                }
+                "home" => {
+                    let home = std::env::var("HOME").unwrap();
+                    let expected = format!("{home}{}.rocketmq_offsets", std::path::MAIN_SEPARATOR);
+                    assert_eq!(LocalFileOffsetStore::local_offset_store_dir(), expected);
+                    assert_eq!(
+                        STORE_ROOT_SNAPSHOT.path,
+                        PathBuf::from(home).join(".rocketmq_offsets")
+                    );
+                }
+                "empty" => {
+                    assert_eq!(LocalFileOffsetStore::local_offset_store_dir(), "");
+                    assert_eq!(
+                        STORE_ROOT_SNAPSHOT.path,
+                        PathBuf::from(std::path::MAIN_SEPARATOR.to_string())
+                    );
+                }
+                "empty-home" => {
+                    let expected = format!("{}.rocketmq_offsets", std::path::MAIN_SEPARATOR);
+                    assert_eq!(LocalFileOffsetStore::local_offset_store_dir(), expected);
+                    assert_eq!(
+                        STORE_ROOT_SNAPSHOT.path,
+                        PathBuf::from(std::path::MAIN_SEPARATOR.to_string())
+                            .join(".rocketmq_offsets")
+                    );
+                }
+                "no-home" => {
+                    let expected =
+                        format!("null{}{}", std::path::MAIN_SEPARATOR, ".rocketmq_offsets");
+                    assert_eq!(LocalFileOffsetStore::local_offset_store_dir(), expected);
+                    assert_eq!(STORE_ROOT_SNAPSHOT.path, PathBuf::from(expected));
+                }
+                other => panic!("unexpected offset-root child mode: {other}"),
+            }
+            return;
+        }
+
+        let override_root = temporary_root();
+        let override_root = override_root.to_str().unwrap();
+        let java_case: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/offsets.json"))
+                .unwrap();
+        let java_property_case = &java_case["localOffsetStoreDirProperty"];
+        assert_eq!(
+            java_property_case["valueAtInitialization"],
+            java_property_case["valueAfterHomeChange"]
+        );
+        assert_eq!(
+            java_property_case["valueAtInitialization"],
+            "java-home-before-store-class-init/.rocketmq_offsets"
+        );
+
+        run_store_root_child("override", Some(override_root), None);
+        run_store_root_child("home", None, Some("java-home-before-store-class-init"));
+        run_store_root_child("empty", Some(""), None);
+        run_store_root_child("empty-home", None, Some(""));
+        run_store_root_child("no-home", None, None);
     }
 
     fn fixture() -> Vec<u8> {
