@@ -290,6 +290,7 @@ public final class ConsumerLifecycleFixtures {
     private static Map<String, Object> failedLitePullMetadataSchedule() throws Exception {
         String group = "consumer-start-lite-metadata-schedule-" + System.nanoTime();
         DefaultLitePullConsumer consumer = new DefaultLitePullConsumer(group);
+        consumer.setNamesrvAddr("127.0.0.1:1");
         consumer.setTopicMetadataCheckIntervalMillis(0);
         Throwable startFailure = null;
         try {
