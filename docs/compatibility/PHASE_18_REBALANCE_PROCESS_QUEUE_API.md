@@ -70,6 +70,18 @@ in `Ok`. The invoked facade fixture compares the Java exception class and the
 unchanged tree/count/size. Fixture SHA-256:
 `aa3a16d255ba6d331f5cb84e068db3b14e45f49c605671feebc97abc3aba8f81`.
 
+### `consuming` and timestamp transitions
+
+Java sets `consuming` in `putMessage` when it starts a dispatch and clears it
+only when `takeMessages` returns an empty list. A nonempty take, `commit`,
+`rollback`, and `makeMessageToConsumeAgain` leave the flag unchanged. `commit`
+also leaves `lastConsumeTimestamp` unchanged. Rust now preserves these public
+state transitions instead of recomputing the dispatch flag or refreshing the
+timestamp. The invoked fixture checks dispatch after commit, rollback, and
+requeue, including a nonempty take while the flag is false, and checks the
+timestamp around commit. Fixture SHA-256:
+`2e43cc737fa784cdaec0488252000e82360ccd0a4b121e6ee28d2dccf704791e`.
+
 ### POP assignment retention
 
 The invoked Java `RebalanceImpl.updateMessageQueueAssignment` runtime fixture
@@ -200,6 +212,6 @@ client source/configuration/flow row and the reverse Rust API audit.
 Fixture SHA-256 values:
 
 - `fixtures/consumer/facade-api.json` —
-  `aa3a16d255ba6d331f5cb84e068db3b14e45f49c605671feebc97abc3aba8f81`
+  `2e43cc737fa784cdaec0488252000e82360ccd0a4b121e6ee28d2dccf704791e`
 - `fixtures/consumer/expired-messages.json` —
   `0ecf6ca6795174a96a90123cebb5415c2108cc81842ce84469e721d599f90d01`

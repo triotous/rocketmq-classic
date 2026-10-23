@@ -343,6 +343,53 @@ public final class ConsumerFacadeApiFixtures {
         emptyCommit.put("treeKeys", new ArrayList<>(emptyCommitQueue.getMsgTreeMap().keySet()));
         result.put("emptyCommit", emptyCommit);
 
+        ProcessQueue commitLifecycleQueue = new ProcessQueue();
+        commitLifecycleQueue.putMessage(Arrays.asList(processQueueMessage(80L, new byte[] {8})));
+        commitLifecycleQueue.takeMessages(1);
+        commitLifecycleQueue.setLastConsumeTimestamp(801L);
+        long commitLifecycleOffset = commitLifecycleQueue.commit();
+        boolean commitLifecycleDispatch = commitLifecycleQueue.putMessage(
+            Arrays.asList(processQueueMessage(81L, new byte[] {8, 1})));
+        Map<String, Object> commitLifecycle = new TreeMap<>();
+        commitLifecycle.put("commitOffset", commitLifecycleOffset);
+        commitLifecycle.put("nextDispatch", commitLifecycleDispatch);
+        commitLifecycle.put("lastConsumeTimestamp", commitLifecycleQueue.getLastConsumeTimestamp());
+        commitLifecycle.put("count", commitLifecycleQueue.getMsgCount().get());
+        commitLifecycle.put("size", commitLifecycleQueue.getMsgSize().get());
+        commitLifecycle.put("treeKeys", new ArrayList<>(commitLifecycleQueue.getMsgTreeMap().keySet()));
+        result.put("commitLifecycle", commitLifecycle);
+
+        ProcessQueue rollbackLifecycleQueue = new ProcessQueue();
+        MessageExt rollbackLifecycleMessage = processQueueMessage(90L, new byte[] {9});
+        rollbackLifecycleQueue.putMessage(Arrays.asList(rollbackLifecycleMessage));
+        rollbackLifecycleQueue.takeMessages(1);
+        rollbackLifecycleQueue.takeMessages(1);
+        rollbackLifecycleQueue.rollback();
+        boolean rollbackLifecycleDispatch = rollbackLifecycleQueue.putMessage(
+            Arrays.asList(processQueueMessage(91L, new byte[] {9, 1})));
+        Map<String, Object> rollbackLifecycle = new TreeMap<>();
+        rollbackLifecycle.put("nextDispatch", rollbackLifecycleDispatch);
+        rollbackLifecycle.put("count", rollbackLifecycleQueue.getMsgCount().get());
+        rollbackLifecycle.put("size", rollbackLifecycleQueue.getMsgSize().get());
+        rollbackLifecycle.put("treeKeys", new ArrayList<>(rollbackLifecycleQueue.getMsgTreeMap().keySet()));
+        result.put("rollbackLifecycle", rollbackLifecycle);
+
+        ProcessQueue requeueLifecycleQueue = new ProcessQueue();
+        MessageExt requeueLifecycleMessage = processQueueMessage(100L, new byte[] {10});
+        requeueLifecycleQueue.putMessage(Arrays.asList(requeueLifecycleMessage));
+        requeueLifecycleQueue.takeMessages(1);
+        requeueLifecycleQueue.takeMessages(1);
+        requeueLifecycleQueue.makeMessageToConsumeAgain(Arrays.asList(requeueLifecycleMessage));
+        requeueLifecycleQueue.takeMessages(1);
+        boolean requeueLifecycleDispatch = requeueLifecycleQueue.putMessage(
+            Arrays.asList(processQueueMessage(101L, new byte[] {10, 1})));
+        Map<String, Object> requeueLifecycle = new TreeMap<>();
+        requeueLifecycle.put("nextDispatch", requeueLifecycleDispatch);
+        requeueLifecycle.put("count", requeueLifecycleQueue.getMsgCount().get());
+        requeueLifecycle.put("size", requeueLifecycleQueue.getMsgSize().get());
+        requeueLifecycle.put("treeKeys", new ArrayList<>(requeueLifecycleQueue.getMsgTreeMap().keySet()));
+        result.put("requeueLifecycle", requeueLifecycle);
+
         ProcessQueue mapQueue = new ProcessQueue();
         MessageExt original = processQueueMessage(20L, new byte[] {4});
         MessageExt direct = processQueueMessage(21L, new byte[] {5, 6});

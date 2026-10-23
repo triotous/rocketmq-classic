@@ -714,7 +714,6 @@ impl ProcessQueue {
             }
         }
         state.in_flight_batches.insert(batch_id, offsets);
-        state.consuming = true;
         messages
     }
 
@@ -768,10 +767,6 @@ impl ProcessQueue {
             }
         }
         state.in_flight_batches.clear();
-        state.consuming = state
-            .messages
-            .values()
-            .any(|message| message.state == MessageState::Ready);
     }
 
     pub fn commit(&self) -> Result<i64, ProcessQueueError> {
@@ -800,11 +795,6 @@ impl ProcessQueue {
             state.cached_bytes = 0;
         }
         state.in_flight_batches.clear();
-        state.consuming = state
-            .messages
-            .values()
-            .any(|message| message.state == MessageState::Ready);
-        state.last_consume_timestamp_millis = epoch_millis();
         Ok(last_offset.wrapping_add(1))
     }
 
@@ -839,10 +829,6 @@ impl ProcessQueue {
             offsets.retain(|offset| in_flight_offsets.contains(offset));
             !offsets.is_empty()
         });
-        state.consuming = state
-            .messages
-            .values()
-            .any(|message| message.state == MessageState::Ready);
     }
 
     pub fn fill_process_queue_info(

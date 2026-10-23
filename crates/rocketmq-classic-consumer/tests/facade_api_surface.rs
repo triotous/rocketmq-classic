@@ -830,6 +830,92 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
             .copied()
             .collect::<Vec<_>>(),
     });
+    let mut commit_lifecycle_message = MessageExt::new();
+    commit_lifecycle_message.set_queue_offset(80);
+    commit_lifecycle_message.set_body(vec![8]);
+    let mut after_commit_lifecycle_message = MessageExt::new();
+    after_commit_lifecycle_message.set_queue_offset(81);
+    after_commit_lifecycle_message.set_body(vec![8, 1]);
+    let commit_lifecycle_queue = ProcessQueue::new();
+    commit_lifecycle_queue
+        .put_message(&[commit_lifecycle_message])
+        .expect("valid lifecycle message");
+    commit_lifecycle_queue.take_messages(1);
+    commit_lifecycle_queue.set_last_consume_timestamp(801);
+    let commit_lifecycle_offset = commit_lifecycle_queue
+        .commit()
+        .expect("non-empty ordered consume set");
+    let commit_lifecycle_dispatch = commit_lifecycle_queue
+        .put_message(&[after_commit_lifecycle_message])
+        .expect("valid message after commit");
+    let commit_lifecycle_result = serde_json::json!({
+        "commitOffset": commit_lifecycle_offset,
+        "nextDispatch": commit_lifecycle_dispatch,
+        "lastConsumeTimestamp": commit_lifecycle_queue.get_last_consume_timestamp(),
+        "count": commit_lifecycle_queue.get_msg_count().get(),
+        "size": commit_lifecycle_queue.get_msg_size().get(),
+        "treeKeys": commit_lifecycle_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+    });
+    let mut rollback_lifecycle_message = MessageExt::new();
+    rollback_lifecycle_message.set_queue_offset(90);
+    rollback_lifecycle_message.set_body(vec![9]);
+    let mut after_rollback_lifecycle_message = MessageExt::new();
+    after_rollback_lifecycle_message.set_queue_offset(91);
+    after_rollback_lifecycle_message.set_body(vec![9, 1]);
+    let rollback_lifecycle_queue = ProcessQueue::new();
+    rollback_lifecycle_queue
+        .put_message(&[rollback_lifecycle_message])
+        .expect("valid lifecycle message");
+    rollback_lifecycle_queue.take_messages(1);
+    rollback_lifecycle_queue.take_messages(1);
+    rollback_lifecycle_queue.rollback();
+    let rollback_lifecycle_dispatch = rollback_lifecycle_queue
+        .put_message(&[after_rollback_lifecycle_message])
+        .expect("valid message after rollback");
+    let rollback_lifecycle_result = serde_json::json!({
+        "nextDispatch": rollback_lifecycle_dispatch,
+        "count": rollback_lifecycle_queue.get_msg_count().get(),
+        "size": rollback_lifecycle_queue.get_msg_size().get(),
+        "treeKeys": rollback_lifecycle_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+    });
+    let mut requeue_lifecycle_message = MessageExt::new();
+    requeue_lifecycle_message.set_queue_offset(100);
+    requeue_lifecycle_message.set_body(vec![10]);
+    let mut after_requeue_lifecycle_message = MessageExt::new();
+    after_requeue_lifecycle_message.set_queue_offset(101);
+    after_requeue_lifecycle_message.set_body(vec![10, 1]);
+    let requeue_lifecycle_queue = ProcessQueue::new();
+    requeue_lifecycle_queue
+        .put_message(&[requeue_lifecycle_message.clone()])
+        .expect("valid lifecycle message");
+    requeue_lifecycle_queue.take_messages(1);
+    requeue_lifecycle_queue.take_messages(1);
+    requeue_lifecycle_queue.make_message_to_consume_again(&[requeue_lifecycle_message]);
+    requeue_lifecycle_queue.take_messages(1);
+    let requeue_lifecycle_dispatch = requeue_lifecycle_queue
+        .put_message(&[after_requeue_lifecycle_message])
+        .expect("valid message after requeue");
+    let requeue_lifecycle_result = serde_json::json!({
+        "nextDispatch": requeue_lifecycle_dispatch,
+        "count": requeue_lifecycle_queue.get_msg_count().get(),
+        "size": requeue_lifecycle_queue.get_msg_size().get(),
+        "treeKeys": requeue_lifecycle_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+    });
     let info_result = serde_json::json!({
         "cachedMsgCount": info.get_cached_msg_count(),
         "cachedMsgSizeInMiB": info.get_cached_msg_size_in_mib(),
@@ -883,6 +969,9 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "dispatchAfterRemove": dispatch_after_remove_result,
         "malformedMaxOffset": malformed_max_offset_result,
         "emptyCommit": empty_commit_result,
+        "commitLifecycle": commit_lifecycle_result,
+        "rollbackLifecycle": rollback_lifecycle_result,
+        "requeueLifecycle": requeue_lifecycle_result,
     });
     assert_eq!(&actual, expected);
     queue.clear();
