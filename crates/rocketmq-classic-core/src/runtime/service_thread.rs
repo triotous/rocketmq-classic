@@ -57,9 +57,12 @@ impl ServiceThreadControl {
         true
     }
 
-    pub fn make_stop(&self) {
+    pub fn make_stop(&self) -> bool {
         if self.started.load(Ordering::Acquire) {
             self.stopped.store(true, Ordering::Release);
+            true
+        } else {
+            false
         }
     }
 
@@ -122,9 +125,11 @@ impl RuntimeServiceThread {
             .set_daemon(daemon);
     }
 
-    /// Sets the worker's stop flag without waking or joining it.
+    /// Sets the worker's stop flag and wakes it without joining it.
     pub fn make_stop(&self) {
-        self.runtime.service_thread_control(self.kind).make_stop();
+        if self.runtime.service_thread_control(self.kind).make_stop() {
+            self.runtime.wakeup_service_thread(self.kind);
+        }
     }
 
     /// Wakes a rebalance worker. Pull dispatch waits for queued work and has no
@@ -162,5 +167,51 @@ impl ClientRuntime {
     /// `MQClientInstance.getPullMessageService()`.
     pub fn pull_message_service(self: &Arc<Self>) -> RuntimeServiceThread {
         RuntimeServiceThread::new(self.clone(), RuntimeServiceKind::PullMessage)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{config::ClientConfig, runtime::ClientRuntimeManager};
+    use std::sync::atomic::Ordering;
+    use tokio::time::{Duration, timeout};
+
+    #[tokio::test]
+    async fn make_stop_wakes_a_waiting_rebalance_worker() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        assert!(
+            fixture["serviceThreadMakeStopWakeup"]["returnedAfterMakeStop"]
+                .as_bool()
+                .unwrap()
+        );
+
+        let mut config = ClientConfig::new("service-thread-make-stop-wakeup");
+        config.set_namesrv_addr(Some(String::new()));
+        let runtime = ClientRuntimeManager::new()
+            .get_or_create(&config)
+            .await
+            .unwrap();
+        let service = runtime.rebalance_service();
+        service.start().await.unwrap();
+        timeout(Duration::from_secs(2), async {
+            while runtime.rebalance_probe.live.load(Ordering::SeqCst) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("rebalance worker did not start");
+
+        service.make_stop();
+        timeout(Duration::from_secs(2), async {
+            while runtime.rebalance_probe.live.load(Ordering::SeqCst) != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("make_stop did not wake the rebalance worker");
+        service.shutdown(false).await.unwrap();
     }
 }

@@ -196,6 +196,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("serviceNameCases", serviceNameCases());
         fixture.put("serviceThreadCases", serviceThreadCases());
         fixture.put("serviceLifecycleCases", serviceLifecycleCases());
+        fixture.put("serviceThreadMakeStopWakeup", serviceThreadMakeStopWakeupCase());
         fixture.put("concurrentHeartbeatConstructionCases", concurrentHeartbeatConstructionCases());
         fixture.put("runtimeStartScheduleCases", runtimeStartScheduleCases());
         fixture.put("runtimeRestartAfterShutdown", runtimeRestartAfterShutdown());
@@ -4701,6 +4702,38 @@ public final class RuntimeConfigFixtures {
             row.put("scheduledExecutorShutdown", pull.getScheduledExecutorService().isShutdown());
         }
         return row;
+    }
+
+    private static Map<String, Object> serviceThreadMakeStopWakeupCase() throws InterruptedException {
+        WaitForRunningService service = new WaitForRunningService();
+        service.start();
+        boolean enteredWait = service.enteredWait.await(5, TimeUnit.SECONDS);
+        service.makeStop();
+        boolean returnedAfterMakeStop = service.returned.await(1, TimeUnit.SECONDS);
+        service.shutdown(true);
+
+        Map<String, Object> row = new TreeMap<>();
+        row.put("enteredWait", enteredWait);
+        row.put("stoppedAfterMakeStop", service.isStopped());
+        row.put("returnedAfterMakeStop", returnedAfterMakeStop);
+        row.put("workerAliveAfterShutdown", service.workerAlive());
+        return row;
+    }
+
+    private static final class WaitForRunningService extends org.apache.rocketmq.common.ServiceThread {
+        private final CountDownLatch enteredWait = new CountDownLatch(1);
+        private final CountDownLatch returned = new CountDownLatch(1);
+
+        @Override
+        public void run() {
+            enteredWait.countDown();
+            waitForRunning(60_000);
+            returned.countDown();
+        }
+
+        private boolean workerAlive() {
+            return thread != null && thread.isAlive();
+        }
     }
 
     private static final class WorkerRunProbe {

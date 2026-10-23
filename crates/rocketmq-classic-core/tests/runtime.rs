@@ -79,6 +79,15 @@ fn inherited_service_thread_oracle_records_java_thread_controls() {
             }
         ])
     );
+    assert_eq!(
+        fixture["serviceThreadMakeStopWakeup"],
+        serde_json::json!({
+            "enteredWait": true,
+            "stoppedAfterMakeStop": true,
+            "returnedAfterMakeStop": true,
+            "workerAliveAfterShutdown": false
+        })
+    );
 }
 
 #[test]
