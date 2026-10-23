@@ -4680,3 +4680,34 @@ parity. This records the getter as an implementation-accessor disposition,
 while its default retry-topic flow is covered by the preceding retry-fallback
 slice. The source-private/configurable latency-fault branch remains open in the
 broader P18-V01 audit.
+
+## P18-V01 `MessageQueueAssignment` HashSet collision disposition — 2026-10-23
+
+Pinned Java 5.5.1 `MessageQueueAssignment.equals` compares only its queue, but
+`hashCode` also includes mode and attachments. `MessageRequestMode` inherits
+`Object.hashCode`, so the invoked fixture must read that JVM's enum identity
+hash and construct an attachment hash that cancels the difference between two
+assignments. In the same JVM, the fixture confirms same-queue equality, equal
+hashes, and `HashSet` size one. Java's ordinary same-queue/different-mode case
+with different hashes remains two entries. Source SHA-256 values are
+`7c3c9563e8bd0a2d8c14d188efac66703be87cec9b7892ecc5fd7b071a4f6b61` for
+`MessageQueueAssignment.java` and
+`3b29c84d21cd16c02af8e1836cc4aa5dc0557e8b3e40022490506ef7dcba5c43` for
+`MessageRequestMode.java`; `lookup.json` SHA-256 is
+`42af689aed0d150ee19fef5d8138627bb09db9085139b5221d579e57a0053283`.
+
+Rust maps Java's public `equals` through `java_equals` and keeps lawful
+all-fields `Eq`/`Hash` for Rust collections. A Java Set serialized after
+insertion already reflects that JVM's membership result; a manually supplied
+raw collection engineered to collide depends on the receiving JVM's
+process-local enum identity hash and cannot have deterministic cross-process
+parity. The Rust-native collection trait behavior is therefore recorded as an
+implementation-local boundary, not a portable wire-flow difference; see
+`KNOWN_DIFFERENCES.md` and the assignment rows in
+`PHASE_6_API_CONFIG_MAP.md`.
+
+`cargo test -p rocketmq-classic-protocol assignment_set_hash_collision_oracle_records_the_java_boundary`
+passes. No production code or Java fixture changed; Maven fixture verification
+was not rerun. This closes the portable collection-flow disposition only;
+broad P18-V01 source/API/settings/input/error/control-flow and reverse-export
+reconciliation remains PARTIAL.

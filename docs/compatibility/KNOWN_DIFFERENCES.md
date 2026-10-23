@@ -1,5 +1,9 @@
 # Known differences and evidence gaps
 
+## P18 `MessageQueueAssignment` collection-hash boundary
+
+- Java `MessageQueueAssignment.equals` compares only `messageQueue`, while `hashCode` also includes `MessageRequestMode.hashCode()` and attachments. Since the enum inherits `Object.hashCode`, Java `HashSet` collision behavior can depend on that JVM's process-local identity hash. The invoked Java fixture constructs an equal-hash pair and confirms that the set collapses it; ordinary same-queue/different-mode rows remain distinct when their hashes differ. Rust maps the public `equals` method through `java_equals` and keeps lawful all-fields `Eq`/`Hash` for native collections. A Java Set serialized after insertion already reflects Java's own membership result; a raw collection engineered to collide for a particular JVM has no stable cross-process hash contract. This is an implementation-local collection boundary, not a portable wire-flow requirement. See the assignment input and method rows in `PHASE_6_API_CONFIG_MAP.md` and fixture `fixtures/runtime/lookup.json`.
+
 ## Phase 9 pull and offset validation boundary
 
 - Pull facade, offset-store and boundary-RPC offline checks are recorded in [PHASE_9_OFFLINE_METHOD_MATRIX.md](PHASE_9_OFFLINE_METHOD_MATRIX.md). They use Java 5.5.1 source-derived fixtures and scripted peers; no live 5.3.4 Broker result is claimed. P9-V03 remains `PENDING_PHASE_19` until the Docker local integration suite runs.
