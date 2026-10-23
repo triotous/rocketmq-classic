@@ -263,6 +263,18 @@ public final class ConsumerFacadeApiFixtures {
         result.put("consumeLockPresent", queue.getConsumeLock() != null);
         result.put("info", infoResult);
         result.put("sizeMiBNarrowing", sizeNarrowingInfo.getCachedMsgSizeInMiB());
+
+        ProcessQueue negativeBatchQueue = new ProcessQueue();
+        negativeBatchQueue.setLastConsumeTimestamp(777L);
+        Map<String, Object> negativeBatchResult = new TreeMap<>();
+        try {
+            negativeBatchQueue.takeMessages(-1);
+            negativeBatchResult.put("error", null);
+        } catch (IllegalArgumentException e) {
+            negativeBatchResult.put("error", e.toString());
+        }
+        negativeBatchResult.put("lastConsumeTimestamp", negativeBatchQueue.getLastConsumeTimestamp());
+        result.put("negativeBatchSize", negativeBatchResult);
         queue.clear();
 
         ProcessQueue duplicateQueue = new ProcessQueue();

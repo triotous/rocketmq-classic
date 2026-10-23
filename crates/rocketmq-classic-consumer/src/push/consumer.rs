@@ -3461,7 +3461,9 @@ impl PushConsumer {
     ) {
         if matches!(&context.consume_service, ConsumeService::Orderly(_)) {
             if let Some(service) = self.custom_consume_message_service() {
-                let messages = process_queue.take_messages(i32::MAX);
+                let messages = process_queue
+                    .take_messages(i32::MAX)
+                    .expect("the maximum batch size is nonnegative");
                 if !messages.is_empty() {
                     service.submit_consume_request(
                         messages,

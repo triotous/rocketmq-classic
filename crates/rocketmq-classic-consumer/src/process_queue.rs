@@ -496,6 +496,8 @@ pub enum ProcessQueueError {
     UnknownBatch,
     #[error("java.lang.NoSuchElementException: no orderly messages are available to commit")]
     EmptyOrderedConsumeSet,
+    #[error("java.lang.IllegalArgumentException: Illegal Capacity: {batch_size}")]
+    InvalidBatchSize { batch_size: i32 },
     #[error("consume batch no longer owns all of its messages")]
     BatchOwnershipLost,
     #[error("java.lang.NumberFormatException parsing MAX_OFFSET property: {value:?}")]
@@ -734,8 +736,13 @@ impl ProcessQueue {
             .map(|outcome| outcome.dispatch_to_consume)
     }
 
-    pub fn take_messages(&self, batch_size: i32) -> Vec<Arc<MessageExt>> {
-        assert!(batch_size >= 0, "batch size cannot be negative");
+    pub fn take_messages(
+        &self,
+        batch_size: i32,
+    ) -> Result<Vec<Arc<MessageExt>>, ProcessQueueError> {
+        if batch_size < 0 {
+            return Err(ProcessQueueError::InvalidBatchSize { batch_size });
+        }
         let mut state = self.lock_state();
         state.last_consume_timestamp_millis = epoch_millis();
         let offsets = ready_offsets(&state)
@@ -744,7 +751,7 @@ impl ProcessQueue {
             .collect::<Vec<_>>();
         if offsets.is_empty() {
             state.consuming = false;
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let batch_id = Self::allocate_batch_id(&mut state);
         let mut messages = Vec::with_capacity(offsets.len());
@@ -759,7 +766,7 @@ impl ProcessQueue {
             }
         }
         state.in_flight_batches.insert(batch_id, offsets);
-        messages
+        Ok(messages)
     }
 
     pub fn remove_message(&self, messages: &[Arc<MessageExt>]) -> i64 {
@@ -1801,7 +1808,7 @@ mod tests {
         process_queue
             .put_message(&[first.clone(), message(11, 3)])
             .unwrap();
-        let batch = process_queue.take_messages(1);
+        let batch = process_queue.take_messages(1).unwrap();
         assert_eq!(batch[0].queue_offset(), 10);
         assert_eq!(process_queue.snapshot(16).unwrap().in_flight_count, 1);
 

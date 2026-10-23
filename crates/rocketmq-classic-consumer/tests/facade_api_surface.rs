@@ -640,11 +640,11 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     let initial_span = queue.get_max_span();
     let contains_first = queue.contains_message(&first);
     let has_messages = queue.has_temp_message();
-    let first_taken = queue.take_messages(1)[0].queue_offset();
+    let first_taken = queue.take_messages(1).unwrap()[0].queue_offset();
     let after_take_tree_keys = tree_map.read().keys().copied().collect::<Vec<_>>();
     queue.rollback();
     let after_rollback_tree_keys = tree_map.read().keys().copied().collect::<Vec<_>>();
-    queue.take_messages(1);
+    queue.take_messages(1).unwrap();
     let committed_offset = queue.commit().expect("non-empty ordered consume set");
     let after_commit_tree_keys = tree_map.read().keys().copied().collect::<Vec<_>>();
     let next_offset = queue.remove_message(&[std::sync::Arc::new(second)]);
@@ -717,7 +717,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     in_flight_removal_queue
         .put_message(&[in_flight_first, in_flight_second])
         .expect("valid messages");
-    let in_flight_batch = in_flight_removal_queue.take_messages(1);
+    let in_flight_batch = in_flight_removal_queue.take_messages(1).unwrap();
     let remove_in_flight_next_offset = in_flight_removal_queue.remove_message(&in_flight_batch);
     let remove_in_flight_ready_tree_keys = in_flight_removal_queue
         .get_msg_tree_map()
@@ -840,7 +840,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     commit_lifecycle_queue
         .put_message(&[commit_lifecycle_message])
         .expect("valid lifecycle message");
-    commit_lifecycle_queue.take_messages(1);
+    commit_lifecycle_queue.take_messages(1).unwrap();
     commit_lifecycle_queue.set_last_consume_timestamp(801);
     let commit_lifecycle_offset = commit_lifecycle_queue
         .commit()
@@ -871,8 +871,8 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     rollback_lifecycle_queue
         .put_message(&[rollback_lifecycle_message])
         .expect("valid lifecycle message");
-    rollback_lifecycle_queue.take_messages(1);
-    rollback_lifecycle_queue.take_messages(1);
+    rollback_lifecycle_queue.take_messages(1).unwrap();
+    rollback_lifecycle_queue.take_messages(1).unwrap();
     rollback_lifecycle_queue.rollback();
     let rollback_lifecycle_dispatch = rollback_lifecycle_queue
         .put_message(&[after_rollback_lifecycle_message])
@@ -898,10 +898,10 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     requeue_lifecycle_queue
         .put_message(&[requeue_lifecycle_message.clone()])
         .expect("valid lifecycle message");
-    requeue_lifecycle_queue.take_messages(1);
-    requeue_lifecycle_queue.take_messages(1);
+    requeue_lifecycle_queue.take_messages(1).unwrap();
+    requeue_lifecycle_queue.take_messages(1).unwrap();
     requeue_lifecycle_queue.make_message_to_consume_again(&[requeue_lifecycle_message]);
-    requeue_lifecycle_queue.take_messages(1);
+    requeue_lifecycle_queue.take_messages(1).unwrap();
     let requeue_lifecycle_dispatch = requeue_lifecycle_queue
         .put_message(&[after_requeue_lifecycle_message])
         .expect("valid message after requeue");
@@ -926,7 +926,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     duplicate_in_flight_queue
         .put_message(&[duplicate_in_flight_original])
         .expect("valid in-flight message");
-    duplicate_in_flight_queue.take_messages(1);
+    duplicate_in_flight_queue.take_messages(1).unwrap();
     let duplicate_in_flight_dispatch = duplicate_in_flight_queue
         .put_message(&[duplicate_in_flight_ready])
         .expect("valid duplicate while in flight");
@@ -980,7 +980,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     duplicate_rollback_queue
         .put_message(&[duplicate_rollback_original])
         .expect("valid in-flight message");
-    duplicate_rollback_queue.take_messages(1);
+    duplicate_rollback_queue.take_messages(1).unwrap();
     duplicate_rollback_queue
         .put_message(&[duplicate_rollback_ready])
         .expect("valid duplicate while in flight");
@@ -1012,7 +1012,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     duplicate_removal_queue
         .put_message(&[duplicate_removal_original])
         .expect("valid in-flight message");
-    duplicate_removal_queue.take_messages(1);
+    duplicate_removal_queue.take_messages(1).unwrap();
     duplicate_removal_queue
         .put_message(&[duplicate_for_removal.clone()])
         .expect("valid duplicate while in flight");
@@ -1087,6 +1087,19 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         .set(2_147_483_648_i64 * 1024 * 1024);
     let mut size_narrowing_info = ConsumerProcessQueueInfo::default();
     size_narrowing_queue.fill_process_queue_info(&mut size_narrowing_info);
+    let negative_batch_queue = ProcessQueue::new();
+    negative_batch_queue.set_last_consume_timestamp(777);
+    let negative_batch_error = negative_batch_queue
+        .take_messages(-1)
+        .expect_err("Java rejects a negative ArrayList capacity");
+    assert!(matches!(
+        &negative_batch_error,
+        ProcessQueueError::InvalidBatchSize { batch_size: -1 }
+    ));
+    let negative_batch_result = serde_json::json!({
+        "error": negative_batch_error.to_string(),
+        "lastConsumeTimestamp": negative_batch_queue.get_last_consume_timestamp(),
+    });
     let info_result = serde_json::json!({
         "cachedMsgCount": info.get_cached_msg_count(),
         "cachedMsgSizeInMiB": info.get_cached_msg_size_in_mib(),
@@ -1149,6 +1162,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "duplicateOffsetMaxNextOffset": duplicate_offset_max_next_offset,
         "clearLifecycle": clear_lifecycle_result,
         "sizeMiBNarrowing": size_narrowing_info.get_cached_msg_size_in_mib(),
+        "negativeBatchSize": negative_batch_result,
     });
     assert_eq!(&actual, expected);
     queue.clear();
