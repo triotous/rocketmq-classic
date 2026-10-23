@@ -452,6 +452,38 @@ impl MQClientApiFactory {
         )
     }
 
+    /// Seven-argument Java-constructor adapter with nullable inputs and an
+    /// optional remoting-client creator. A missing creator uses the standard
+    /// Rust transport, matching Java's null `ObjectCreator` fallback.
+    pub fn new_nullable_with_remoting_client_creator<F>(
+        nameserver_access: Option<NameserverAccessConfig>,
+        name_prefix: Option<String>,
+        client_num: i32,
+        client_remoting_processor: Option<Arc<dyn RequestProcessor>>,
+        rpc_hook: Option<Arc<dyn RpcHook>>,
+        refresh_scheduler: Option<Arc<dyn FactoryRefreshScheduler>>,
+        remoting_client_creator: Option<F>,
+    ) -> Result<Self, MQClientApiFactoryError>
+    where
+        F: Fn(&str, RemotingClientConfig) -> Result<RemotingClient, TransportError>
+            + Send
+            + Sync
+            + 'static,
+    {
+        let mut factory = Self::new_nullable(
+            nameserver_access,
+            name_prefix,
+            client_num,
+            client_remoting_processor,
+            rpc_hook,
+            refresh_scheduler,
+        )?;
+        if let Some(creator) = remoting_client_creator {
+            factory.remoting_client_creator = Arc::new(creator);
+        }
+        Ok(factory)
+    }
+
     /// Constructor counterpart for Java's overload with an injected
     /// `ObjectCreator<RemotingClient>`.
     pub fn with_remoting_client_creator<F>(
@@ -1651,6 +1683,76 @@ mod tests {
             .unwrap();
         assert_eq!(instance_name, java["nullNamePrefixInstanceName"]);
         factory.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn factory_matches_java_null_prefix_with_injected_remoting_creator() {
+        let java: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/api-factory.json"
+        ))
+        .unwrap();
+        let created_names = Arc::new(Mutex::new(Vec::new()));
+        let observed_names = created_names.clone();
+        let factory = MQClientApiFactory::new_nullable_with_remoting_client_creator(
+            Some(static_access("127.0.0.1:9876")),
+            None,
+            1,
+            None,
+            None,
+            None,
+            Some(
+                move |instance_name: &str, mut config: RemotingClientConfig| {
+                    observed_names
+                        .lock()
+                        .unwrap()
+                        .push(instance_name.to_owned());
+                    config.transport = TransportMode::Plain;
+                    RemotingClient::with_config(config)
+                },
+            ),
+        )
+        .unwrap();
+
+        factory.start().await.unwrap();
+        assert_eq!(
+            created_names.lock().unwrap().as_slice(),
+            &[java["nullNamePrefixInjectedCreatorInstanceName"]
+                .as_str()
+                .unwrap()]
+        );
+        assert_eq!(java["nullNamePrefixInjectedCreatorCalls"].as_u64(), Some(1));
+        factory.shutdown().await.unwrap();
+
+        let default_creator_factory =
+            MQClientApiFactory::new_nullable_with_remoting_client_creator::<
+                fn(&str, RemotingClientConfig) -> Result<RemotingClient, TransportError>,
+            >(
+                Some(static_access("127.0.0.1:9876")),
+                None,
+                1,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        default_creator_factory.start().await.unwrap();
+        let default_client = default_creator_factory.get_clients().unwrap().snapshot()[0]
+            .as_ref()
+            .unwrap()
+            .clone();
+        let default_instance_name = default_client
+            .config
+            .as_ref()
+            .map(|config| {
+                super::super::read_shared_client_config(config)
+                    .instance_name()
+                    .unwrap()
+                    .to_owned()
+            })
+            .unwrap();
+        assert_eq!(default_instance_name, java["nullNamePrefixInstanceName"]);
+        default_creator_factory.shutdown().await.unwrap();
     }
 
     #[tokio::test]

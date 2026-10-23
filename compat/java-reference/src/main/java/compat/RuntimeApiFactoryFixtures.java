@@ -25,6 +25,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import org.apache.rocketmq.remoting.ChannelEventListener;
+import org.apache.rocketmq.remoting.netty.NettyRemotingClient;
+import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.common.NameserverAccessConfig;
 import org.apache.rocketmq.client.impl.mqclient.MQClientAPIFactory;
@@ -86,6 +89,24 @@ public final class RuntimeApiFactoryFixtures {
                 fixture.put("nullNamePrefixInstanceName", instanceName(nullPrefixFactory.getClients()[0]));
             } finally {
                 nullPrefixFactory.shutdown();
+            }
+
+            AtomicInteger nullPrefixInjectedCreatorCalls = new AtomicInteger();
+            MQClientAPIFactory nullPrefixInjectedFactory = new MQClientAPIFactory(
+                new NameserverAccessConfig("127.0.0.1:9876", "", null),
+                null, 1, null, null, null,
+                args -> {
+                    nullPrefixInjectedCreatorCalls.incrementAndGet();
+                    return new NettyRemotingClient(
+                        (NettyClientConfig) args[0], (ChannelEventListener) args[1]);
+                });
+            try {
+                nullPrefixInjectedFactory.start();
+                fixture.put("nullNamePrefixInjectedCreatorInstanceName",
+                    instanceName(nullPrefixInjectedFactory.getClients()[0]));
+                fixture.put("nullNamePrefixInjectedCreatorCalls", nullPrefixInjectedCreatorCalls.get());
+            } finally {
+                nullPrefixInjectedFactory.shutdown();
             }
 
             System.setProperty(vipProperty, "true");
