@@ -2531,6 +2531,53 @@ This closes the reverse-name disposition for these 22 items only. The full
 P18-V01 Java source/API/settings/input/error/control-flow and Rust
 reverse-export reconciliation remains open.
 
+## P18-V01 `MQClientAPIImpl` tooling-only methods — 2026-10-23
+
+Compared the public declarations on the pinned 5.5.1 `MQClientAPIImpl` with
+Rust Core API methods and traced the remaining controller/replica operations
+through the pinned source call sites. `javap -public` reports 143 public method
+signatures across 132 distinct method names, plus three public constructors.
+Eight methods without Rust client counterparts are:
+
+| Java method | Pinned source callers | Scope disposition |
+| --- | --- | --- |
+| `checkRocksdbCqWriteProgress` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `CheckRocksdbCqWriteProgressCommand` in `tools` | Tools-only RocksDB administration API. |
+| `getBrokerEpochCache` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `GetBrokerEpochSubCommand` in `tools` | Tools-only administration API. |
+| `getInSyncStateData` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `GetSyncStateSetSubCommand` in `tools` | Tools-only replica inspection API. |
+| `getControllerMetaData` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `MQClientAPIImpl` broker-epoch/election/cleanup helpers | Tools-only controller administration API. |
+| `getControllerConfig` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `GetControllerConfigSubCommand` in `tools` | Tools-only controller administration API. |
+| `updateControllerConfig` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `UpdateControllerConfigSubCommand` in `tools` | Tools-only controller administration API. |
+| `electMaster` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `ReElectMasterSubCommand` in `tools` | Tools-only controller administration API. |
+| `cleanControllerBrokerData` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `CleanControllerBrokerMetaSubCommand` in `tools` | Tools-only controller administration API. |
+
+The public-method join also checked name-level mappings that do not follow a
+direct camelCase-to-snake_case conversion. `ackLiteMessageAsync` delegates to
+Java `ackMessageAsync` with the same request header; Rust's
+`MQClientApi::ack_message` supplies that RPC for POP/Lite owners.
+`exportRocksDBConfigToJson` maps to Core
+`MQClientApi::export_rocksdb_config_to_json`. `fetchNameServerAddr`,
+`onNameServerAddressChange`, and `updateNameServerAddressList` map to
+`ClientRuntime::fetch_name_server_addr`,
+`MQClientApiFactory::on_name_server_address_change`, and the runtime/Remoting
+address-list updates. `resetMasterFlushOffset` maps to Core
+`MQClientApi::reset_master_flush_offset`. Java's `getEarliestMsgStoretime`
+maps to `get_earliest_msg_store_time` in the Phase 9 offset RPC crosswalk.
+`recallMessageAsync` maps to the Rust
+Producer's future-returning recall operation and its Core RPC path.
+
+The source call-site scan found no use of these operations from the pinned
+`MQAdmin`, Producer, Push Consumer, or Pull Consumer APIs.
+The separate `rocketmq-tools` artifact is outside the Phase 17 client scope;
+this is a scope disposition, not a claim that the operations have Rust
+implementations. Other controller-adjacent client operations already mapped
+in this inventory remain in scope where they are used by the client API.
+
+The scan used `javap -public` on the cached client 5.5.1 artifact and
+`git grep` at source commit `efa1be59d6fc747ad220f036c86030f05f0419f9` across
+`client` and `tools`. It closes this bounded unmapped-method scope check only;
+broad P18-V01 source/API/settings/input/error/control-flow and reverse-export
+reconciliation remains open.
+
 ## P18-V01 Rustdoc reverse-export delta — 2026-10-23
 
 Regenerated all-feature Rustdoc JSON at workspace revision `e0937f80` and
