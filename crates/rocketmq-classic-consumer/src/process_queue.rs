@@ -939,6 +939,18 @@ impl ProcessQueue {
         });
     }
 
+    /// Maps Java's uncaught null-list failure for `makeMessageToConsumeAgain`.
+    pub fn make_message_to_consume_again_nullable(
+        &self,
+        messages: Option<&[MessageExt]>,
+    ) -> Result<(), ProcessQueueError> {
+        let Some(messages) = messages else {
+            return Err(ProcessQueueError::NullMessageList);
+        };
+        self.make_message_to_consume_again(messages);
+        Ok(())
+    }
+
     pub fn fill_process_queue_info(
         &self,
         info: &mut rocketmq_classic_protocol::body::ConsumerProcessQueueInfo,

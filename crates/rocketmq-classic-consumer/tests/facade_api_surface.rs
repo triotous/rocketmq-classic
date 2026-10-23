@@ -1142,6 +1142,31 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
             .copied()
             .collect::<Vec<_>>(),
     });
+    let mut null_requeue_message = MessageExt::new();
+    null_requeue_message.set_queue_offset(231);
+    null_requeue_message.set_body(vec![4, 5]);
+    let null_requeue_message_queue = ProcessQueue::new();
+    null_requeue_message_queue
+        .put_message(&[null_requeue_message])
+        .expect("valid message before null requeue list");
+    let null_requeue_message_error = null_requeue_message_queue
+        .make_message_to_consume_again_nullable(None)
+        .expect_err("Java iterating a null requeue list throws NullPointerException");
+    assert!(matches!(
+        &null_requeue_message_error,
+        ProcessQueueError::NullMessageList
+    ));
+    let null_requeue_message_result = serde_json::json!({
+        "errorClass": null_requeue_message_error.to_string(),
+        "count": null_requeue_message_queue.get_msg_count().get(),
+        "size": null_requeue_message_queue.get_msg_size().get(),
+        "treeKeys": null_requeue_message_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+    });
     let info_result = serde_json::json!({
         "cachedMsgCount": info.get_cached_msg_count(),
         "cachedMsgSizeInMiB": info.get_cached_msg_size_in_mib(),
@@ -1209,6 +1234,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "negativeBatchSize": negative_batch_result,
         "nullMessageList": null_message_list_result,
         "nullRemoveMessage": null_remove_message_result,
+        "nullRequeueMessage": null_requeue_message_result,
     });
     assert_eq!(&actual, expected);
     queue.clear();
