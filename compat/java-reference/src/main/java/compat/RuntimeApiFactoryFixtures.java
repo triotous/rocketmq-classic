@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.client.ClientConfig;
@@ -164,12 +165,13 @@ public final class RuntimeApiFactoryFixtures {
             }, "api-factory-discovery-fixture");
             discoveryResponder.setDaemon(true);
             discoveryResponder.start();
-            ScheduledExecutorService discoveryScheduler = Executors.newSingleThreadScheduledExecutor();
+            ScheduledThreadPoolExecutor discoveryScheduler = new ScheduledThreadPoolExecutor(1);
             MQClientAPIFactory discoveryFactory = new MQClientAPIFactory(
                 new NameserverAccessConfig(null, "127.0.0.1:" + discoveryServer.getLocalPort(),
                     "factory-fixture"), "domain-discovery-", 2, null, null, discoveryScheduler);
             try {
                 discoveryFactory.start();
+                fixture.put("domainRefreshScheduleCountAfterStart", discoveryScheduler.getQueue().size());
                 fixture.put("domainClientAddressesAfterStart", Arrays.stream(discoveryFactory.getClients())
                     .map(client -> sorted(client.getNameServerAddressList())).collect(Collectors.toList()));
                 discoveryFactory.shutdown();

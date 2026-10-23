@@ -293,12 +293,12 @@ pub struct MQClientApiFactory {
     top_addressing: Option<Arc<dyn TopAddressing>>,
     address_state: Arc<FactoryAddressState>,
     refresh_shutdown: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
-    refresh_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    refresh_tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
 impl MQClientApiFactory {
     /// Creates the standard Java-shaped API pool. Tokio supplies the scheduled
-    /// NameServer refresh worker that Java receives as a
+    /// per-client NameServer refresh workers that Java schedules through its
     /// `ScheduledExecutorService` constructor argument.
     pub fn new(
         nameserver_access: NameserverAccessConfig,
@@ -409,7 +409,7 @@ impl MQClientApiFactory {
             top_addressing,
             address_state,
             refresh_shutdown: Mutex::new(None),
-            refresh_task: Mutex::new(None),
+            refresh_tasks: Mutex::new(Vec::new()),
         };
         factory.register_address_callback()?;
         Ok(factory)
@@ -547,26 +547,35 @@ impl MQClientApiFactory {
     }
 
     fn start_refresh(&self, provider: Arc<dyn TopAddressing>, client_count: usize) {
-        let (shutdown, mut stop) = tokio::sync::watch::channel(false);
+        let (shutdown, _) = tokio::sync::watch::channel(false);
         *self
             .refresh_shutdown
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(shutdown);
-        let state = Arc::downgrade(&self.address_state);
-        let task = tokio::spawn(async move {
-            let mut ticks = tokio::time::interval_at(
-                Instant::now() + Duration::from_secs(10),
-                Duration::from_secs(120),
-            );
-            ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
-            loop {
-                tokio::select! {
-                    _ = ticks.tick() => {
-                        for index in 0..client_count {
-                            if *stop.borrow() {
-                                return;
-                            }
-                            if let Some(addresses) = provider.fetch_ns_addr().await {
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(shutdown.clone());
+        let mut tasks = Vec::with_capacity(client_count);
+        for index in 0..client_count {
+            let provider = provider.clone();
+            let mut stop = shutdown.subscribe();
+            let state = Arc::downgrade(&self.address_state);
+            tasks.push(tokio::spawn(async move {
+                let mut ticks = tokio::time::interval_at(
+                    Instant::now() + Duration::from_secs(10),
+                    Duration::from_secs(120),
+                );
+                ticks.set_missed_tick_behavior(MissedTickBehavior::Burst);
+                loop {
+                    tokio::select! {
+                        _ = ticks.tick() => {
+                            let addresses = tokio::select! {
+                                addresses = provider.fetch_ns_addr() => addresses,
+                                changed = stop.changed() => {
+                                    if changed.is_err() || *stop.borrow() {
+                                        return;
+                                    }
+                                    continue;
+                                }
+                            };
+                            if let Some(addresses) = addresses {
                                 if let Some(state) = state.upgrade() {
                                     state.update_from_discovery(index, Some(&addresses));
                                 } else {
@@ -574,19 +583,19 @@ impl MQClientApiFactory {
                                 }
                             }
                         }
-                    }
-                    changed = stop.changed() => {
-                        if changed.is_err() || *stop.borrow() {
-                            return;
+                        changed = stop.changed() => {
+                            if changed.is_err() || *stop.borrow() {
+                                return;
+                            }
                         }
                     }
                 }
-            }
-        });
+            }));
+        }
         *self
-            .refresh_task
+            .refresh_tasks
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(task);
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = tasks;
     }
 
     async fn stop_refresh(&self) {
@@ -598,12 +607,13 @@ impl MQClientApiFactory {
         {
             let _ = shutdown.send(true);
         }
-        let task = self
-            .refresh_task
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take();
-        if let Some(task) = task {
+        let tasks = std::mem::take(
+            &mut *self
+                .refresh_tasks
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        );
+        for task in tasks {
             let _ = task.await;
         }
     }
@@ -898,6 +908,68 @@ mod tests {
             .map(|client| client.unwrap().get_name_server_address_list().unwrap())
             .collect::<Vec<_>>();
         assert_eq!(actual, expected);
+        factory.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn factory_domain_refresh_runs_independently_for_each_client_slot() {
+        let java: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/api-factory.json"
+        ))
+        .unwrap();
+        struct NumberedProvider(AtomicUsize);
+        impl TopAddressing for NumberedProvider {
+            fn fetch_ns_addr(
+                &self,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send + '_>>
+            {
+                let call = self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async move { Some(format!("domain-ns-{call}:9876")) })
+            }
+        }
+
+        let access = NameserverAccessConfig::new(
+            None,
+            Some("factory-domain.example".into()),
+            Some("factory-subgroup".into()),
+        );
+        let factory = MQClientApiFactory::new(access, "domain-refresh-", 2, None, None)
+            .unwrap()
+            .with_top_addressing(Arc::new(NumberedProvider(AtomicUsize::new(0))))
+            .unwrap();
+
+        factory.start().await.unwrap();
+        assert_eq!(
+            factory.refresh_tasks.lock().unwrap().len(),
+            java["domainRefreshScheduleCountAfterStart"]
+                .as_u64()
+                .unwrap() as usize
+        );
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+        tokio::time::advance(Duration::from_secs(10)).await;
+        for _ in 0..8 {
+            tokio::task::yield_now().await;
+        }
+        let mut refreshed = factory
+            .get_clients()
+            .unwrap()
+            .snapshot()
+            .into_iter()
+            .map(|client| {
+                client
+                    .unwrap()
+                    .get_name_server_address_list()
+                    .unwrap()
+                    .remove(0)
+            })
+            .collect::<Vec<_>>();
+        refreshed.sort();
+        assert_eq!(
+            refreshed,
+            vec!["domain-ns-2:9876".to_owned(), "domain-ns-3:9876".to_owned()]
+        );
         factory.shutdown().await.unwrap();
     }
 
