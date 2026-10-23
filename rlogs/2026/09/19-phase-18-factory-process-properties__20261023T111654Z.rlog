@@ -37,3 +37,11 @@ Broad P18-V01 source/API/settings/input/error/control-flow/reverse-export reconc
 - Confirmed Java end-transaction host producer pointer is only used to copy client ID; Rust derives the same ID from host `ClientConfig`, covered by `end_transaction_trace_client_host_matches_java_host_producer_client_id`. Pinned Java hostConsumer storage has no reads.
 - Documented Java-only direct host-reference accessors and process-global shutdown-hook methods as API-shape/lifecycle differences. Existing scripted flush, shutdown and dispatcher-drop tests cover Rust owner lifecycle behavior. Broad P18-V01 source/API/input/reverse-export audit remains PARTIAL.
 - Documentation validation: `git diff --check` passed. No code or Phase 19 files changed; no new test run was needed.
+
+## Message-family inventory current-tree validation — 2026-10-23
+
+- Rechecked the pinned-source crosswalk: all 82 declared public methods across Java `Message`, `MessageExt`, and `MessageClientExt` are inventoried; constructor/static helpers are separately accounted for. Current Rust `MessageExtSubtype` tests cover direct and nullable derived getters, live property-map aliasing, and selected callback overrides.
+- Current fixtures: `fixtures/runtime/consumer-operations.json` SHA-256 `b414477a4a64b2c252d704704a70c7b1a89f2b6a5b1014531ca0200690edda36`; `fixtures/messages/records.json` SHA-256 `46a18677fc673222639e53ee2871f4836fa427f97d284f918c1bdeb57129beb0`.
+- `cargo test --offline -p rocketmq-classic-common --test message_decode --locked` — passed (27 tests).
+- `cargo test --offline -p rocketmq-classic-consumer --test runtime_direct_consume --locked` — passed (6 tests; Java direct-consume fixture has 29 cases).
+- Updated the consumer operations audit to supersede stale intermediate notes about still-open inherited methods. Broad P18-V01 remains PARTIAL. `git diff --check` passed; Phase 19 paths were untouched.

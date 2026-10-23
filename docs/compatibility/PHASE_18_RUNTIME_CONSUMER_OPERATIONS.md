@@ -445,3 +445,29 @@ The Common `messageClientExtApi` fixture additionally covers a custom
 custom setter handles null without changing the offset. Test revision
 `5e12a174`; current Common fixture SHA-256:
 `d0cdfbf2599adb0242a1df0dfa8523818a018c35cb34dac2b8418f8ce4bc972d`.
+
+## P18-V01 message-family method and override audit follow-up — 2026-10-23
+
+The earlier entries above that leave inherited `Message`/`MessageExt` methods
+open are superseded for the declared message-family inventory by
+[PHASE_18_MESSAGE_SUBTYPE_API_CROSSWALK.md](PHASE_18_MESSAGE_SUBTYPE_API_CROSSWALK.md).
+That crosswalk is based on pinned Java 5.5.1 and accounts for the 82 declared
+public methods across `Message`, `MessageExt`, and `MessageClientExt`, their
+constructors, and the three `MessageExt` static helpers. It also records the
+Rust subtype hooks for virtual calls, nullable getter results, live property
+map aliases, and the language-specific ByteBuffer slice mapping.
+
+Current-tree focused validation passed at code revision `34cbfb8b` (HEAD
+`5e98f701` adds only the preceding documentation audit):
+`cargo test --offline -p rocketmq-classic-common --test message_decode --locked`
+(27 passed) and
+`cargo test --offline -p rocketmq-classic-consumer --test runtime_direct_consume --locked`
+(6 passed). Current aggregate fixture SHA-256 values are
+`consumer-operations.json`:
+`b414477a4a64b2c252d704704a70c7b1a89f2b6a5b1014531ca0200690edda36`, and
+`records.json`:
+`46a18677fc673222639e53ee2871f4836fa427f97d284f918c1bdeb57129beb0`.
+The direct-consume fixture includes 29 Java cases. This closes the declared
+message-family inventory and these selected subtype dispatch paths; the broad
+P18-V01 settings/API/flow/input/error/reverse-export audit and P18-V04 platform
+evidence remain open.
