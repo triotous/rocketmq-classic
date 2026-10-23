@@ -63,6 +63,20 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   doctests), strict Core Clippy, all-feature workspace Rustdoc JSON,
   formatting/diff checks, and offline Maven verification pass. This closes the
   overload mapping only; broad P18-V01 remains open.
+- Current-revision server-free P18-V02 gate rerun (`0c372d0a`, 2026-10-23):
+  default and all-feature workspace tests/doctests, strict all-target/all-feature
+  workspace Clippy, offline Maven `verify` (37 scenarios and Java cross-decodes),
+  differential self-test and 37-scenario manifest, 17 deterministic race/leak
+  cases x 3, fuzz smoke (163 frame seeds, 11 message seeds, 2,784 mutations),
+  release facade examples, offline benchmark, locked metadata, package/license/
+  dependency checks, seven product package listings, Core Windows GNU
+  cross-check, workspace Rustdoc JSON, format and diff checks all pass. The
+  Rustdoc export counts are Common 439, Consumer 460, Core 747, Producer 361,
+  Protocol 1,524 and Remoting 337; these are name inventories, not behavioral
+  proof. The benchmark records machine-specific observations with no threshold.
+  Native Windows execution, current-revision remote Ubuntu CI, Phase 19 Broker/
+  Docker evidence, and broad P18-V01 source/API/settings/input/error/control-
+  flow and reverse-export reconciliation remain open.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. Remoting after-response
   hooks now mutate request/response commands on outbound and inbound paths;
