@@ -3649,3 +3649,19 @@ This refresh closes the current macOS offline P18-V02 checks and records the
 5.5.1 source/API/settings/input/error/control-flow and Rust reverse-export
 reconciliation remains PARTIAL. Current-revision remote Ubuntu CI, native
 Windows runtime execution, and Phase 19 Broker/Docker evidence remain open.
+
+## P18-V01 ProcessQueue / PopProcessQueue `Default` adapter reverse audit — 2026-10-23 (`6371afa5`)
+
+Both public Rust queue types implement `Default`, and each implementation
+delegates directly to its Java-mapped no-argument constructor. The reverse
+crosswalk now records these as idiomatic constructor adapters. A facade
+regression compares their stable initial flags, message state, and counters to
+`new()`; time-varying timestamp fields are excluded. The reverse-surface tests
+also require the source implementation and documented disposition to remain
+present.
+
+All 260 Consumer library tests and 74 Consumer integration tests pass with all
+features. Strict all-target/all-feature Consumer Clippy, workspace format
+check, and `git diff --check` pass. This closes the two queue `Default`
+dispositions only; broad P18-V01 source/API/settings/input/error/control-flow
+and reverse-export reconciliation remains PARTIAL.
