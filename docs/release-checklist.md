@@ -8463,3 +8463,19 @@ owner-specific checks belong in the manual handoff.
   pending. No external CI, push, Broker, or Docker action was performed; the
   existing Phase 19 worktree files remain untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-current-tree-server-free-gate__20261023T092907Z.rlog`.
+
+## P18-V01 MQClientAPIFactory per-client domain discovery — 2026-10-23 (`df87b7b2`)
+
+- [x] Domain startup lookups and periodic refresh results now update only their
+  corresponding API client slot, matching Java's per-instance NameServer state.
+- [x] The invoked Java fixture serves distinct responses for two clients and
+  captures both resulting address lists; the Rust Core parity test consumes
+  that fixture.
+- [x] Core all-feature library tests (238), strict all-target/all-feature Core
+  Clippy, formatting, diff checks, and full offline Maven `verify` passed
+  (37 scenarios, including the expanded factory fixture).
+- [ ] Broad P18-V01 and final reverse API review remain open. Native Windows
+  runtime, current-revision remote Ubuntu CI, and Phase 19 Broker/Docker
+  evidence remain pending. No push or remote CI was run. Existing Phase 19
+  worktree files remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-factory-per-client-discovery__20261023T093842Z.rlog`.

@@ -480,9 +480,11 @@ injected-remoting-client overloads; `get_client` chooses a pool member,
 `on_name_server_address_change` updates each active remoting client, and
 `start`, `pre_shutdown`, and `shutdown` expose the lifecycle. Domain-based
 NameServer lookup uses the existing TopAddressing provider and a Tokio refresh
-worker. The Java constructor's process-wide property writes map to the
-factory-owned `ClientConfig` and provider settings; Rust does not mutate the
-process environment.
+worker. Each lookup result is retained by its corresponding pool slot, as in
+Java's one `MQClientAPIExt.nameSrvAddr` field per client; a later slot's domain
+response does not overwrite earlier clients. The Java constructor's
+process-wide property writes map to the factory-owned `ClientConfig` and
+provider settings; Rust does not mutate the process environment.
 
 The invoked fixture in `fixtures/runtime/api-factory.json` records both Java
 constructors and all six public methods, pre-start selection failure, client
@@ -499,6 +501,28 @@ Maven `verify` (exit 0) passed. This closes the direct factory public API
 slice only; protected Java subclass hooks and broad P18-V01
 source/API/input/error/control-flow/reverse-export reconciliation remain
 review items.
+
+### P18-V01 factory per-client domain discovery — 2026-10-23 (`df87b7b2`)
+
+The prior factory state held one current NameServer string and broadcast each
+domain response to every client. Pinned Java `createAndStart` calls each
+client's `fetchNameServerAddr`, which updates only that client's address, and
+schedules refresh on that API instance. Rust now tracks the current address by
+pool index; startup and periodic discoveries update only the matching slot,
+while the factory's explicit address-change method still propagates the given
+address to all slots.
+
+The invoked Java fixture serves two different responses from a local HTTP
+endpoint and records the resulting address list for each client. Rust's
+`factory_domain_discovery_keeps_each_clients_address_independent` consumes
+that fixture and checks both slots. Core all-feature library tests (238),
+strict all-target/all-feature Core Clippy, formatting, diff checks, and full
+offline Maven `verify` passed; the Maven run verified the expanded factory
+fixture and all 37 differential scenarios. This closes the per-client domain
+discovery behavior slice only. Broad P18-V01 source/API/input/error/control-
+flow/reverse-export reconciliation remains open, as do native Windows
+execution, current-revision remote Ubuntu CI, and Phase 19 Broker/Docker
+evidence.
 
 The plan's blank-local-serve phrase is now resolved to upstream `00e45b8a6db23efbe756d0306f10716156cfd4dd` (issue10025/PR10663), an ancestor of pinned5.5.1. Its diff and pinned source/test affect only `proxy/.../config/ProxyConfig.initData/localServeAddr` and `ProxyConfigTest.initDataShouldResolveBlankLocalServeAddr`, not the client. The [requirement audit](PHASE_6_REQUIREMENT_AUDIT.md) records exact source branches, ancestor/exact-word checks and read-not-run upstream test evidence. Proxy server implementation is explicitly outside the plan's client-only contract; no new client setting or proxy dependency is invented. Actual client IP initialization is `common/.../utils/NetworkUtil.getLocalAddress` and explicit `ClientConfig.setClientIP`; empty explicit client IP remains the actual Java identity behavior, not a substitute for Proxy config.
 

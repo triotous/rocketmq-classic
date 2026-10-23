@@ -3894,3 +3894,24 @@ race/leak smoke (17 cases × 3); pinned offline Maven `verify` (37 scenarios,
 and workspace metadata all passed. This closes the command-version parity
 slice only. Broad P18-V01 reconciliation, current-revision remote Ubuntu and
 native Windows evidence, and Phase 19 Broker/Docker evidence remain open.
+
+## P18-V01 `MQClientAPIFactory` per-client domain discovery — 2026-10-23 (`df87b7b2`)
+
+Pinned Java `MQClientAPIFactory.createAndStart` invokes `fetchNameServerAddr`
+on each newly constructed API client and schedules refresh against that same
+instance. `MQClientAPIImpl.nameSrvAddr` is instance state. Rust previously
+kept one factory-wide current address, so a later domain response overwrote
+the NameServer list on all earlier clients. Core now tracks one address per
+pool slot and applies startup/refresh discovery results only to that client;
+the explicit factory address-change API still updates every slot.
+
+The invoked `RuntimeApiFactoryFixtures` case serves distinct responses from a
+local HTTP endpoint and records the resulting address list for both clients.
+The Rust `factory_domain_discovery_keeps_each_clients_address_independent`
+test consumes the same fixture. Core all-feature library tests (238), strict
+all-target/all-feature Core Clippy, formatting and diff checks, and pinned
+offline Maven `verify` (37 scenarios) pass. This closes the per-client domain
+discovery behavior slice only; broad P18-V01 source/API/settings/input/error/
+control-flow and reverse-export reconciliation remains PARTIAL. Native
+Windows runtime, current-revision remote Ubuntu CI, and Phase 19 Broker/Docker
+evidence remain open.
