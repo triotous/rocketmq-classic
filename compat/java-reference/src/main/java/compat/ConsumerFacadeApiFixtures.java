@@ -460,6 +460,18 @@ public final class ConsumerFacadeApiFixtures {
             processQueueMessage(45L, new byte[] {5})));
         result.put("duplicateOffsetMaxNextOffset", duplicateOffsetMaxNextOffset);
 
+        ProcessQueue clearLifecycleQueue = new ProcessQueue();
+        clearLifecycleQueue.putMessage(Arrays.asList(processQueueMessage(140L, new byte[] {14})));
+        clearLifecycleQueue.clear();
+        boolean clearLifecycleDispatch = clearLifecycleQueue.putMessage(
+            Arrays.asList(processQueueMessage(141L, new byte[] {14, 1})));
+        Map<String, Object> clearLifecycle = new TreeMap<>();
+        clearLifecycle.put("nextDispatch", clearLifecycleDispatch);
+        clearLifecycle.put("count", clearLifecycleQueue.getMsgCount().get());
+        clearLifecycle.put("size", clearLifecycleQueue.getMsgSize().get());
+        clearLifecycle.put("treeKeys", new ArrayList<>(clearLifecycleQueue.getMsgTreeMap().keySet()));
+        result.put("clearLifecycle", clearLifecycle);
+
         ProcessQueue mapQueue = new ProcessQueue();
         MessageExt original = processQueueMessage(20L, new byte[] {4});
         MessageExt direct = processQueueMessage(21L, new byte[] {5, 6});

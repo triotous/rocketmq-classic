@@ -1056,6 +1056,31 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         std::sync::Arc::new(duplicate_offset_first),
         std::sync::Arc::new(duplicate_offset_last),
     ]);
+    let mut clear_lifecycle_message = MessageExt::new();
+    clear_lifecycle_message.set_queue_offset(140);
+    clear_lifecycle_message.set_body(vec![14]);
+    let mut after_clear_lifecycle_message = MessageExt::new();
+    after_clear_lifecycle_message.set_queue_offset(141);
+    after_clear_lifecycle_message.set_body(vec![14, 1]);
+    let clear_lifecycle_queue = ProcessQueue::new();
+    clear_lifecycle_queue
+        .put_message(&[clear_lifecycle_message])
+        .expect("valid message before clear");
+    clear_lifecycle_queue.clear();
+    let clear_lifecycle_dispatch = clear_lifecycle_queue
+        .put_message(&[after_clear_lifecycle_message])
+        .expect("valid message after clear");
+    let clear_lifecycle_result = serde_json::json!({
+        "nextDispatch": clear_lifecycle_dispatch,
+        "count": clear_lifecycle_queue.get_msg_count().get(),
+        "size": clear_lifecycle_queue.get_msg_size().get(),
+        "treeKeys": clear_lifecycle_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+    });
     let info_result = serde_json::json!({
         "cachedMsgCount": info.get_cached_msg_count(),
         "cachedMsgSizeInMiB": info.get_cached_msg_size_in_mib(),
@@ -1116,6 +1141,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "duplicateRollback": duplicate_rollback_result,
         "duplicateRemoval": duplicate_removal_result,
         "duplicateOffsetMaxNextOffset": duplicate_offset_max_next_offset,
+        "clearLifecycle": clear_lifecycle_result,
     });
     assert_eq!(&actual, expected);
     queue.clear();

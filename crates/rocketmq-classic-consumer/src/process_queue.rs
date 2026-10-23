@@ -1463,7 +1463,6 @@ impl ProcessQueue {
         state.cached_bytes = 0;
         state.highest_seen_offset = None;
         state.queue_offset_max = 0;
-        state.consuming = false;
     }
 
     pub(crate) fn release_consume_dispatch(
