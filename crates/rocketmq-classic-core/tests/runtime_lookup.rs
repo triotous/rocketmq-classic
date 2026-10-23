@@ -659,8 +659,13 @@ async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic
         2
     );
     assert_eq!(
-        assignment.attachments().unwrap().snapshot()["key"],
-        Some("value".into())
+        assignment
+            .attachments()
+            .unwrap()
+            .snapshot()
+            .get(&Some("key".into()))
+            .cloned(),
+        Some(Some("value".into()))
     );
     runtime.remoting().shutdown().await;
     peer.await.unwrap();

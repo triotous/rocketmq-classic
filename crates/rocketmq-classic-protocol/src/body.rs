@@ -22,6 +22,7 @@ use serde::{
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     hash::{Hash, Hasher},
+    ops::{Deref, DerefMut},
     sync::atomic::{AtomicI32, Ordering},
 };
 
@@ -490,7 +491,80 @@ fn default_assignment_mode() -> Option<MessageRequestMode> {
 pub type SharedQueryAssignment = SharedValue<MessageQueueAssignment>;
 pub type QueryAssignmentSet = std::collections::HashSet<Option<SharedQueryAssignment>>;
 pub type SharedQueryAssignmentSet = SharedValue<QueryAssignmentSet>;
-pub type AssignmentAttachments = std::collections::BTreeMap<String, Option<String>>;
+/// Map used by Java `MessageQueueAssignment.attachments`.
+///
+/// `None` keys represent Java's nullable `String` keys. Java Fastjson writes
+/// those keys as the JSON property name `"null"` and omits null-valued entries.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct AssignmentAttachments(BTreeMap<Option<String>, Option<String>>);
+
+impl Deref for AssignmentAttachments {
+    type Target = BTreeMap<Option<String>, Option<String>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for AssignmentAttachments {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<BTreeMap<Option<String>, Option<String>>> for AssignmentAttachments {
+    fn from(entries: BTreeMap<Option<String>, Option<String>>) -> Self {
+        Self(entries)
+    }
+}
+
+impl Serialize for AssignmentAttachments {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(self.len()))?;
+        for (key, value) in &self.0 {
+            map.serialize_entry(key.as_deref().unwrap_or("null"), value)?;
+        }
+        map.end()
+    }
+}
+
+struct NonNullAssignmentAttachments<'a>(&'a AssignmentAttachments);
+
+impl Serialize for NonNullAssignmentAttachments<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let non_null_count = self.0.values().filter(|value| value.is_some()).count();
+        let mut map = serializer.serialize_map(Some(non_null_count))?;
+        for (key, value) in &self.0.0 {
+            if let Some(value) = value {
+                map.serialize_entry(key.as_deref().unwrap_or("null"), value)?;
+            }
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for AssignmentAttachments {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        BTreeMap::<String, Option<String>>::deserialize(deserializer).map(|entries| {
+            Self(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (Some(key), value))
+                    .collect(),
+            )
+        })
+    }
+}
+
 pub type SharedAssignmentAttachments = SharedValue<AssignmentAttachments>;
 pub type SharedAssignmentMessageQueue = SharedValue<MessageQueue>;
 pub type MessageQueueSet = std::collections::HashSet<Option<SharedAssignmentMessageQueue>>;
@@ -607,37 +681,19 @@ fn serialize_assignment_attachments<S>(
 where
     S: Serializer,
 {
-    use serde::ser::SerializeMap;
-
     let Some(attachments) = attachments else {
         return serializer.serialize_none();
     };
     if crate::shared::shared_value_reference_markers_enabled() {
-        let mapped = attachments.with(|entries| {
-            entries
-                .iter()
-                .filter_map(|(key, value)| {
-                    value
-                        .as_ref()
-                        .map(|value| (key.clone(), serde_json::Value::String(value.clone())))
-                })
-                .collect()
+        return attachments.with(|entries| {
+            crate::shared::serialize_shared_value_identity(
+                attachments.reference_identity(),
+                &NonNullAssignmentAttachments(entries),
+                serializer,
+            )
         });
-        return crate::shared::serialize_shared_value_identity(
-            attachments.reference_identity(),
-            &serde_json::Value::Object(mapped),
-            serializer,
-        );
     }
-    let attachments = attachments.snapshot();
-    let non_null_count = attachments.values().filter(|value| value.is_some()).count();
-    let mut map = serializer.serialize_map(Some(non_null_count))?;
-    for (key, value) in &attachments {
-        if let Some(value) = value {
-            map.serialize_entry(key, value)?;
-        }
-    }
-    map.end()
+    NonNullAssignmentAttachments(&attachments.snapshot()).serialize(serializer)
 }
 
 struct FastjsonI32(i32);
@@ -1583,7 +1639,7 @@ pub struct MessageQueueAssignment {
     /// Java retains null values on decode and omits them during default JSON encoding.
     #[serde(
         default,
-        deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_map",
+        deserialize_with = "deserialize_optional_assignment_attachments",
         serialize_with = "serialize_assignment_attachments",
         skip_serializing_if = "Option::is_none"
     )]
@@ -1601,9 +1657,19 @@ struct MessageQueueAssignmentFields {
     mode: Option<MessageRequestMode>,
     #[serde(
         default,
-        deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_map"
+        deserialize_with = "deserialize_optional_assignment_attachments"
     )]
     attachments: Option<AssignmentAttachments>,
+}
+
+fn deserialize_optional_assignment_attachments<'de, D>(
+    deserializer: D,
+) -> Result<Option<AssignmentAttachments>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    serde_fastjson::deserialize_optional_nullable_key_string_map(deserializer)
+        .map(|attachments| attachments.map(AssignmentAttachments::from))
 }
 
 impl<'de> Deserialize<'de> for MessageQueueAssignment {
@@ -16984,9 +17050,9 @@ mod tests {
             "orders", "broker-a", 1,
         ))));
         assignment.set_mode(Some(MessageRequestMode::Pop));
-        assignment.set_attachments(Some(SharedValue::new(std::collections::BTreeMap::from([
-            ("zone".into(), Some("z1".into())),
-        ]))));
+        assignment.set_attachments(Some(SharedValue::new(AssignmentAttachments::from(
+            std::collections::BTreeMap::from([(Some("zone".into()), Some("z1".into()))]),
+        ))));
         let value = serde_json::to_value(assignment).unwrap();
         assert_eq!(value["mode"], "POP");
         assert_eq!(value["messageQueue"]["brokerName"], "broker-a");
@@ -18649,9 +18715,9 @@ mod tests {
             assignment.set_mode(
                 serde_json::from_value::<Option<MessageRequestMode>>(case["mode"].clone()).unwrap(),
             );
-            let attachment_alias = serde_json::from_value::<
-                Option<std::collections::BTreeMap<String, Option<String>>>,
-            >(case["attachments"].clone())
+            let attachment_alias = serde_json::from_value::<Option<AssignmentAttachments>>(
+                case["attachments"].clone(),
+            )
             .unwrap()
             .map(SharedValue::new);
             let caller_attachment_alias = attachment_alias.clone();
@@ -18666,10 +18732,12 @@ mod tests {
             );
             assert_eq!(assignment.mode(), assignment.mode(), "{}", case["name"]);
             assert_eq!(
-                assignment.attachments().map(|attachments| attachments.snapshot()),
-                serde_json::from_value::<Option<
-                    std::collections::BTreeMap<String, Option<String>>,
-                >>(case["attachments"].clone())
+                assignment
+                    .attachments()
+                    .map(|attachments| attachments.snapshot()),
+                serde_json::from_value::<Option<AssignmentAttachments>>(
+                    case["attachments"].clone(),
+                )
                 .unwrap(),
                 "{}",
                 case["name"]
@@ -18713,14 +18781,15 @@ mod tests {
                     assert!(caller_attachments.ptr_eq(&getter_attachments));
                     assert_eq!(case["attachmentsSetterMutationVisibleToGetter"], true);
                     caller_attachments.with_mut(|attachments| {
-                        attachments.insert("caller".into(), Some("visible".into()));
+                        attachments.insert(Some("caller".into()), Some("visible".into()));
                     });
                     assert_eq!(
-                        getter_attachments.with(|attachments| attachments.get("caller").cloned()),
+                        getter_attachments
+                            .with(|attachments| attachments.get(&Some("caller".into())).cloned()),
                         Some(Some("visible".into()))
                     );
                     getter_attachments.with_mut(|attachments| {
-                        attachments.insert("getter".into(), Some("visible".into()));
+                        attachments.insert(Some("getter".into()), Some("visible".into()));
                     });
                     assert_eq!(case["attachmentsGetterMutationVisibleToSetterMap"], true);
                     assert_eq!(
@@ -18747,6 +18816,64 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn assignment_attachments_preserve_java_null_key_and_fastjson_shape() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let oracle = &fixture["assignmentNullAttachmentApiCase"];
+        assert_eq!(oracle["setterAcceptedNullKey"], true);
+        assert_eq!(oracle["getterReturnsSetterMap"], true);
+        assert_eq!(oracle["setterMutationVisibleToGetter"], true);
+        assert_eq!(oracle["getterMutationVisibleToSetter"], true);
+
+        let mut attachments = AssignmentAttachments::default();
+        attachments.insert(None, Some("null-key".into()));
+        attachments.insert(Some("ordinary".into()), Some("value".into()));
+        attachments.insert(Some("null".into()), Some("literal-null-key".into()));
+        let caller_map = SharedValue::new(attachments);
+        let mut assignment = MessageQueueAssignment::default();
+        assignment.set_attachments(Some(caller_map.clone()));
+
+        let getter_map = assignment.attachments().unwrap();
+        assert!(caller_map.ptr_eq(&getter_map));
+        caller_map.with_mut(|attachments| {
+            attachments.insert(Some("caller".into()), Some("visible".into()));
+        });
+        getter_map.with_mut(|attachments| {
+            attachments.insert(Some("getter".into()), Some("visible".into()));
+        });
+        assert_eq!(
+            getter_map.with(|attachments| attachments.get(&None).cloned()),
+            Some(Some("null-key".into()))
+        );
+        assert_eq!(
+            serde_json::to_value(getter_map.snapshot()).unwrap(),
+            serde_json::from_str::<serde_json::Value>(
+                oracle["serializedAttachments"].as_str().unwrap()
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(assignment).unwrap(),
+            serde_json::from_str::<serde_json::Value>(
+                oracle["serializedAssignment"].as_str().unwrap()
+            )
+            .unwrap()
+        );
+
+        let decoded: MessageQueueAssignment =
+            serde_json::from_str(r#"{"attachments":{"null":"string-key"}}"#).unwrap();
+        let decoded_attachments = decoded.attachments().unwrap();
+        assert_eq!(
+            decoded_attachments.with(|attachments| attachments.get(&Some("null".into())).cloned()),
+            Some(Some("string-key".into()))
+        );
+        assert_eq!(
+            decoded_attachments.with(|attachments| attachments.get(&None).cloned()),
+            None
+        );
     }
 
     #[test]

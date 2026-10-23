@@ -123,6 +123,7 @@ public final class RuntimeLookupFixtures {
         fixture.put("messageQueueInputCases", messageQueueInputCases());
         fixture.put("assignmentHashCollisionCases", assignmentHashCollisionCases());
         fixture.put("assignmentMethodCases", assignmentMethodCases());
+        fixture.put("assignmentNullAttachmentApiCase", assignmentNullAttachmentApiCase());
         fixture.put("messageRequestModeMethodCases", messageRequestModeMethodCases());
         fixture.put("consumerListCases", consumerListCases());
         fixture.put("consumerListRootCases", consumerListRootCases());
@@ -2622,6 +2623,36 @@ public final class RuntimeLookupFixtures {
         populatedCase.put("mutatedMessageQueue", mutatedQueue);
         cases.add(populatedCase);
         return cases;
+    }
+
+    private static Map<String, Object> assignmentNullAttachmentApiCase() {
+        org.apache.rocketmq.common.message.MessageQueueAssignment assignment =
+            new org.apache.rocketmq.common.message.MessageQueueAssignment();
+        Map<String, String> setterMap = new java.util.LinkedHashMap<>();
+        setterMap.put(null, "null-key");
+        setterMap.put("ordinary", "value");
+        setterMap.put("null", "literal-null-key");
+        assignment.setAttachments(setterMap);
+        Map<String, String> getterMap = assignment.getAttachments();
+        setterMap.put("caller", "visible");
+        getterMap.put("getter", "visible");
+
+        List<Object> entries = new ArrayList<>();
+        for (Map.Entry<String, String> entry : getterMap.entrySet()) {
+            Map<String, Object> row = new TreeMap<>();
+            row.put("key", entry.getKey());
+            row.put("value", entry.getValue());
+            entries.add(row);
+        }
+        Map<String, Object> result = new TreeMap<>();
+        result.put("setterAcceptedNullKey", true);
+        result.put("getterReturnsSetterMap", getterMap == setterMap);
+        result.put("setterMutationVisibleToGetter", "visible".equals(getterMap.get("caller")));
+        result.put("getterMutationVisibleToSetter", "visible".equals(setterMap.get("getter")));
+        result.put("entries", entries);
+        result.put("serializedAttachments", com.alibaba.fastjson2.JSON.toJSONString(getterMap));
+        result.put("serializedAssignment", com.alibaba.fastjson2.JSON.toJSONString(assignment));
+        return result;
     }
 
     private static List<Object> messageRequestModeMethodCases() {

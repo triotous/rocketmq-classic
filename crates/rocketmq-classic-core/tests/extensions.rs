@@ -658,8 +658,13 @@ async fn populated_assignment_and_pop_replies_preserve_domain_data() {
         (Some("orders"), Some("broker"), 2)
     );
     assert_eq!(
-        assignment.attachments().unwrap().snapshot()["key"],
-        Some("value".into())
+        assignment
+            .attachments()
+            .unwrap()
+            .snapshot()
+            .get(&Some("key".into()))
+            .cloned(),
+        Some(Some("value".into()))
     );
     task.await.unwrap();
     client.shutdown().await;

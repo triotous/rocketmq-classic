@@ -13,7 +13,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de, de::Deserializ
 use serde_json::Value;
 
 pub type NullableStringListTable = BTreeMap<String, Option<Vec<Option<String>>>>;
-pub type NullableStringMap = BTreeMap<String, Option<String>>;
+pub type NullableKeyStringMap = BTreeMap<Option<String>, Option<String>>;
 pub type NullableLongStringMap = BTreeMap<Option<i64>, Option<String>>;
 
 enum FastjsonStringValue {
@@ -1162,9 +1162,9 @@ where
     ))
 }
 
-pub fn deserialize_optional_nullable_string_map<'de, D>(
+pub fn deserialize_optional_nullable_key_string_map<'de, D>(
     deserializer: D,
-) -> Result<Option<NullableStringMap>, D::Error>
+) -> Result<Option<NullableKeyStringMap>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -1178,9 +1178,10 @@ where
     entries
         .into_iter()
         .map(|(key, value)| {
-            fastjson_nullable_string_from_raw::<D::Error>(value.get()).map(|value| (key, value))
+            fastjson_nullable_string_from_raw::<D::Error>(value.get())
+                .map(|value| (Some(key), value))
         })
-        .collect::<Result<NullableStringMap, _>>()
+        .collect::<Result<NullableKeyStringMap, _>>()
         .map(Some)
 }
 
