@@ -3813,3 +3813,20 @@ This closes the service-handle owner-retention slice only. Broad P18-V01 Java
 source/API/settings/input/error/control-flow and Rust reverse-export
 reconciliation remains PARTIAL; remote Ubuntu CI and native Windows runtime
 execution remain open. Phase 19 Broker/Docker validation is not claimed.
+
+## P18-V01 Rustdoc workspace reverse-name continuation — 2026-10-23
+
+The nightly workspace Rustdoc JSON scan found 22 public item names absent from
+the exact-name compatibility crosswalk. Each was checked against Java source
+at pinned commit `efa1be59d6fc747ad220f036c86030f05f0419f9`: 17 Protocol
+collection aliases map Java DTO fields; `GetKvConfigResponseHeader` maps Java
+`GetKVConfigResponseHeader`; two Core task result/error types map the
+`ScheduledExecutorService` / `Future` behavior already exposed by the client
+and pull schedulers; and two Common types map the Java topic-property map and
+`TopicMessageType` exception paths. The crosswalk is recorded in
+[`PHASE_6_API_CONFIG_MAP.md`](PHASE_6_API_CONFIG_MAP.md). No new wire
+operation, persistent setting, or client capability was found in these names.
+
+This closes the reverse-name disposition for this scanned set only. Broad
+P18-V01 Java source/API/settings/input/error/control-flow and Rust
+reverse-export reconciliation remains PARTIAL.

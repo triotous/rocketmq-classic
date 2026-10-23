@@ -2482,6 +2482,36 @@ source/default/input/error/control-flow reconciliation remains open.
 | `TopicRouteDataChangedError`, `TopicRouteDataCloneError`, `SharedBrokerAddressMap`, `SharedTopicQueueMappingIds`, `SharedQueueDataHandle`, `SharedBrokerDataHandle`, `SharedTopicQueueMappingInfoHandle`, `SharedRouteQueueDataList`, `SharedRouteBrokerDataList`, `SharedFilterServerList`, `SharedFilterServerTable`, `SharedTopicQueueMappingTable` | Java `TopicRouteData`/`BrokerData` collection and copy/equality semantics. The Rust handles retain mutable object identity across shared fields; typed errors report Java comparison/clone failure outcomes. |
 | `GroupRetryPolicy`, `GroupRetryPolicyType`, `ExponentialRetryPolicy`, `CustomizedRetryPolicy`, `ResolvedRetryPolicy`, `RetryPolicy`, `SubscriptionGroupConfig` | Java `SubscriptionGroupConfig`, its retry-policy values, enums, and serialized policy fields. Rust's trait selects the Java policy implementation represented by the DTO and does not expose an additional consumer policy mode. |
 
+## P18-V01 Rustdoc workspace reverse-name continuation — 2026-10-23
+
+The workspace Rustdoc JSON reverse scan found 22 exported names that were not
+spelled out in the compatibility crosswalk. Source review at pinned Java
+commit `efa1be59d6fc747ad220f036c86030f05f0419f9` maps them to existing Java
+collection fields, task outcomes, typed exception paths, or a Java spelling
+adapter. The collection aliases describe Java `Map`, `List`, and `Set` values
+and preserve getter/setter alias behavior already covered by the DTO
+fixtures; they add no wire field, operation, or setting.
+
+| Rust export | Pinned Java counterpart / disposition |
+| --- | --- |
+| `TopicMessagePropertyMap`, `TopicMessageTypeError` | Java `TopicConfig.attributes` and `TopicMessageType.parseFromMessageProperty` / enum lookup. The alias represents the Java `Map<String, String>` input with nullable Rust values; the typed error carries the Java null and unknown-name exception branches. `topic_config_public_api.rs` and the pinned topic-model fixtures cover this surface. |
+| `RuntimeScheduledTaskOutcome<T>`, `RuntimeScheduledTaskWaitError` | Java `ScheduledExecutorService` and `Future` results exposed through `MQClientInstance.getScheduledExecutorService()` and `PullMessageService.getScheduledExecutorService()`. These Rust types carry the already-mapped per-task completion, cancellation, timeout, and callback-failure outcomes. The paused-time scheduler regressions cover those branches. |
+| `ProducerInfoTable`, `SharedProducerInfoTable` | Java `ProducerTableInfo.data`, including nullable map values and rows. The shared alias preserves the Java mutable map reference returned by its getter. |
+| `TopicStatsOffsetTable`, `SharedTopicStatsOffsetTable` | Java `TopicStatsTable.offsetTable`, including `MessageQueue` keys and mutable `TopicOffset` values. |
+| `ConsumeStatsOffsetTable`, `SharedConsumeStatsOffsetTable` | Java `ConsumeStats.offsetTable`, including mutable `MessageQueue` keys, nullable entries, and `OffsetWrapper` values. |
+| `SharedClusterBrokerAddrTable`, `SharedClusterAddrTable`, `SharedClusterBrokerNames` | Java `ClusterInfo.brokerAddrTable` and `clusterAddrTable`, including each nested broker-name Set. Shared handles preserve the Java collection-reference aliases. |
+| `QueryAssignmentSet`, `SharedQueryAssignmentSet` | Java `QueryAssignmentResponseBody.messageQueueAssignments`, a mutable `Set<MessageQueueAssignment>` retained through its getter/setter. |
+| `SharedMessageRequestModeGroup` | The nested group map in Java `MessageRequestModeSerializeWrapper.messageRequestModeMap`; the alias represents its mutable inner map. |
+| `HostedQueueMappingItems`, `SharedHostedQueues` | Java `TopicQueueMappingDetail.hostedQueues` and each mutable `List<LogicQueueMappingItem>`. |
+| `BrokerLiteTopicMeta` | Java `GetBrokerLiteInfoResponseBody.topicMeta`, the nullable topic-to-count map. |
+| `ParentTopicInfoGroups` | Java `GetParentTopicInfoResponseBody.groups`, the nullable mutable Set. |
+| `LiteLagInfoList` | Java `GetLiteGroupInfoResponseBody.lagCountTopK` and `lagTimestampTopK`, including nullable list members and their shared `LiteLagInfo` values. |
+| `GetKvConfigResponseHeader` | Java `GetKVConfigResponseHeader`; the Rust `Kv` capitalization is a spelling adapter for the same NameServer response header. |
+
+This closes the reverse-name disposition for these 22 items only. The full
+P18-V01 Java source/API/settings/input/error/control-flow and Rust
+reverse-export reconciliation remains open.
+
 The header crosswalk is a reflection-backed method-name join, not proof of all
 input/error branches. The DTO/body, route, heartbeat, enum, configuration,
 and subscription entries still require the full source/default/validation/
