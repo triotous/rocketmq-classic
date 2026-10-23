@@ -86,3 +86,28 @@ Code revision under validation: `4c337b1e`; documentation revision: `dbbf0663`; 
 - `cargo fmt --all -- --check`; `git diff --check`
 
 The benchmark current-tree sample is appended to `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md` with environment, input sizes, iterations, timings, and allocator counts. Current remote Ubuntu CI, native Windows execution, and Phase 19 Broker/Docker validation remain pending. Broad P18-V01 bidirectional source/API/settings/input/error/control-flow/reverse-export reconciliation also remains open; V02 evidence does not close the phase. No push, remote CI, Broker, or Docker action was performed. The four Phase 19 user-owned paths remain untouched and unstaged.
+
+## ExecutorService bulk invocation mapping — 2026-10-23T04:42:34Z
+
+Pinned Java `efa1be59d6fc747ad220f036c86030f05f0419f9` returns
+`ScheduledExecutorService` from both runtime scheduler getters, inheriting
+`ExecutorService.invokeAll` and `invokeAny`. Code revisions `6a960144` and
+`e5bbe8df` add Rust async `RuntimeScheduler::invoke_all` and `invoke_any` for
+both the client and pull owners. `invoke_all` returns each callback value or
+oneshot receive error in submission order. `invoke_any` continues after
+panics, returns the first normal task value, and prevents later queued
+callbacks from beginning after that value is produced. Empty input and input
+where no callback returns a value use explicit `RuntimeError` variants;
+dropping the bulk-call future cancels accepted tasks. A Tokio timeout supplies
+the Rust caller deadline; Java's timed `invokeAll` partial-future-list result
+is not represented as such.
+
+Current Core validation passed on `e5bbe8df`: `cargo test --offline -p
+rocketmq-classic-core --lib --locked` (230 tests), all 23
+`runtime::tasks::tests`, strict all-target/all-feature Core Clippy,
+`cargo fmt --all -- --check`, and `git diff --check`. Broad P18-V01
+bidirectional source/API/settings/input/error/control-flow/reverse-export
+reconciliation remains open, as do current-revision remote Ubuntu CI, native
+Windows runtime execution, and Phase 19 Broker/Docker validation. No external
+CI, push, Broker, or Docker action was performed; the four protected Phase 19
+worktree paths remain unchanged and unstaged.

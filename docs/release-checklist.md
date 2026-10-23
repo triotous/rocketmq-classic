@@ -8146,6 +8146,29 @@ owner-specific checks belong in the manual handoff.
   untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
 
+## P18-V01 inherited scheduler bulk calls — 2026-10-23 (`6a960144`, refined in `e5bbe8df`)
+
+- [x] Both `RuntimeScheduler` owners now provide `invoke_all` and
+  `invoke_any`, mapping the inherited Java `ExecutorService` bulk operations.
+  `invoke_all` yields per-task results/errors in submission order. `invoke_any`
+  continues after a panicking task, returns the first callback value, and
+  suppresses queued callbacks after that value is produced. Empty task sets
+  and sets where no callback returns a value produce explicit `RuntimeError`
+  variants. An `Err` value inside `Result` is still a normally returned task
+  value. Dropping a bulk-call future cancels accepted tasks; callers can use
+  Tokio timeout for a chosen deadline.
+- [x] All 230 Core library tests and all 23 scheduler tests passed, including
+  pull-owner bulk calls and cancellation of active and queued work. Strict
+  all-target/all-feature Core Clippy, formatting, and `git diff --check`
+  passed on the committed code.
+- [ ] This closes the inherited executor bulk-call slice only. Broad P18-V01
+  bidirectional source/API/settings/input/error/control-flow reconciliation,
+  current-revision remote Ubuntu CI, native Windows runtime, and Phase 19
+  Broker/Docker validation remain open. No external CI, push, Broker, or Docker
+  action was performed; protected Phase 19 worktree files remain untouched.
+  Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
 ## P18-V02 current-tree server-free refresh — 2026-10-23 (`4c337b1e`)
 
 - [x] Default and all-feature locked workspace tests passed; strict
