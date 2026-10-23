@@ -4166,3 +4166,13 @@ name; the Core regression checks both a supplied creator and the default
 creator fallback. Full current-revision local gates pass as recorded in the
 Phase 18 execution log. This closes this nullable constructor overload only;
 broad P18-V01 reconciliation remains PARTIAL.
+
+## P18-V01 `MQClientAPIFactory` negative client count — 2026-10-23
+
+Java stores a negative `clientNum` during construction and fails later in
+`start()` when allocating `MQClientAPIExt[]`, with
+`NegativeArraySizeException`; assignment does not occur, so `getClients()` is
+still null. Rust already returns `NegativeClientCount` before publishing its
+shared array. The invoked Java fixture and Core test now compare that failure
+boundary and retained null state. This closes the negative-count start branch
+only; broad P18-V01 reconciliation remains PARTIAL.

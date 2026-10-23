@@ -34,6 +34,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   strict Clippy, offline Maven verification, and the remaining local P18-V02
   gates pass on this revision. The Rustdoc name scan reports Core 747; broad
   P18-V01 remains open.
+- P18-V01 negative `MQClientAPIFactory` client count (`42fa4f87`, 2026-10-23):
+  the invoked fixture and Core test confirm Java's deferred
+  `NegativeArraySizeException` from `start()` and a still-null client array.
+  Both workspace suites, strict Clippy, Maven verification, differential,
+  stress/fuzz, packaging, examples, benchmark, Windows cross-check, Rustdoc,
+  formatting, and diff checks pass on this revision. This closes the negative
+  count branch only; broad P18-V01 remains open.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. Remoting after-response
   hooks now mutate request/response commands on outbound and inbound paths;

@@ -2589,6 +2589,13 @@ and Rust regression cover the seven-argument creator path with a null prefix,
 as well as the null creator default path. This closes the named nullable
 factory constructor inputs only; broad P18-V01 remains open.
 
+The factory fixture also covers a negative `clientNum`: Java accepts it in
+the constructor, then `start()` throws `NegativeArraySizeException` before
+assigning the client array. Rust returns `NegativeClientCount` from the same
+pre-publication point, so `get_clients()` remains null. The invoked fixture
+and Core regression compare the error class and retained state; this closes
+only that negative-count start branch.
+
 The header crosswalk is a reflection-backed method-name join, not proof of all
 input/error branches. The DTO/body, route, heartbeat, enum, configuration,
 and subscription entries still require the full source/default/validation/
