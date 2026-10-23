@@ -2,8 +2,10 @@ use super::RuntimeError;
 use super::request_future::{
     RequestFutureError, RequestResponseFuture, RequestSendFailureCause, RequestTimeoutCause,
 };
+use indexmap::IndexMap;
 use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_common::message::{Message, MessageExt};
+use rocketmq_classic_protocol::SharedValue;
 use rocketmq_classic_protocol::heartbeat::ConsumerData;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -56,6 +58,11 @@ pub type ConsumerOperationFuture<'a, T> =
 /// Live nullable Java `Map<MessageQueue, Long>` input to runtime offset reset.
 pub type ConsumerOffsetTable =
     rocketmq_classic_protocol::SharedValue<BTreeMap<Option<MessageQueue>, Option<i64>>>;
+
+/// Live Java `Map<MessageQueue, Long>` input to broker namespace conversion.
+/// Shared queue keys preserve the caller-visible mutation performed by Java;
+/// insertion order represents the input map's entry iteration order.
+pub type BrokerOffsetTable = SharedValue<IndexMap<Option<SharedValue<MessageQueue>>, Option<i64>>>;
 
 /// MQConsumerInner capabilities. Optional operation futures distinguish a
 /// consumer type without that Java capability from an operation failure.

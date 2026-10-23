@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     sync::{Arc, Mutex, RwLockReadGuard},
 };
 
@@ -464,43 +464,49 @@ impl ClientRuntime {
 
     /// Converts broker offset-table queue keys using the explicit namespace.
     ///
-    /// The optional table, keys, and offsets represent Java's nullable map,
-    /// `MessageQueue` keys, and `Long` values. Rust consumes the table, so the
-    /// caller cannot observe Java's in-place mutation of queue keys.
+    /// The optional shared table, queue handles, and offsets represent Java's
+    /// nullable map, mutable `MessageQueue` keys, and `Long` values. Queue
+    /// mutations are visible through the input table and any retained handles.
+    #[allow(clippy::mutable_key_type)] // Java returns mutable MessageQueue objects as HashMap keys.
     pub fn parse_offset_table_from_broker(
         &self,
-        offset_table: Option<
-            BTreeMap<Option<rocketmq_classic_common::message::MessageQueue>, Option<i64>>,
-        >,
+        offset_table: Option<&super::BrokerOffsetTable>,
         namespace: Option<&str>,
     ) -> Result<
-        BTreeMap<Option<rocketmq_classic_common::message::MessageQueue>, Option<i64>>,
+        HashMap<
+            Option<
+                rocketmq_classic_protocol::SharedValue<
+                    rocketmq_classic_common::message::MessageQueue,
+                >,
+            >,
+            Option<i64>,
+        >,
         RuntimeError,
     > {
         let offset_table =
             offset_table.ok_or(RuntimeError::InvalidOffsetTable("null offset table"))?;
-        let Some(namespace) = namespace.filter(|value| !value.is_empty()) else {
-            return Ok(offset_table);
-        };
-        offset_table
-            .into_iter()
-            .map(|(queue, offset)| {
-                let queue = queue.ok_or(RuntimeError::InvalidOffsetTable(
-                    "null queue key with namespace",
-                ))?;
-                let topic = crate::config::namespace::unwrap(Some(namespace), queue.topic());
-                Ok((
-                    Some(
-                        rocketmq_classic_common::message::MessageQueue::new_nullable(
-                            topic,
-                            queue.broker_name().map(str::to_owned),
-                            queue.queue_id(),
-                        ),
-                    ),
-                    offset,
-                ))
-            })
-            .collect()
+        let mut converted = HashMap::new();
+        if let Some(namespace) = namespace.filter(|value| !value.is_empty()) {
+            offset_table.with(|table| -> Result<(), RuntimeError> {
+                for (queue, offset) in table {
+                    let queue = queue.as_ref().ok_or(RuntimeError::InvalidOffsetTable(
+                        "null queue key with namespace",
+                    ))?;
+                    queue.with_mut(|queue| {
+                        let topic =
+                            crate::config::namespace::unwrap(Some(namespace), queue.topic());
+                        queue.set_topic(topic);
+                    });
+                    converted.insert(Some(queue.clone()), *offset);
+                }
+                Ok(())
+            })?;
+        } else {
+            offset_table.with(|table| {
+                converted.extend(table.iter().map(|(queue, offset)| (queue.clone(), *offset)));
+            });
+        }
+        Ok(converted)
     }
 
     pub fn execute_pull_request_immediately(

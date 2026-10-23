@@ -30,9 +30,9 @@ pub use manager::{
 };
 pub use pull::MessageRequest;
 pub use registry::{
-    ConsumerOffsetTable, ConsumerOperation, ConsumerOperationFuture, ConsumerRuntime, GroupLease,
-    PendingReplyCompletion, PendingReplyControl, PendingReplyRequest, ProducerRuntime,
-    RequestFutureTable,
+    BrokerOffsetTable, ConsumerOffsetTable, ConsumerOperation, ConsumerOperationFuture,
+    ConsumerRuntime, GroupLease, PendingReplyCompletion, PendingReplyControl, PendingReplyRequest,
+    ProducerRuntime, RequestFutureTable,
 };
 pub use request_future::{
     RequestFutureError, RequestFutureLatch, RequestResponseCallback, RequestResponseFuture,
