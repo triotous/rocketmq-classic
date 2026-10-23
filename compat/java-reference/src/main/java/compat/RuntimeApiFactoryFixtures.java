@@ -68,6 +68,30 @@ public final class RuntimeApiFactoryFixtures {
             System.setProperty(domainProperty, "before.example");
             System.setProperty(subgroupProperty, "before-subgroup");
 
+            String nullAccessConfigError;
+            try {
+                new MQClientAPIFactory(null, "null-access-", 0, null, null, null);
+                nullAccessConfigError = "NONE";
+            } catch (Throwable error) {
+                nullAccessConfigError = error.getClass().getSimpleName();
+            }
+            fixture.put("nullNameserverAccessConfigError", nullAccessConfigError);
+            fixture.put("vipPropertyAfterNullNameserverAccessConfig", System.getProperty(vipProperty));
+
+            MQClientAPIFactory nullPrefixFactory = new MQClientAPIFactory(
+                new NameserverAccessConfig("127.0.0.1:9876", "", null),
+                null, 1, null, null, null);
+            try {
+                nullPrefixFactory.start();
+                fixture.put("nullNamePrefixInstanceName", instanceName(nullPrefixFactory.getClients()[0]));
+            } finally {
+                nullPrefixFactory.shutdown();
+            }
+
+            System.setProperty(vipProperty, "true");
+            System.setProperty(domainProperty, "before.example");
+            System.setProperty(subgroupProperty, "before-subgroup");
+
             ScheduledExecutorService missingAddressScheduler = Executors.newSingleThreadScheduledExecutor();
             try {
                 String missingAddressError;

@@ -113,6 +113,8 @@ pub enum MQClientApiFactoryError {
     MissingNameServerAddress,
     #[error("Nameserver domain subgroup is null")]
     NullNameServerDomainSubgroup,
+    #[error("java.lang.NullPointerException")]
+    NullNameServerAccessConfig,
     #[error("client count must not be negative: {0}")]
     NegativeClientCount(i32),
     #[error("MQClientAPIFactory has not been started")]
@@ -413,6 +415,40 @@ impl MQClientApiFactory {
             rpc_hook,
             None,
             FactoryRefreshSchedulerChoice::DefaultTokio,
+        )
+    }
+
+    /// Java-constructor adapter for nullable `NameserverAccessConfig`,
+    /// `namePrefix`, and `ScheduledExecutorService` arguments. A null access
+    /// config preserves Java's VIP-property write before returning a typed
+    /// null-pointer error; a null prefix becomes the literal `"null"` used by
+    /// Java string concatenation when client names are built.
+    pub fn new_nullable(
+        nameserver_access: Option<NameserverAccessConfig>,
+        name_prefix: Option<String>,
+        client_num: i32,
+        client_remoting_processor: Option<Arc<dyn RequestProcessor>>,
+        rpc_hook: Option<Arc<dyn RpcHook>>,
+        refresh_scheduler: Option<Arc<dyn FactoryRefreshScheduler>>,
+    ) -> Result<Self, MQClientApiFactoryError> {
+        let Some(nameserver_access) = nameserver_access else {
+            rocketmq_classic_common::utils::system_properties::apply_mq_client_api_factory_properties(
+                None, None, None,
+            );
+            return Err(MQClientApiFactoryError::NullNameServerAccessConfig);
+        };
+        let refresh_scheduler = match refresh_scheduler {
+            Some(scheduler) => FactoryRefreshSchedulerChoice::CallerOwned(scheduler),
+            None => FactoryRefreshSchedulerChoice::JavaNull,
+        };
+        Self::build(
+            nameserver_access,
+            name_prefix.unwrap_or_else(|| "null".to_owned()),
+            client_num,
+            client_remoting_processor,
+            rpc_hook,
+            None,
+            refresh_scheduler,
         )
     }
 
@@ -1582,6 +1618,39 @@ mod tests {
         assert_eq!(java["staticNullSchedulerStartError"], "NONE");
         assert_eq!(static_factory.get_clients().unwrap().len(), 1);
         static_factory.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn factory_matches_java_null_name_prefix_string_concatenation() {
+        let java: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/api-factory.json"
+        ))
+        .unwrap();
+        let factory = MQClientApiFactory::new_nullable(
+            Some(static_access("127.0.0.1:9876")),
+            None,
+            1,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        factory.start().await.unwrap();
+        let clients = factory.get_clients().unwrap().snapshot();
+        let client = clients[0].as_ref().unwrap();
+        let instance_name = client
+            .config
+            .as_ref()
+            .map(|config| {
+                super::super::read_shared_client_config(config)
+                    .instance_name()
+                    .unwrap()
+                    .to_owned()
+            })
+            .unwrap();
+        assert_eq!(instance_name, java["nullNamePrefixInstanceName"]);
+        factory.shutdown().await.unwrap();
     }
 
     #[tokio::test]

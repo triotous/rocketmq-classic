@@ -11,6 +11,21 @@ fn factory_property_writes_are_visible_to_later_client_configs() {
     let java: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/api-factory.json")).unwrap();
 
+    let null_access =
+        MQClientApiFactory::new_nullable(None, Some("unused-".into()), 0, None, None, None);
+    assert!(matches!(
+        null_access,
+        Err(MQClientApiFactoryError::NullNameServerAccessConfig)
+    ));
+    assert_eq!(
+        java["nullNameserverAccessConfigError"],
+        "NullPointerException"
+    );
+    assert_eq!(
+        get_property(ClientConfig::SEND_MESSAGE_WITH_VIP_CHANNEL_PROPERTY).as_deref(),
+        java["vipPropertyAfterNullNameserverAccessConfig"].as_str()
+    );
+
     let missing =
         MQClientApiFactory::new(NameserverAccessConfig::default(), "missing-", 0, None, None);
     assert!(matches!(
