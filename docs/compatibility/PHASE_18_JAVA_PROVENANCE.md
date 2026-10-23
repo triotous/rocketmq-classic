@@ -71,17 +71,18 @@ The invoked fixture uses a `ScheduledExecutorService` proxy to retain the five
 5 that has not yet been sampled. Fixture SHA-256:
 `57b6f19d68fb3460e7fa86bd6b08bf16f43a03d28cce2558716f88c110ccb369`.
 Rust's client scheduler now queues the same 30 manager-wide jobs before
-runtime start. Sampling jobs advance the Rust metric windows, with status reads
-also advancing them lazily for deterministic snapshots. Minute, hour, and day
-print jobs emit `tracing::info!` events under the Java
-`org.apache.rocketmq.client.stat.ConsumerStatsManager` target. They include the
-same metric groups and summary fields; the day window samples hourly and keeps
-25 samples. Subscriber-provided timestamp, thread, and formatting decorations
-remain backend-specific. The `scheduled-executor-shutdown` fixture and Rust
-scheduler regression verify the same 32 returned entries in the pre-start
-case with two submitted calls. Core tests use deterministic timestamps, while
-consumer-flow tests wait for their first real sample when they assert positive
-TPS/RT values.
+runtime start. Each job carries the identity of its owning `StatsItemSet`:
+sampling advances only that metric series, and each minute, hour, or day print
+callback emits only its matching metric group under the Java
+`org.apache.rocketmq.client.stat.ConsumerStatsManager` target. This preserves
+one log event per set and avoids fivefold callback fan-out. The day window
+samples hourly and keeps 25 samples. Subscriber-provided timestamp, thread, and
+formatting decorations remain backend-specific. Commit `b0189bd3` closes the
+callback identity and fan-out discrepancy with focused Rust regressions. The
+`scheduled-executor-shutdown` fixture and Rust scheduler regression verify the
+same 32 returned entries in the pre-start case with two submitted calls. Core
+tests use deterministic timestamps, while consumer-flow tests wait for their
+first real sample when they assert positive TPS/RT values.
 
 ## Rust package graph
 

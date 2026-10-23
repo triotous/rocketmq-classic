@@ -91,12 +91,21 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   current-revision remote CI were not run.
 - P18-V01 client stats log follow-up (`4251b2b3`, 2026-10-23): the scheduled
   minute, hour, and day print callbacks now emit `tracing::info!` events under
-  Java's stats logger target. Metric summary fields are emitted for all five
-  groups; the daily window keeps 25 hourly samples. Workspace default and
-  all-feature tests/doctests, strict all-target/all-feature Clippy, Windows GNU
-  workspace check/Clippy, offline Maven `verify`, formatting, and diff checks
-  pass. Backend timestamp/thread formatting may differ; this closes the missing
-  stats-event gap only, and broad P18-V01 remains open.
+  Java's stats logger target. The callbacks emit all five metric groups across
+  the five per-set jobs; the daily window keeps 25 hourly samples. Workspace
+  default and all-feature tests/doctests, strict all-target/all-feature Clippy,
+  Windows GNU workspace check/Clippy, offline Maven `verify`, formatting, and
+  diff checks pass. Backend timestamp/thread formatting may differ; this closes
+  the missing stats-event gap only, and broad P18-V01 remains open.
+- P18-V01 stats callback ownership (`b0189bd3`, 2026-10-23): all 30 scheduled
+  jobs now retain the owning Java `StatsItemSet`; sampling advances only that
+  metric series and each print callback emits only its matching metric group,
+  preventing fivefold log fan-out. Focused sampling, print-event, and schedule
+  identity regressions pass, as do workspace default/all-feature tests and
+  doctests, strict all-target/all-feature Clippy, Windows GNU workspace check
+  and Clippy, offline Maven `verify`, formatting, and diff checks. This closes
+  callback ownership only; broad P18-V01 remains PARTIAL. Native Windows runtime
+  and current-revision remote CI remain open.
 - P18-V02 server-free refresh on code revision `4251b2b3` (documentation
   revision `23265067`, 2026-10-23): default/all-feature workspace tests and
   doctests, strict workspace Clippy, offline Maven `verify` (37 scenarios and
