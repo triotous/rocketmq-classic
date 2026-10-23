@@ -144,6 +144,43 @@ pub(crate) struct SendBackOptions<'a> {
     pub(crate) orderly: bool,
 }
 
+fn retryable_inner_producer_send_error(error: &rocketmq_classic_core::error::RpcError) -> bool {
+    match error {
+        rocketmq_classic_core::error::RpcError::Response { code, .. } => matches!(
+            *code,
+            response::TOPIC_NOT_EXIST
+                | response::SERVICE_NOT_AVAILABLE
+                | response::SYSTEM_ERROR
+                | response::SYSTEM_BUSY
+                | response::NO_PERMISSION
+                | response::NO_BUYER_ID
+                | response::NOT_IN_CURRENT_UNIT
+                | response::GO_AWAY
+        ),
+        _ => true,
+    }
+}
+
+fn select_retry_publish_queue<'a>(
+    queues: &'a [MessageQueue],
+    start_index: u64,
+    last_broker: Option<&str>,
+) -> Option<&'a MessageQueue> {
+    if queues.is_empty() {
+        return None;
+    }
+    let queue_count = u64::try_from(queues.len()).ok()?;
+    let start = usize::try_from(start_index % queue_count).ok()?;
+    let selected = if let Some(last_broker) = last_broker {
+        (0..queues.len())
+            .map(|offset| &queues[(start + offset) % queues.len()])
+            .find(|queue| queue.broker_name() != Some(last_broker))
+    } else {
+        None
+    };
+    selected.or_else(|| queues.get(start))
+}
+
 #[cfg(test)]
 type ScriptedLockResult = Result<Option<HashSet<Option<MessageQueue>>>, String>;
 #[cfg(test)]
@@ -154,6 +191,8 @@ type ScriptedLockWaiter = tokio::sync::oneshot::Receiver<ScriptedLockResult>;
 pub(crate) struct ScriptedRetryTransport {
     pub(crate) broker_results: VecDeque<Result<(), String>>,
     pub(crate) retry_results: VecDeque<Result<(), String>>,
+    pub(crate) retry_attempt_scripts: VecDeque<Vec<Result<(), String>>>,
+    pub(crate) retry_attempt_counts: Vec<usize>,
     pub(crate) broker_headers: Vec<ConsumerSendMsgBackRequestHeader>,
     pub(crate) broker_targets: Vec<(Option<String>, Option<String>)>,
     pub(crate) broker_timeouts_millis: Vec<u64>,
@@ -184,6 +223,8 @@ const BROKER_SUSPEND_MAX_TIME_MILLIS: i64 = 20_000;
 const CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND: i64 = 30_000;
 const CONSUME_RETRY_DELAY_MILLIS: i64 = 5_000;
 const CONSUMER_SEND_BACK_TIMEOUT_MILLIS: u64 = 5_000;
+const INNER_PRODUCER_SEND_TIMEOUT_MILLIS: u64 = 3_000;
+const INNER_PRODUCER_SYNC_ATTEMPTS: usize = 3;
 const CONSUME_TIME_SPAN_TIMEOUT: Duration = Duration::from_millis(3_000);
 const RESET_OFFSET_MAX_WAIT: Duration = Duration::from_secs(10);
 const ORDERLY_RESET_REMOVE_LOCK_WAIT: Duration = Duration::from_millis(500);
@@ -570,6 +611,7 @@ pub struct PushConsumer {
     pop_consume_semaphore: Arc<tokio::sync::Semaphore>,
     next_generation: AtomicU64,
     next_retry_message_id: AtomicU64,
+    next_retry_queue_index: AtomicU64,
     pull_api: PullAPIWrapper,
     paused: AtomicBool,
     pull_time_delay_millis_when_exception: AtomicI64,
@@ -656,6 +698,7 @@ impl PushConsumer {
             pop_consume_semaphore: Arc::new(tokio::sync::Semaphore::new(pop_consume_limit)),
             next_generation: AtomicU64::new(1),
             next_retry_message_id: AtomicU64::new(0),
+            next_retry_queue_index: AtomicU64::new(0),
             pull_api,
             paused: AtomicBool::new(false),
             pull_time_delay_millis_when_exception: AtomicI64::new(
@@ -4463,7 +4506,25 @@ impl PushConsumer {
             scripted
                 .retry_wire_properties
                 .push(encoded_properties.clone());
+            if let Some(results) = scripted.retry_attempt_scripts.pop_front() {
+                let mut attempts = 0;
+                let mut last_error = None;
+                for result in results.into_iter().take(INNER_PRODUCER_SYNC_ATTEMPTS) {
+                    attempts += 1;
+                    match result {
+                        Ok(()) => {
+                            scripted.retry_attempt_counts.push(attempts);
+                            return Ok(());
+                        }
+                        Err(error) => last_error = Some(error),
+                    }
+                }
+                scripted.retry_attempt_counts.push(attempts);
+                return Err(last_error
+                    .unwrap_or_else(|| "scripted retry publisher had no send result".to_owned()));
+            }
             if let Some(result) = scripted.retry_results.pop_front() {
+                scripted.retry_attempt_counts.push(1);
                 return result;
             }
         }
@@ -4478,8 +4539,7 @@ impl PushConsumer {
             return Err("retry message exceeds the default producer size limit".into());
         }
         let topic = retry.topic();
-        let timeout_millis = self.config.client_config().mq_client_api_timeout().max(0) as u64;
-        let deadline = Instant::now() + Duration::from_millis(timeout_millis.max(1));
+        let deadline = Instant::now() + Duration::from_millis(INNER_PRODUCER_SEND_TIMEOUT_MILLIS);
         let route = runtime
             .route_snapshot()
             .map_err(|error| error.to_string())?;
@@ -4508,18 +4568,6 @@ impl PushConsumer {
         if topic_snapshot.publish_queues.is_empty() {
             return Err(format!("retry topic {topic} has no writable queues"));
         }
-        let sequence = self.next_retry_message_id.fetch_add(1, Ordering::Relaxed);
-        let queue =
-            &topic_snapshot.publish_queues[sequence as usize % topic_snapshot.publish_queues.len()];
-        let broker_name = queue
-            .broker_name()
-            .ok_or_else(|| "retry queue has no broker name".to_owned())?;
-        let address = route
-            .publish_address(broker_name)
-            .ok_or_else(|| format!("retry broker {broker_name} has no master address"))?;
-        let address =
-            broker_vip_channel(self.config.client_config().vip_channel_enabled(), address)
-                .map_err(|error| error.to_string())?;
 
         let mut body = retry.body().to_vec();
         let mut sys_flag = 0;
@@ -4539,38 +4587,75 @@ impl PushConsumer {
             .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
             .cloned()
             .ok_or_else(|| "retry message has no unique id".to_owned())?;
-        let header = {
-            let mut __phase18_header_3 = SendMessageRequestHeaderV1::default();
-            __phase18_header_3.set_producer_group(Some(INNER_PRODUCER_GROUP.into()));
-            __phase18_header_3.set_topic(topic.to_owned());
-            __phase18_header_3.set_default_topic(DEFAULT_CREATE_TOPIC_KEY.into());
-            __phase18_header_3.set_default_topic_queue_nums(DEFAULT_TOPIC_QUEUE_COUNT);
-            __phase18_header_3.set_queue_id(queue.queue_id());
-            __phase18_header_3.set_sys_flag(sys_flag);
-            __phase18_header_3.set_born_timestamp(epoch_millis());
-            __phase18_header_3.set_flag(retry.flag());
-            __phase18_header_3.set_properties(Some(encoded_properties));
-            __phase18_header_3.set_reconsume_times(reconsume_times);
-            __phase18_header_3.set_unit_mode(Some(self.config.unit_mode()));
-            __phase18_header_3.set_batch(Some(false));
-            __phase18_header_3.set_max_reconsume_times(max_reconsume_times);
-            __phase18_header_3
-        };
-        runtime
-            .api()
-            .send_message(
-                &address,
-                broker_name,
-                &header,
-                body,
-                &unique_id,
-                SendKind::V2,
-                SendMode::Sync,
-                deadline,
+        let mut last_broker = None;
+        let mut last_error = None;
+        for attempt in 0..INNER_PRODUCER_SYNC_ATTEMPTS {
+            if Instant::now() >= deadline {
+                return Err(last_error.unwrap_or_else(|| {
+                    "retry-topic send exceeded the inner producer timeout".to_owned()
+                }));
+            }
+            let queue_index = self.next_retry_queue_index.fetch_add(1, Ordering::Relaxed);
+            let queue = select_retry_publish_queue(
+                &topic_snapshot.publish_queues,
+                queue_index,
+                last_broker.as_deref(),
             )
-            .await
-            .map_err(|error| error.to_string())?;
-        Ok(())
+            .ok_or_else(|| format!("retry topic {topic} has no writable queues"))?;
+            let broker_name = queue
+                .broker_name()
+                .ok_or_else(|| "retry queue has no broker name".to_owned())?;
+            last_broker = Some(broker_name.to_owned());
+            let Some(address) = route.publish_address(broker_name) else {
+                last_error = Some(format!("retry broker {broker_name} has no master address"));
+                continue;
+            };
+            let address =
+                broker_vip_channel(self.config.client_config().vip_channel_enabled(), address)
+                    .map_err(|error| error.to_string())?;
+            let header = {
+                let mut __phase18_header_3 = SendMessageRequestHeaderV1::default();
+                __phase18_header_3.set_producer_group(Some(INNER_PRODUCER_GROUP.into()));
+                __phase18_header_3.set_topic(topic.to_owned());
+                __phase18_header_3.set_default_topic(DEFAULT_CREATE_TOPIC_KEY.into());
+                __phase18_header_3.set_default_topic_queue_nums(DEFAULT_TOPIC_QUEUE_COUNT);
+                __phase18_header_3.set_queue_id(queue.queue_id());
+                __phase18_header_3.set_sys_flag(sys_flag);
+                __phase18_header_3.set_born_timestamp(epoch_millis());
+                __phase18_header_3.set_flag(retry.flag());
+                __phase18_header_3.set_properties(Some(encoded_properties.clone()));
+                __phase18_header_3.set_reconsume_times(reconsume_times);
+                __phase18_header_3.set_unit_mode(Some(self.config.unit_mode()));
+                __phase18_header_3.set_batch(Some(false));
+                __phase18_header_3.set_max_reconsume_times(max_reconsume_times);
+                __phase18_header_3
+            };
+            match runtime
+                .api()
+                .send_message(
+                    &address,
+                    broker_name,
+                    &header,
+                    body.clone(),
+                    &unique_id,
+                    SendKind::V2,
+                    SendMode::Sync,
+                    deadline,
+                )
+                .await
+            {
+                Ok(Some(_)) => return Ok(()),
+                Ok(None) => return Err("retry-topic send returned no result".to_owned()),
+                Err(error) => {
+                    let retryable = retryable_inner_producer_send_error(&error);
+                    last_error = Some(error.to_string());
+                    if !retryable || attempt + 1 == INNER_PRODUCER_SYNC_ATTEMPTS {
+                        return Err(last_error.expect("send error was recorded"));
+                    }
+                }
+            }
+        }
+        Err(last_error.unwrap_or_else(|| "retry-topic send failed".to_owned()))
     }
 
     fn schedule_offset_recovery(
@@ -7513,6 +7598,65 @@ mod tests {
         assert_eq!(
             orderly_consume_return_type("SUCCESS", Some(ConsumeOrderlyStatus::Success), true),
             "TIME_OUT"
+        );
+    }
+
+    #[test]
+    fn inner_producer_retry_response_codes_match_java_551_defaults() {
+        for code in [
+            response::TOPIC_NOT_EXIST,
+            response::SERVICE_NOT_AVAILABLE,
+            response::SYSTEM_ERROR,
+            response::SYSTEM_BUSY,
+            response::NO_PERMISSION,
+            response::NO_BUYER_ID,
+            response::NOT_IN_CURRENT_UNIT,
+            response::GO_AWAY,
+        ] {
+            let error = rocketmq_classic_core::error::RpcError::Response {
+                request_code: request::SEND_MESSAGE,
+                peer: "broker-a".to_owned(),
+                code,
+                remark: None,
+            };
+            assert!(retryable_inner_producer_send_error(&error), "code {code}");
+        }
+
+        let error = rocketmq_classic_core::error::RpcError::Response {
+            request_code: request::SEND_MESSAGE,
+            peer: "broker-a".to_owned(),
+            code: response::MESSAGE_ILLEGAL,
+            remark: None,
+        };
+        assert!(!retryable_inner_producer_send_error(&error));
+    }
+
+    #[test]
+    fn retry_publish_queue_avoids_last_broker_until_it_must_fallback() {
+        let queues = [
+            MessageQueue::new("orders", "broker-a", 0),
+            MessageQueue::new("orders", "broker-b", 0),
+            MessageQueue::new("orders", "broker-c", 0),
+        ];
+
+        assert_eq!(
+            select_retry_publish_queue(&queues, 0, None).and_then(MessageQueue::broker_name),
+            Some("broker-a")
+        );
+        assert_eq!(
+            select_retry_publish_queue(&queues, 0, Some("broker-a"))
+                .and_then(MessageQueue::broker_name),
+            Some("broker-b")
+        );
+        assert_eq!(
+            select_retry_publish_queue(&queues, 2, Some("broker-a"))
+                .and_then(MessageQueue::broker_name),
+            Some("broker-c")
+        );
+        assert_eq!(
+            select_retry_publish_queue(&queues[..1], 0, Some("broker-a"))
+                .and_then(MessageQueue::broker_name),
+            Some("broker-a")
         );
     }
 
@@ -14502,7 +14646,11 @@ mod tests {
             scripted
                 .broker_results
                 .push_back(Err("broker refused send-back".into()));
-            scripted.retry_results.push_back(Ok(()));
+            scripted.retry_attempt_scripts.push_back(vec![
+                Err("inner producer first Broker failed".into()),
+                Err("inner producer second Broker failed".into()),
+                Ok(()),
+            ]);
         }
         let callback_context = ConsumeConcurrentlyContext::new(queue.clone());
         consumer
@@ -14517,6 +14665,7 @@ mod tests {
 
         {
             let scripted = consumer.scripted_retry_transport.lock().unwrap();
+            assert_eq!(scripted.retry_attempt_counts, [3]);
             let retry = &scripted.retry_messages[0];
             assert_eq!(retry.topic(), "%RETRY%tenant%consume-retry-fallback");
             assert_eq!(
