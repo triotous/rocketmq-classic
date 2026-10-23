@@ -4,8 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::tasks::next_local_boundary_delay;
-use super::{RuntimeError, RuntimeScheduler, tasks::LocalBoundary};
+use super::{RuntimeError, RuntimeScheduler};
 use rocketmq_classic_protocol::body::ConsumerConsumeStatus;
 
 const MINUTE_SAMPLE_INTERVAL: Duration = Duration::from_secs(10);
@@ -53,6 +52,96 @@ impl StatsItemSetKind {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum StatsScheduleKind {
+    Sample(StatsItemSetKind),
+    Print(StatsItemSetKind, StatsLogWindow),
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct StatsScheduleSpec {
+    pub(super) kind: StatsScheduleKind,
+    pub(super) delay: Duration,
+    pub(super) period: Duration,
+}
+
+pub(super) fn stats_schedule_specs() -> Vec<StatsScheduleSpec> {
+    let mut result = Vec::with_capacity(30);
+    for set in StatsItemSetKind::ALL {
+        for period in [
+            Duration::from_secs(10),
+            Duration::from_secs(10 * 60),
+            Duration::from_secs(60 * 60),
+        ] {
+            result.push(StatsScheduleSpec {
+                kind: StatsScheduleKind::Sample(set),
+                delay: Duration::ZERO,
+                period,
+            });
+        }
+
+        for (window, boundary, period) in [
+            (
+                StatsLogWindow::Minute,
+                LocalBoundary::Minute,
+                Duration::from_secs(60),
+            ),
+            (
+                StatsLogWindow::Hour,
+                LocalBoundary::Hour,
+                Duration::from_secs(60 * 60),
+            ),
+            (
+                StatsLogWindow::Day,
+                LocalBoundary::Day,
+                Duration::from_secs(24 * 60 * 60),
+            ),
+        ] {
+            result.push(StatsScheduleSpec {
+                kind: StatsScheduleKind::Print(set, window),
+                delay: next_local_boundary_delay(boundary),
+                period,
+            });
+        }
+    }
+    result
+}
+
+#[derive(Clone, Copy)]
+enum LocalBoundary {
+    Minute,
+    Hour,
+    Day,
+}
+
+fn next_local_boundary_delay(boundary: LocalBoundary) -> Duration {
+    use time::{Duration as CalendarDuration, OffsetDateTime, Time};
+
+    let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let target = match boundary {
+        LocalBoundary::Minute => now
+            .replace_second(0)
+            .ok()
+            .and_then(|value| value.replace_nanosecond(0).ok())
+            .and_then(|value| value.checked_add(CalendarDuration::minutes(1))),
+        LocalBoundary::Hour => now
+            .replace_minute(0)
+            .ok()
+            .and_then(|value| value.replace_second(0).ok())
+            .and_then(|value| value.replace_nanosecond(0).ok())
+            .and_then(|value| value.checked_add(CalendarDuration::hours(1))),
+        LocalBoundary::Day => now
+            .date()
+            .next_day()
+            .map(|date| date.with_time(Time::MIDNIGHT).assume_offset(now.offset())),
+    };
+    let Some(target) = target else {
+        return Duration::from_secs(1);
+    };
+    let nanos = target.unix_timestamp_nanos() - now.unix_timestamp_nanos();
+    Duration::from_nanos(nanos.clamp(1, u64::MAX as i128) as u64)
+}
+
 impl StatsLogWindow {
     fn label(self) -> &'static str {
         match self {
@@ -85,42 +174,22 @@ impl ConsumerStatsManager {
     /// with the supplied client scheduler.
     pub fn with_scheduler(scheduler: &RuntimeScheduler) -> Result<Arc<Self>, RuntimeError> {
         let manager = Arc::new(Self::default());
-        for set in StatsItemSetKind::ALL {
-            for (delay, period) in [
-                (Duration::ZERO, Duration::from_secs(10)),
-                (Duration::ZERO, Duration::from_secs(10 * 60)),
-                (Duration::ZERO, Duration::from_secs(60 * 60)),
-            ] {
-                let manager = manager.clone();
-                scheduler.schedule_at_fixed_rate(delay, period, move || {
+        for spec in stats_schedule_specs() {
+            match spec.kind {
+                StatsScheduleKind::Sample(set) => {
                     let manager = manager.clone();
-                    async move { manager.sample(set) }
-                })?;
-            }
-
-            for (window, boundary, period) in [
-                (
-                    StatsLogWindow::Minute,
-                    LocalBoundary::Minute,
-                    Duration::from_secs(60),
-                ),
-                (
-                    StatsLogWindow::Hour,
-                    LocalBoundary::Hour,
-                    Duration::from_secs(60 * 60),
-                ),
-                (
-                    StatsLogWindow::Day,
-                    LocalBoundary::Day,
-                    Duration::from_secs(24 * 60 * 60),
-                ),
-            ] {
-                let delay = next_local_boundary_delay(boundary);
-                let manager = manager.clone();
-                scheduler.schedule_at_fixed_rate(delay, period, move || {
+                    scheduler.schedule_at_fixed_rate(spec.delay, spec.period, move || {
+                        let manager = manager.clone();
+                        async move { manager.sample(set) }
+                    })?;
+                }
+                StatsScheduleKind::Print(set, window) => {
                     let manager = manager.clone();
-                    async move { manager.log(set, window) }
-                })?;
+                    scheduler.schedule_at_fixed_rate(spec.delay, spec.period, move || {
+                        let manager = manager.clone();
+                        async move { manager.log(set, window) }
+                    })?;
+                }
             }
         }
         Ok(manager)

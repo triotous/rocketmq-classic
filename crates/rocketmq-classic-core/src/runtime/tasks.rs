@@ -1,4 +1,7 @@
-use super::{ClientRuntime, RuntimeError, RuntimeState, stats::StatsItemSetKind};
+use super::{
+    ClientRuntime, RuntimeError, RuntimeState,
+    stats::{StatsItemSetKind, StatsLogWindow, StatsScheduleKind, stats_schedule_specs},
+};
 use std::{
     collections::BTreeMap,
     future::Future,
@@ -39,12 +42,8 @@ pub(super) enum TaskKind {
     Heartbeat,
     Persist,
     Adjust,
-    StatsSampleSeconds(StatsItemSetKind),
-    StatsSampleMinutes(StatsItemSetKind),
-    StatsSampleHour(StatsItemSetKind),
-    StatsPrintMinutes(StatsItemSetKind),
-    StatsPrintHour(StatsItemSetKind),
-    StatsPrintDay(StatsItemSetKind),
+    StatsSample(StatsItemSetKind),
+    StatsPrint(StatsItemSetKind, StatsLogWindow),
 }
 
 #[derive(Clone, Copy)]
@@ -991,83 +990,17 @@ pub(super) fn schedules(
 /// Keep these separate from `schedules`, which represents the jobs registered
 /// by `MQClientInstance.startScheduledTask()`.
 pub(super) fn stats_schedules() -> Vec<Schedule> {
-    let mut result = Vec::with_capacity(30);
-    for set in StatsItemSetKind::ALL {
-        for (kind, delay, period) in [
-            (
-                TaskKind::StatsSampleSeconds(set),
-                Duration::ZERO,
-                Duration::from_secs(10),
-            ),
-            (
-                TaskKind::StatsSampleMinutes(set),
-                Duration::ZERO,
-                Duration::from_secs(10 * 60),
-            ),
-            (
-                TaskKind::StatsSampleHour(set),
-                Duration::ZERO,
-                Duration::from_secs(60 * 60),
-            ),
-            (
-                TaskKind::StatsPrintMinutes(set),
-                next_local_boundary_delay(LocalBoundary::Minute),
-                Duration::from_secs(60),
-            ),
-            (
-                TaskKind::StatsPrintHour(set),
-                next_local_boundary_delay(LocalBoundary::Hour),
-                Duration::from_secs(60 * 60),
-            ),
-            (
-                TaskKind::StatsPrintDay(set),
-                next_local_boundary_delay(LocalBoundary::Day),
-                Duration::from_secs(24 * 60 * 60),
-            ),
-        ] {
-            result.push(Schedule {
-                kind,
-                delay,
-                period,
-            });
-        }
-    }
-    result
-}
-
-#[derive(Clone, Copy)]
-pub(super) enum LocalBoundary {
-    Minute,
-    Hour,
-    Day,
-}
-
-pub(super) fn next_local_boundary_delay(boundary: LocalBoundary) -> Duration {
-    use time::{Duration as CalendarDuration, OffsetDateTime, Time};
-
-    let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
-    let target = match boundary {
-        LocalBoundary::Minute => now
-            .replace_second(0)
-            .ok()
-            .and_then(|value| value.replace_nanosecond(0).ok())
-            .and_then(|value| value.checked_add(CalendarDuration::minutes(1))),
-        LocalBoundary::Hour => now
-            .replace_minute(0)
-            .ok()
-            .and_then(|value| value.replace_second(0).ok())
-            .and_then(|value| value.replace_nanosecond(0).ok())
-            .and_then(|value| value.checked_add(CalendarDuration::hours(1))),
-        LocalBoundary::Day => now
-            .date()
-            .next_day()
-            .map(|date| date.with_time(Time::MIDNIGHT).assume_offset(now.offset())),
-    };
-    let Some(target) = target else {
-        return Duration::from_secs(1);
-    };
-    let nanos = target.unix_timestamp_nanos() - now.unix_timestamp_nanos();
-    Duration::from_nanos(nanos.clamp(1, u64::MAX as i128) as u64)
+    stats_schedule_specs()
+        .into_iter()
+        .map(|spec| Schedule {
+            kind: match spec.kind {
+                StatsScheduleKind::Sample(set) => TaskKind::StatsSample(set),
+                StatsScheduleKind::Print(set, window) => TaskKind::StatsPrint(set, window),
+            },
+            delay: spec.delay,
+            period: spec.period,
+        })
+        .collect()
 }
 
 /// Java's single scheduled executor: fixed-rate deadlines, no overlapping jobs,
@@ -1457,30 +1390,24 @@ mod tests {
         assert_eq!(schedules.len(), 30);
 
         for (set_schedules, set) in schedules.chunks_exact(6).zip(StatsItemSetKind::ALL) {
-            assert!(matches!(
-                set_schedules[0].kind,
-                TaskKind::StatsSampleSeconds(owner) if owner == set
-            ));
-            assert!(matches!(
-                set_schedules[1].kind,
-                TaskKind::StatsSampleMinutes(owner) if owner == set
-            ));
-            assert!(matches!(
-                set_schedules[2].kind,
-                TaskKind::StatsSampleHour(owner) if owner == set
-            ));
-            assert!(matches!(
-                set_schedules[3].kind,
-                TaskKind::StatsPrintMinutes(owner) if owner == set
-            ));
-            assert!(matches!(
-                set_schedules[4].kind,
-                TaskKind::StatsPrintHour(owner) if owner == set
-            ));
-            assert!(matches!(
-                set_schedules[5].kind,
-                TaskKind::StatsPrintDay(owner) if owner == set
-            ));
+            for (schedule, period) in set_schedules[..3].iter().zip([10, 600, 3600]) {
+                assert!(matches!(schedule.kind, TaskKind::StatsSample(owner) if owner == set));
+                assert_eq!(schedule.delay, Duration::ZERO);
+                assert_eq!(schedule.period, Duration::from_secs(period));
+            }
+            for (schedule, (window, period)) in set_schedules[3..].iter().zip([
+                (StatsLogWindow::Minute, 60),
+                (StatsLogWindow::Hour, 3600),
+                (StatsLogWindow::Day, 86_400),
+            ]) {
+                assert!(matches!(
+                    schedule.kind,
+                    TaskKind::StatsPrint(owner, actual_window)
+                        if owner == set && actual_window == window
+                ));
+                assert!(schedule.delay > Duration::ZERO);
+                assert_eq!(schedule.period, Duration::from_secs(period));
+            }
         }
     }
 

@@ -1121,18 +1121,8 @@ impl ClientRuntime {
                 }
             }
             TaskKind::Adjust => self.adjust_thread_pool().await?,
-            TaskKind::StatsSampleSeconds(set)
-            | TaskKind::StatsSampleMinutes(set)
-            | TaskKind::StatsSampleHour(set) => self.consumer_stats_manager.sample(set),
-            TaskKind::StatsPrintMinutes(set) => self
-                .consumer_stats_manager
-                .log(set, super::stats::StatsLogWindow::Minute),
-            TaskKind::StatsPrintHour(set) => self
-                .consumer_stats_manager
-                .log(set, super::stats::StatsLogWindow::Hour),
-            TaskKind::StatsPrintDay(set) => self
-                .consumer_stats_manager
-                .log(set, super::stats::StatsLogWindow::Day),
+            TaskKind::StatsSample(set) => self.consumer_stats_manager.sample(set),
+            TaskKind::StatsPrint(set, window) => self.consumer_stats_manager.log(set, window),
         }
         Ok(())
     }
