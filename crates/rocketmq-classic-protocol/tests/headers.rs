@@ -337,7 +337,7 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-lite-subscription-request",
     ))
     .unwrap();
-    assert_eq!(lite_ctl, LiteSubscriptionCtlRequestHeader);
+    assert_eq!(lite_ctl, LiteSubscriptionCtlRequestHeader::default());
     let unsubscribe = NotifyUnsubscribeLiteRequestHeader::decode_fields(&java_ext_fields(
         "header-notify-unsubscribe-lite-request",
     ))
@@ -3175,7 +3175,7 @@ fn header_validation_matrix() {
             "",
             "",
             "",
-            "ns bname",
+            "ns nsd bname oway",
             "nsd oway"
         ),
         row!(

@@ -208,6 +208,55 @@ fn heartbeat_request_header_inherits_java_rpc_surface() {
 }
 
 #[test]
+#[allow(deprecated)]
+fn lite_subscription_ctl_request_header_inherits_java_rpc_surface() {
+    let identity: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/protocol/request-header-identity.json"
+    ))
+    .unwrap();
+    let java = &identity["identityCases"]["LiteSubscriptionCtlRequestHeader"];
+
+    let mut header = LiteSubscriptionCtlRequestHeader::default();
+    assert_eq!(
+        header.java_hash_code(),
+        java["defaultHashCode"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        header.java_to_string(),
+        java["defaultToString"].as_str().unwrap()
+    );
+
+    header.set_namespace(Some("namespace".into()));
+    header.set_namespaced(Some(true));
+    header.set_bname(Some("broker".into()));
+    header.set_oneway(Some(false));
+    assert_eq!(header.get_namespace(), Some("namespace"));
+    assert_eq!(header.get_namespaced(), Some(true));
+    assert_eq!(header.get_broker_name(), Some("broker"));
+    assert_eq!(header.get_oneway(), Some(false));
+    assert_eq!(header.get_bname(), Some("broker"));
+    assert_eq!(
+        header.java_hash_code(),
+        java["baseHashCode"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        header.java_to_string(),
+        java["baseToString"].as_str().unwrap()
+    );
+
+    let mut fields = HeaderMap::new();
+    header.encode_fields(&mut fields);
+    assert_eq!(fields.get("ns").map(String::as_str), Some("namespace"));
+    assert_eq!(fields.get("nsd").map(String::as_str), Some("true"));
+    assert_eq!(fields.get("bname").map(String::as_str), Some("broker"));
+    assert_eq!(fields.get("oway").map(String::as_str), Some("false"));
+    assert_eq!(
+        LiteSubscriptionCtlRequestHeader::decode_fields(&fields).unwrap(),
+        header
+    );
+}
+
+#[test]
 fn request_header_api_inventories_match_java_fields_and_accessors() {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
         "../../../fixtures/protocol/request-header-identity.json"

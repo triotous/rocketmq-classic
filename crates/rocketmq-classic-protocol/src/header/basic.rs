@@ -209,6 +209,7 @@ impl_rpc_request_header_semantics!(
     PollingInfoRequestHeader,
     SendMessageRequestHeaderV1,
     SendMessageRequestHeaderV2,
+    LiteSubscriptionCtlRequestHeader,
 );
 
 impl PartialEq for ConsumeMessageDirectlyResultRequestHeader {
@@ -5949,13 +5950,65 @@ impl PopLiteMessageRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct LiteSubscriptionCtlRequestHeader;
+/// Java 5.5.1's Lite subscription control RPC header. It declares no payload
+/// fields and inherits namespace and routing fields from `RpcRequestHeader`.
+#[derive(Debug, Clone, Default)]
+pub struct LiteSubscriptionCtlRequestHeader {
+    namespace: Option<String>,
+    namespaced: Option<bool>,
+    broker_name: Option<String>,
+    oneway: Option<bool>,
+}
+
+impl LiteSubscriptionCtlRequestHeader {
+    /// Returns the integer produced by Java `Objects.hash(ns, nsd, bname,
+    /// oway)` in `RpcRequestHeader.hashCode()`.
+    pub fn java_hash_code(&self) -> i32 {
+        let mut hash = 1_i32;
+        for value_hash in [
+            self.namespace
+                .as_deref()
+                .map(java_string_hash_code)
+                .unwrap_or(0),
+            self.namespaced.map(java_boolean_hash_code).unwrap_or(0),
+            self.broker_name
+                .as_deref()
+                .map(java_string_hash_code)
+                .unwrap_or(0),
+            self.oneway.map(java_boolean_hash_code).unwrap_or(0),
+        ] {
+            hash = hash.wrapping_mul(31).wrapping_add(value_hash);
+        }
+        hash
+    }
+
+    /// Returns Java `RpcRequestHeader.toString()` output.
+    pub fn java_to_string(&self) -> String {
+        format!(
+            "LiteSubscriptionCtlRequestHeader{{namespace={}, namespaced={}, brokerName={}, oneway={}}}",
+            java_nullable_string(self.namespace.as_deref()),
+            java_nullable_bool(self.namespaced),
+            java_nullable_string(self.broker_name.as_deref()),
+            java_nullable_bool(self.oneway),
+        )
+    }
+}
 
 impl CommandHeader for LiteSubscriptionCtlRequestHeader {
-    fn encode_fields(&self, _fields: &mut HeaderMap) {}
-    fn decode_fields(_fields: &HeaderMap) -> Result<Self, ProtocolError> {
-        Ok(Self)
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+        })
     }
 }
 
@@ -6881,6 +6934,7 @@ impl_topic_request_header_accessors!(
     SendMessageRequestHeaderV1
 );
 impl_rpc_request_header_accessors!(
+    LiteSubscriptionCtlRequestHeader,
     UnregisterClientRequestHeader,
     GetRouteInfoRequestHeader,
     GetConsumerListByGroupRequestHeader,
@@ -8410,6 +8464,12 @@ mod tests {
             broker_name,
             |_| {},
             |_: &mut HeartbeatRequestHeader| {}
+        );
+        check_rpc_request_header!(
+            LiteSubscriptionCtlRequestHeader,
+            broker_name,
+            |_| {},
+            |_: &mut LiteSubscriptionCtlRequestHeader| {}
         );
         check_rpc_request_header!(
             UpdateConsumerOffsetRequestHeader,
