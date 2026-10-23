@@ -486,6 +486,14 @@ response does not overwrite earlier clients. The Java constructor's
 process-wide property writes map to the factory-owned `ClientConfig` and
 provider settings; Rust does not mutate the process environment.
 
+Both Java constructors also accept a `ScheduledExecutorService`. Rust callers
+can pass a caller-owned `FactoryRefreshScheduler` with
+`MQClientApiFactory::with_refresh_scheduler`; domain discovery registers one
+callback per client at the Java 10-second initial delay and 120-second fixed
+rate. The default Rust constructors continue to use Tokio-owned refresh
+workers. The pinned source, injected-scheduler regression, and rejected
+registration regression are recorded in the P18-V01 reverse-export audit.
+
 The invoked fixture in `fixtures/runtime/api-factory.json` records both Java
 constructors and all six public methods, pre-start selection failure, client
 names/count/address lists, selection membership, mutable-array identity,

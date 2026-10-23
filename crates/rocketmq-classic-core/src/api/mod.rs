@@ -17,8 +17,9 @@ use tokio::time::Instant;
 const JAVA_CLIENT_API_VERSION_5_5_1: i32 = 515;
 
 pub use factory::{
-    ClientApiArrayError, MQClientApiFactory, MQClientApiFactoryError, NameserverAccessConfig,
-    RemotingClientCreator, SharedClientApiArray,
+    ClientApiArrayError, FactoryRefreshFuture, FactoryRefreshScheduler, FactoryRefreshTask,
+    MQClientApiFactory, MQClientApiFactoryError, NameserverAccessConfig, RemotingClientCreator,
+    SharedClientApiArray,
 };
 
 #[derive(Clone)]

@@ -4046,3 +4046,26 @@ input/error/control-flow/reverse-export reconciliation remains PARTIAL.
 Native Windows execution, current-revision remote Ubuntu CI, and Phase 19
 Broker/Docker evidence remain open. Run record:
 `rlogs/2026/09/19-phase-18-factory-process-properties__20261023T111654Z.rlog`.
+
+## P18-V01 factory constructor scheduler injection — 2026-10-23
+
+The public Java `MQClientAPIFactory` constructors both accept a
+`ScheduledExecutorService`. The Rust factory previously used Tokio workers
+without exposing an equivalent scheduling dependency. Core now accepts a
+caller-owned `FactoryRefreshScheduler` through `with_refresh_scheduler` and
+registers one async NameServer refresh callback per client at Java's 10-second
+initial delay and 120-second fixed rate. Java's optional
+`ObjectCreator<RemotingClient>` constructor remains mapped separately through
+`with_remoting_client_creator`; the Rust-only `TopAddressing` test seam remains
+private.
+
+The injected scheduler and registration-rejection regressions pass. The
+Rustdoc reverse scan now has 744 Core and 460 Consumer distinct public names,
+with all 62 Core and 15 Consumer additions since `1dc3a7e2` mapped to pinned
+Java behavior or explicit Rust ownership/error adaptations. Core all-feature
+tests, strict workspace Clippy, workspace all-feature tests/doctests, format,
+and diff checks pass. This closes the factory scheduler-injection gap and
+current reverse-name delta only; broad P18-V01 source/API/settings/input/error/
+control-flow review remains PARTIAL. Native Windows runtime, current-revision
+remote Ubuntu CI, and Phase 19 Broker/Docker validation remain open. Run record:
+`rlogs/2026/10/23-phase-18-factory-scheduler-injection__20261023T114031Z.rlog`.

@@ -9,6 +9,8 @@
 
 use std::{
     collections::HashMap,
+    future::Future,
+    pin::Pin,
     sync::{Arc, Mutex, RwLock, Weak},
     time::Duration,
 };
@@ -42,6 +44,28 @@ use super::MQClientApi;
 /// settings so callers can inject a native client transport.
 pub type RemotingClientCreator =
     dyn Fn(&str, RemotingClientConfig) -> Result<RemotingClient, TransportError> + Send + Sync;
+
+/// Future returned by an injected NameServer refresh callback.
+pub type FactoryRefreshFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+
+/// Callback scheduled once per API client by an injected refresh scheduler.
+pub type FactoryRefreshTask = Arc<dyn Fn() -> FactoryRefreshFuture + Send + Sync>;
+
+/// Java `MQClientAPIFactory` accepts a `ScheduledExecutorService` for its
+/// per-client NameServer refresh callbacks. Rust callers can supply an
+/// equivalent scheduler through [`MQClientApiFactory::with_refresh_scheduler`].
+/// Each callback must run serially at the requested fixed rate and must honor
+/// the requested initial delay. The callback's future should be polled on an
+/// active compatible async runtime. The scheduler remains caller-owned.
+pub trait FactoryRefreshScheduler: Send + Sync {
+    /// Schedules one callback with Java's `scheduleAtFixedRate` timing model.
+    fn schedule_at_fixed_rate(
+        &self,
+        initial_delay: Duration,
+        period: Duration,
+        task: FactoryRefreshTask,
+    ) -> Result<(), String>;
+}
 
 /// NameServer inputs accepted by Java `NameserverAccessConfig`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -93,6 +117,8 @@ pub enum MQClientApiFactoryError {
     NullClient(usize),
     #[error("NameServer update callback registration failed")]
     AddressingCallbackFailed,
+    #[error("NameServer refresh scheduling failed: {0}")]
+    RefreshScheduleFailed(String),
     #[error("client startup task failed: {0}")]
     StartupTask(String),
     #[error("client shutdown task failed: {0}")]
@@ -323,6 +349,7 @@ pub struct MQClientApiFactory {
     client_remoting_processor: Option<Arc<dyn RequestProcessor>>,
     rpc_hook: Option<Arc<dyn RpcHook>>,
     remoting_client_creator: Arc<RemotingClientCreator>,
+    refresh_scheduler: Option<Arc<dyn FactoryRefreshScheduler>>,
     top_addressing: Option<Arc<dyn TopAddressing>>,
     address_state: Arc<FactoryAddressState>,
     refresh_shutdown: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
@@ -346,6 +373,7 @@ impl MQClientApiFactory {
             client_num,
             client_remoting_processor,
             rpc_hook,
+            None,
             None,
         )
     }
@@ -373,7 +401,18 @@ impl MQClientApiFactory {
             client_remoting_processor,
             rpc_hook,
             Some(Arc::new(creator)),
+            None,
         )
+    }
+
+    /// Uses a caller-owned scheduler for the Java factory's per-client
+    /// NameServer refresh registrations. The factory schedules one callback
+    /// per client with a 10-second initial delay and a 120-second fixed rate.
+    /// The scheduler's lifetime and shutdown remain the caller's
+    /// responsibility, as with Java's injected `ScheduledExecutorService`.
+    pub fn with_refresh_scheduler(mut self, scheduler: Arc<dyn FactoryRefreshScheduler>) -> Self {
+        self.refresh_scheduler = Some(scheduler);
+        self
     }
 
     fn build(
@@ -383,6 +422,7 @@ impl MQClientApiFactory {
         client_remoting_processor: Option<Arc<dyn RequestProcessor>>,
         rpc_hook: Option<Arc<dyn RpcHook>>,
         creator: Option<Arc<RemotingClientCreator>>,
+        refresh_scheduler: Option<Arc<dyn FactoryRefreshScheduler>>,
     ) -> Result<Self, MQClientApiFactoryError> {
         let domain = nameserver_access.namesrv_domain.as_deref().unwrap_or("");
         let properties_applied =
@@ -452,6 +492,7 @@ impl MQClientApiFactory {
             client_remoting_processor,
             rpc_hook,
             remoting_client_creator,
+            refresh_scheduler,
             top_addressing,
             address_state,
             refresh_shutdown: Mutex::new(None),
@@ -547,7 +588,11 @@ impl MQClientApiFactory {
         }
 
         if let Some(provider) = self.top_addressing.clone() {
-            self.start_refresh(provider, client_count);
+            if let Some(scheduler) = &self.refresh_scheduler {
+                self.start_refresh_with_scheduler(provider, client_count, scheduler.as_ref())?;
+            } else {
+                self.start_refresh(provider, client_count);
+            }
         }
         Ok(())
     }
@@ -652,6 +697,33 @@ impl MQClientApiFactory {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = tasks;
     }
 
+    fn start_refresh_with_scheduler(
+        &self,
+        provider: Arc<dyn TopAddressing>,
+        client_count: usize,
+        scheduler: &dyn FactoryRefreshScheduler,
+    ) -> Result<(), MQClientApiFactoryError> {
+        for index in 0..client_count {
+            let provider = provider.clone();
+            let state = Arc::downgrade(&self.address_state);
+            let task: FactoryRefreshTask = Arc::new(move || {
+                let provider = provider.clone();
+                let state = state.clone();
+                Box::pin(async move {
+                    if let Some(addresses) = provider.fetch_ns_addr().await {
+                        if let Some(state) = state.upgrade() {
+                            state.update_from_discovery(index, Some(&addresses));
+                        }
+                    }
+                })
+            });
+            scheduler
+                .schedule_at_fixed_rate(Duration::from_secs(10), Duration::from_secs(120), task)
+                .map_err(MQClientApiFactoryError::RefreshScheduleFailed)?;
+        }
+        Ok(())
+    }
+
     async fn stop_refresh(&self) {
         if let Some(shutdown) = self
             .refresh_shutdown
@@ -694,6 +766,21 @@ mod tests {
 
     fn static_access(address: &str) -> NameserverAccessConfig {
         NameserverAccessConfig::new(Some(address.into()), None, None)
+    }
+
+    #[derive(Default)]
+    struct RecordingRefreshScheduler(Mutex<Vec<(Duration, Duration, FactoryRefreshTask)>>);
+
+    impl FactoryRefreshScheduler for RecordingRefreshScheduler {
+        fn schedule_at_fixed_rate(
+            &self,
+            initial_delay: Duration,
+            period: Duration,
+            task: FactoryRefreshTask,
+        ) -> Result<(), String> {
+            self.0.lock().unwrap().push((initial_delay, period, task));
+            Ok(())
+        }
     }
 
     #[tokio::test]
@@ -1185,6 +1272,100 @@ mod tests {
             refreshed,
             vec!["domain-ns-2:9876".to_owned(), "domain-ns-3:9876".to_owned()]
         );
+        factory.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn factory_uses_injected_refresh_scheduler_with_java_timing_and_per_client_tasks() {
+        struct NumberedProvider(AtomicUsize);
+        impl TopAddressing for NumberedProvider {
+            fn fetch_ns_addr(
+                &self,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send + '_>>
+            {
+                let call = self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async move { Some(format!("scheduled-ns-{call}:9876")) })
+            }
+        }
+
+        let access = NameserverAccessConfig::new(
+            None,
+            Some("factory-domain.example".into()),
+            Some("factory-subgroup".into()),
+        );
+        let provider = Arc::new(NumberedProvider(AtomicUsize::new(0)));
+        let scheduler = Arc::new(RecordingRefreshScheduler::default());
+        let factory = MQClientApiFactory::new(access, "injected-schedule-", 2, None, None)
+            .unwrap()
+            .with_refresh_scheduler(scheduler.clone())
+            .with_top_addressing(provider)
+            .unwrap();
+
+        factory.start().await.unwrap();
+        let registrations = scheduler.0.lock().unwrap().clone();
+        assert_eq!(registrations.len(), 2);
+        assert!(registrations.iter().all(|(initial, period, _)| {
+            *initial == Duration::from_secs(10) && *period == Duration::from_secs(120)
+        }));
+
+        let clients = factory.get_clients().unwrap();
+        let refresh_first = registrations[0].2.clone();
+        refresh_first().await;
+        assert_eq!(
+            clients
+                .snapshot()
+                .into_iter()
+                .map(|client| client.unwrap().get_name_server_address_list().unwrap())
+                .collect::<Vec<_>>(),
+            vec![
+                vec!["scheduled-ns-2:9876".to_owned()],
+                vec!["scheduled-ns-1:9876".to_owned()]
+            ]
+        );
+        factory.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn factory_maps_injected_refresh_schedule_rejection() {
+        struct RejectingRefreshScheduler;
+        impl FactoryRefreshScheduler for RejectingRefreshScheduler {
+            fn schedule_at_fixed_rate(
+                &self,
+                _initial_delay: Duration,
+                _period: Duration,
+                _task: FactoryRefreshTask,
+            ) -> Result<(), String> {
+                Err("executor is shut down".into())
+            }
+        }
+
+        struct StaticProvider;
+        impl TopAddressing for StaticProvider {
+            fn fetch_ns_addr(
+                &self,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send + '_>>
+            {
+                Box::pin(async { Some("scheduled-reject-ns:9876".into()) })
+            }
+        }
+
+        let access = NameserverAccessConfig::new(
+            None,
+            Some("factory-domain.example".into()),
+            Some("factory-subgroup".into()),
+        );
+        let factory = MQClientApiFactory::new(access, "rejected-schedule-", 1, None, None)
+            .unwrap()
+            .with_refresh_scheduler(Arc::new(RejectingRefreshScheduler))
+            .with_top_addressing(Arc::new(StaticProvider))
+            .unwrap();
+
+        assert!(matches!(
+            factory.start().await,
+            Err(MQClientApiFactoryError::RefreshScheduleFailed(message))
+                if message == "executor is shut down"
+        ));
+        assert_eq!(factory.get_clients().unwrap().len(), 1);
         factory.shutdown().await.unwrap();
     }
 
