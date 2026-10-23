@@ -3627,3 +3627,25 @@ support-surface regression, targeted Java facade fixture verification, strict
 Consumer Clippy, and formatting/diff checks pass. This closes the PopProcessQueue
 null-info and method-inventory slices only; broad P18-V01 source/API/settings/
 input/error/control-flow and reverse-export reconciliation remains PARTIAL.
+
+## P18-V02 current offline rerun — 2026-10-23 (`bd2fc5b6`)
+
+On macOS AArch64 with Rust 1.85.0 and the pinned Java 5.5.1 reference, both
+`cargo test --offline --workspace --locked` and
+`cargo test --offline --workspace --all-features --locked` pass. Strict
+all-target/all-feature workspace Clippy, workspace format check, and
+`git diff --check` pass. Differential self-test and manifest validation pass
+for all 37 scenarios. Offline Maven `verify` passes, including 37 scenarios,
+106 Java-decoded typed headers, 19 Java-decoded typed bodies, and fixture drift
+checks. The bounded fuzz smoke reports 163 frame seeds, 11 message seeds, 2,784
+mutations, 245 frame decodes, and 192 message decodes. The deterministic race /
+leak harness passes 17 cases × 3 repetitions. Release facade examples compile.
+The fixed-input offline benchmark completes; its machine-specific observations
+are appended to
+[`PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`](PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+
+This refresh closes the current macOS offline P18-V02 checks and records the
+37-scenario handoff manifest for P18-V04. It does not close P18-V01: broad Java
+5.5.1 source/API/settings/input/error/control-flow and Rust reverse-export
+reconciliation remains PARTIAL. Current-revision remote Ubuntu CI, native
+Windows runtime execution, and Phase 19 Broker/Docker evidence remain open.
