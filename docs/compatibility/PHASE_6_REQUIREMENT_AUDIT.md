@@ -3763,6 +3763,45 @@ x86_64-pc-windows-gnu` also passes, compiling all test and example targets for
 the Windows GNU target. It adds cross-target compile evidence only; the native
 Windows runtime check remains open.
 
+## P18-V01 Producer async backpressure read-lock lifetime — 2026-10-23 (`be58bf98`)
+
+Pinned Java `DefaultMQProducerImpl.sendMessageAsync` holds the producer's
+count or byte read lock across the timed semaphore acquisition, then releases
+it after the acquisition succeeds or times out. Runtime limit setters take
+the corresponding write lock before updating the configured limit and
+semaphore permits. Rust previously held its read lock only while checking
+permit state, so a concurrent limit increase could wake an acquisition that
+Java would keep pending behind the read lock.
+
+`AdjustableSemaphore::acquire` now retains a `Send` internal read lease for
+the complete async permit wait, and releases a canceled waiter from the FIFO
+before dropping that lease. Public `BackpressureReadGuard` remains
+thread-bound. The source-derived regression
+`runtime_resize_waits_for_a_pending_acquisition_like_java` verifies that a
+resize waits for the in-progress acquisition to time out before applying the
+new limit. The existing invoked Java `runtimeSettings` fixture and
+`runtime_resize_preserves_in_flight_count_like_the_java_fixture` continue to
+cover the adjusted permit counts and subsequent in-flight release.
+
+The Core ACL timeout-only test now cancels its scripted peer before client
+shutdown. Under parallel all-features execution, its 25 ms budget can expire
+before the local peer receives a complete request frame; awaiting that peer
+could then stall until the idle connection closed. The assertion remains on
+the typed timeout result, and the peer no longer delays the suite.
+
+The default and all-features locked workspace suites pass. Strict workspace
+Clippy, formatting and diff checks pass; Producer package tests pass (155
+library, 66 integration, and 7 doctests). Pinned Maven `verify` passes all 37
+scenarios and Java cross-decodes 106 typed headers and 19 typed bodies.
+Differential self-test and all 37 manifest scenarios pass; fuzz smoke covers
+163 frame seeds, 11 message seeds and 2,784 mutations; deterministic race/leak
+smoke passes 17 cases × 3. Windows GNU all-target/all-feature cross-compilation,
+release example compilation, the offline benchmark and workspace metadata
+checks pass. This closes the pending-acquisition resize slice only; broad
+P18-V01 source/API/settings/input/error/control-flow and reverse-export
+reconciliation remains PARTIAL. Current-revision remote Ubuntu CI, native
+Windows runtime execution and Phase 19 Broker/Docker evidence remain open.
+
 ## P18-V01 inherited `ServiceThread` controls — 2026-10-23 (`bd4e073c`)
 
 Pinned Java 5.5.1 exposes `ServiceThread.start`, both shutdown overloads,
