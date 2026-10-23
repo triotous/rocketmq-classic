@@ -193,3 +193,16 @@ reconciliation remains PARTIAL. Current-revision remote Ubuntu CI, native
 Windows execution, and Phase 19 Broker/Docker validation remain open. No
 remote CI, push, Broker, or Docker action was performed; protected Phase 19
 worktree paths remain unchanged and unstaged.
+
+## Windows GNU cross-compilation and targeted Core rustdoc — 2026-10-23T05:40:03Z
+
+On `bd4e073c`,
+`CC_x86_64_pc_windows_gnu=/opt/homebrew/bin/x86_64-w64-mingw32-gcc cargo
+check --offline --workspace --all-targets --all-features --locked --target
+x86_64-pc-windows-gnu` passes, compiling all workspace, test, and example
+targets. `RUSTDOCFLAGS='-D warnings' cargo doc --offline
+-p rocketmq-classic-core --all-features --locked --no-deps` also passes with
+the newly exported service handle. These checks add cross-compilation and
+targeted documentation evidence only. Native Windows execution and
+current-revision remote Ubuntu CI remain pending; no external CI or push was
+run, and the four protected Phase 19 paths remain unchanged and unstaged.

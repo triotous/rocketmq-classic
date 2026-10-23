@@ -8256,3 +8256,16 @@ owner-specific checks belong in the manual handoff.
   or Docker action was performed. Protected Phase 19 worktree files remain
   untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V04 Windows GNU and public Core rustdoc refresh — 2026-10-23 (`bd4e073c`)
+
+- [x] Current-tree
+  `CC_x86_64_pc_windows_gnu=/opt/homebrew/bin/x86_64-w64-mingw32-gcc cargo
+  check --offline --workspace --all-targets --all-features --locked --target
+  x86_64-pc-windows-gnu` passes on `bd4e073c`, including test and example
+  targets. `RUSTDOCFLAGS='-D warnings' cargo doc --offline
+  -p rocketmq-classic-core --all-features --locked --no-deps` also passes.
+- [ ] These provide GNU cross-compilation and targeted public-doc evidence;
+  native Windows runtime and current-revision remote Ubuntu CI remain pending.
+  No external CI or push was run. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
