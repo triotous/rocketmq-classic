@@ -284,6 +284,26 @@ impl NameServerUpdateCallback for FactoryAddressCallback {
 /// Owns a pool of client API remoting clients, matching Java
 /// `MQClientAPIFactory`'s constructor, selection, NameServer update, and
 /// lifecycle operations.
+///
+/// The Java factory does not expose a NameServer-provider injection method;
+/// the Rust provider seam is test-only.
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::api::{MQClientApiFactory, NameserverAccessConfig};
+/// use rocketmq_classic_core::namesrv::DefaultTopAddressing;
+/// use std::sync::Arc;
+///
+/// let factory = MQClientApiFactory::new(
+///     NameserverAccessConfig::new(Some("127.0.0.1:9876".into()), None, None),
+///     "pool-",
+///     1,
+///     None,
+///     None,
+/// )
+/// .unwrap();
+/// let provider = Arc::new(DefaultTopAddressing::new("http://unused.invalid", None));
+/// let _ = factory.with_top_addressing(provider);
+/// ```
 pub struct MQClientApiFactory {
     name_prefix: String,
     client_num: i32,
@@ -417,7 +437,8 @@ impl MQClientApiFactory {
 
     /// Replaces the default NameServer provider used by the domain-based
     /// constructor, retaining the provider's change callback behavior.
-    pub fn with_top_addressing(
+    #[cfg(test)]
+    fn with_top_addressing(
         mut self,
         provider: Arc<dyn TopAddressing>,
     ) -> Result<Self, MQClientApiFactoryError> {
