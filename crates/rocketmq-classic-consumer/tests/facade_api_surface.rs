@@ -1102,6 +1102,25 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "error": negative_batch_error.to_string(),
         "lastConsumeTimestamp": negative_batch_queue.get_last_consume_timestamp(),
     });
+    let null_message_list_queue = ProcessQueue::new();
+    let null_message_list_error = null_message_list_queue
+        .put_message_nullable(None)
+        .expect_err("Java iterating a null message list throws NullPointerException");
+    assert!(matches!(
+        &null_message_list_error,
+        ProcessQueueError::NullMessageList
+    ));
+    let null_message_list_result = serde_json::json!({
+        "errorClass": null_message_list_error.to_string(),
+        "count": null_message_list_queue.get_msg_count().get(),
+        "size": null_message_list_queue.get_msg_size().get(),
+        "treeKeys": null_message_list_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+    });
     let info_result = serde_json::json!({
         "cachedMsgCount": info.get_cached_msg_count(),
         "cachedMsgSizeInMiB": info.get_cached_msg_size_in_mib(),
@@ -1167,6 +1186,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "clearLifecycle": clear_lifecycle_result,
         "sizeMiBNarrowing": size_narrowing_info.get_cached_msg_size_in_mib(),
         "negativeBatchSize": negative_batch_result,
+        "nullMessageList": null_message_list_result,
     });
     assert_eq!(&actual, expected);
     queue.clear();

@@ -274,6 +274,20 @@ public final class ConsumerFacadeApiFixtures {
         result.put("nullInfoReturned", nullInfoReturned);
         result.put("sizeMiBNarrowing", sizeNarrowingInfo.getCachedMsgSizeInMiB());
 
+        ProcessQueue nullMessageListQueue = new ProcessQueue();
+        String nullMessageListErrorClass = null;
+        try {
+            nullMessageListQueue.putMessage(null);
+        } catch (Throwable error) {
+            nullMessageListErrorClass = error.getClass().getName();
+        }
+        Map<String, Object> nullMessageList = new TreeMap<>();
+        nullMessageList.put("errorClass", nullMessageListErrorClass);
+        nullMessageList.put("count", nullMessageListQueue.getMsgCount().get());
+        nullMessageList.put("size", nullMessageListQueue.getMsgSize().get());
+        nullMessageList.put("treeKeys", new ArrayList<>(nullMessageListQueue.getMsgTreeMap().keySet()));
+        result.put("nullMessageList", nullMessageList);
+
         ProcessQueue negativeBatchQueue = new ProcessQueue();
         negativeBatchQueue.setLastConsumeTimestamp(777L);
         Map<String, Object> negativeBatchResult = new TreeMap<>();

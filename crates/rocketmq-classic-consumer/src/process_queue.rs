@@ -490,6 +490,8 @@ pub(crate) enum LockAttemptResult {
 pub enum ProcessQueueError {
     #[error("work belongs to an older queue assignment generation")]
     StaleGeneration,
+    #[error("java.lang.NullPointerException")]
+    NullMessageList,
     #[error("process queue assignment has been dropped")]
     Dropped,
     #[error("consume batch does not belong to this process queue")]
@@ -741,6 +743,17 @@ impl ProcessQueue {
     pub fn put_message(&self, messages: &[MessageExt]) -> Result<bool, ProcessQueueError> {
         self.insert_messages_inner(self.generation, messages.to_vec(), false)
             .map(|outcome| outcome.dispatch_to_consume)
+    }
+
+    /// Maps Java's `putMessage(null)` failure while preserving the typed slice API.
+    pub fn put_message_nullable(
+        &self,
+        messages: Option<&[MessageExt]>,
+    ) -> Result<bool, ProcessQueueError> {
+        let Some(messages) = messages else {
+            return Err(ProcessQueueError::NullMessageList);
+        };
+        self.put_message(messages)
     }
 
     pub fn take_messages(
