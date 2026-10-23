@@ -864,6 +864,10 @@ mod windows {
     ];
     static CAPTURE_LOCK: Mutex<()> = Mutex::new(());
 
+    // windows-sys exposes CONTEXT without the native Windows alignment requirement.
+    #[repr(C, align(16))]
+    struct AlignedContext(CONTEXT);
+
     type GetThreadDescriptionFn = unsafe extern "system" fn(
         HANDLE,
         *mut windows_sys::core::PWSTR,
@@ -1072,13 +1076,14 @@ mod windows {
 
     #[cfg(target_arch = "x86_64")]
     unsafe fn capture_stack(process: HANDLE, thread: HANDLE, deadline: Instant) -> Vec<u64> {
-        let mut context = CONTEXT {
+        let mut context = AlignedContext(CONTEXT {
             ContextFlags: CONTEXT_FULL_AMD64,
             ..Default::default()
-        };
-        if unsafe { GetThreadContext(thread, &mut context) } == 0 {
+        });
+        if unsafe { GetThreadContext(thread, &mut context.0) } == 0 {
             return Vec::new();
         }
+        let context = &mut context.0;
         let mut frames = vec![context.Rip];
         let mut history = UNWIND_HISTORY_TABLE::default();
         while frames.len() < MAX_FRAMES && Instant::now() < deadline {
@@ -1113,7 +1118,7 @@ mod windows {
                         image_base,
                         control_pc,
                         function,
-                        &mut context,
+                        context,
                         ptr::null_mut(),
                         ptr::null_mut(),
                         ptr::null_mut(),
@@ -1131,11 +1136,12 @@ mod windows {
 
     #[cfg(target_arch = "aarch64")]
     unsafe fn capture_stack(_process: HANDLE, thread: HANDLE, deadline: Instant) -> Vec<u64> {
-        let mut context = CONTEXT::default();
-        context.ContextFlags = CONTEXT_FULL_ARM64;
-        if unsafe { GetThreadContext(thread, &mut context) } == 0 {
+        let mut context = AlignedContext(CONTEXT::default());
+        context.0.ContextFlags = CONTEXT_FULL_ARM64;
+        if unsafe { GetThreadContext(thread, &mut context.0) } == 0 {
             return Vec::new();
         }
+        let context = &mut context.0;
         let mut frames = vec![context.Pc];
         let mut history = UNWIND_HISTORY_TABLE::default();
         while frames.len() < MAX_FRAMES && Instant::now() < deadline {
@@ -1160,7 +1166,7 @@ mod windows {
                         image_base,
                         control_pc as usize,
                         function as *const IMAGE_ARM64_RUNTIME_FUNCTION_ENTRY,
-                        &mut context,
+                        context,
                         ptr::null_mut(),
                         ptr::null_mut(),
                         ptr::null_mut(),
