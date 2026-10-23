@@ -1,4 +1,4 @@
-use super::{ClientRuntime, RuntimeError, RuntimeState};
+use super::{ClientRuntime, RuntimeError, RuntimeState, stats::StatsItemSetKind};
 use std::{
     collections::BTreeMap,
     future::Future,
@@ -39,12 +39,12 @@ pub(super) enum TaskKind {
     Heartbeat,
     Persist,
     Adjust,
-    StatsSampleSeconds,
-    StatsSampleMinutes,
-    StatsSampleHour,
-    StatsPrintMinutes,
-    StatsPrintHour,
-    StatsPrintDay,
+    StatsSampleSeconds(StatsItemSetKind),
+    StatsSampleMinutes(StatsItemSetKind),
+    StatsSampleHour(StatsItemSetKind),
+    StatsPrintMinutes(StatsItemSetKind),
+    StatsPrintHour(StatsItemSetKind),
+    StatsPrintDay(StatsItemSetKind),
 }
 
 #[derive(Clone, Copy)]
@@ -992,35 +992,35 @@ pub(super) fn schedules(
 /// by `MQClientInstance.startScheduledTask()`.
 pub(super) fn stats_schedules() -> Vec<Schedule> {
     let mut result = Vec::with_capacity(30);
-    for _ in 0..5 {
+    for set in StatsItemSetKind::ALL {
         for (kind, delay, period) in [
             (
-                TaskKind::StatsSampleSeconds,
+                TaskKind::StatsSampleSeconds(set),
                 Duration::ZERO,
                 Duration::from_secs(10),
             ),
             (
-                TaskKind::StatsSampleMinutes,
+                TaskKind::StatsSampleMinutes(set),
                 Duration::ZERO,
                 Duration::from_secs(10 * 60),
             ),
             (
-                TaskKind::StatsSampleHour,
+                TaskKind::StatsSampleHour(set),
                 Duration::ZERO,
                 Duration::from_secs(60 * 60),
             ),
             (
-                TaskKind::StatsPrintMinutes,
+                TaskKind::StatsPrintMinutes(set),
                 next_local_boundary_delay(LocalBoundary::Minute),
                 Duration::from_secs(60),
             ),
             (
-                TaskKind::StatsPrintHour,
+                TaskKind::StatsPrintHour(set),
                 next_local_boundary_delay(LocalBoundary::Hour),
                 Duration::from_secs(60 * 60),
             ),
             (
-                TaskKind::StatsPrintDay,
+                TaskKind::StatsPrintDay(set),
                 next_local_boundary_delay(LocalBoundary::Day),
                 Duration::from_secs(24 * 60 * 60),
             ),
@@ -1450,6 +1450,39 @@ mod tests {
         pin::Pin,
         sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     };
+
+    #[test]
+    fn stats_schedules_keep_each_java_item_set_identity() {
+        let schedules = stats_schedules();
+        assert_eq!(schedules.len(), 30);
+
+        for (set_schedules, set) in schedules.chunks_exact(6).zip(StatsItemSetKind::ALL) {
+            assert!(matches!(
+                set_schedules[0].kind,
+                TaskKind::StatsSampleSeconds(owner) if owner == set
+            ));
+            assert!(matches!(
+                set_schedules[1].kind,
+                TaskKind::StatsSampleMinutes(owner) if owner == set
+            ));
+            assert!(matches!(
+                set_schedules[2].kind,
+                TaskKind::StatsSampleHour(owner) if owner == set
+            ));
+            assert!(matches!(
+                set_schedules[3].kind,
+                TaskKind::StatsPrintMinutes(owner) if owner == set
+            ));
+            assert!(matches!(
+                set_schedules[4].kind,
+                TaskKind::StatsPrintHour(owner) if owner == set
+            ));
+            assert!(matches!(
+                set_schedules[5].kind,
+                TaskKind::StatsPrintDay(owner) if owner == set
+            ));
+        }
+    }
 
     #[derive(Default)]
     struct Consumer {

@@ -15,11 +15,40 @@ const DAY_SAMPLE_COUNT: usize = 25;
 
 type StatsKey = String;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum StatsLogWindow {
     Minute,
     Hour,
     Day,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum StatsItemSetKind {
+    ConsumeOkTps,
+    ConsumeRt,
+    ConsumeFailedTps,
+    PullTps,
+    PullRt,
+}
+
+impl StatsItemSetKind {
+    pub(super) const ALL: [Self; 5] = [
+        Self::ConsumeOkTps,
+        Self::ConsumeRt,
+        Self::ConsumeFailedTps,
+        Self::PullTps,
+        Self::PullRt,
+    ];
+
+    fn log_spec(self) -> (&'static str, bool) {
+        match self {
+            Self::ConsumeOkTps => ("CONSUME_OK_TPS", false),
+            Self::ConsumeRt => ("CONSUME_RT", true),
+            Self::ConsumeFailedTps => ("CONSUME_FAILED_TPS", false),
+            Self::PullTps => ("PULL_TPS", false),
+            Self::PullRt => ("PULL_RT", true),
+        }
+    }
 }
 
 impl StatsLogWindow {
@@ -63,17 +92,27 @@ impl ConsumerStatsManager {
     /// Java's lifecycle hooks are no-ops; the runtime owns this manager.
     pub fn shutdown(&self) {}
 
-    pub(super) fn sample(&self) {
-        let now = Instant::now();
+    pub(super) fn sample(&self, set: StatsItemSetKind) {
+        self.sample_at(set, Instant::now());
+    }
+
+    fn sample_at(&self, set: StatsItemSetKind, now: Instant) {
         for stats in self.lock_topics().values_mut() {
-            stats.advance(now);
+            stats.series_mut(set).advance(now);
         }
     }
 
-    pub(super) fn log(&self, window: StatsLogWindow) {
-        for (key, stats) in self.lock_topics().iter() {
-            stats.log(key, window);
+    pub(super) fn log(&self, set: StatsItemSetKind, window: StatsLogWindow) {
+        for event in self.log_events(set, window) {
+            event.emit();
         }
+    }
+
+    fn log_events(&self, set: StatsItemSetKind, window: StatsLogWindow) -> Vec<StatsLogEvent> {
+        self.lock_topics()
+            .iter()
+            .filter_map(|(key, stats)| stats.log_event(key, set, window))
+            .collect()
     }
 
     pub fn inc_pull_rt(&self, group: &str, topic: &str, rt: i64) {
@@ -195,14 +234,34 @@ impl TopicStats {
         self.consume_failed_tps.advance(now);
     }
 
-    fn log(&self, key: &str, window: StatsLogWindow) {
-        self.pull_rt.log("PULL_RT", key, window, true);
-        self.pull_tps.log("PULL_TPS", key, window, false);
-        self.consume_rt.log("CONSUME_RT", key, window, true);
-        self.consume_ok_tps
-            .log("CONSUME_OK_TPS", key, window, false);
-        self.consume_failed_tps
-            .log("CONSUME_FAILED_TPS", key, window, false);
+    fn series(&self, set: StatsItemSetKind) -> &MetricSeries {
+        match set {
+            StatsItemSetKind::ConsumeOkTps => &self.consume_ok_tps,
+            StatsItemSetKind::ConsumeRt => &self.consume_rt,
+            StatsItemSetKind::ConsumeFailedTps => &self.consume_failed_tps,
+            StatsItemSetKind::PullTps => &self.pull_tps,
+            StatsItemSetKind::PullRt => &self.pull_rt,
+        }
+    }
+
+    fn series_mut(&mut self, set: StatsItemSetKind) -> &mut MetricSeries {
+        match set {
+            StatsItemSetKind::ConsumeOkTps => &mut self.consume_ok_tps,
+            StatsItemSetKind::ConsumeRt => &mut self.consume_rt,
+            StatsItemSetKind::ConsumeFailedTps => &mut self.consume_failed_tps,
+            StatsItemSetKind::PullTps => &mut self.pull_tps,
+            StatsItemSetKind::PullRt => &mut self.pull_rt,
+        }
+    }
+
+    fn log_event(
+        &self,
+        key: &str,
+        set: StatsItemSetKind,
+        window: StatsLogWindow,
+    ) -> Option<StatsLogEvent> {
+        let (name, response_time) = set.log_spec();
+        self.series(set).log_event(name, key, window, response_time)
     }
 }
 
@@ -243,23 +302,55 @@ impl MetricSeries {
         self.day.sample_until(now, self.value, self.calls);
     }
 
-    fn log(&self, name: &str, key: &str, window: StatsLogWindow, response_time: bool) {
+    fn log_event(
+        &self,
+        name: &'static str,
+        key: &str,
+        window: StatsLogWindow,
+        response_time: bool,
+    ) -> Option<StatsLogEvent> {
         if !self.initialized {
-            return;
+            return None;
         }
         let samples = match window {
             StatsLogWindow::Minute => &self.minute,
             StatsLogWindow::Hour => &self.hour,
             StatsLogWindow::Day => &self.day,
         };
-        let summary = samples.summary();
+        Some(StatsLogEvent {
+            name,
+            key: key.to_owned(),
+            window: window.label(),
+            response_time,
+            summary: samples.summary(),
+        })
+    }
+}
+
+struct StatsLogEvent {
+    name: &'static str,
+    key: String,
+    window: &'static str,
+    response_time: bool,
+    summary: MetricSummary,
+}
+
+impl StatsLogEvent {
+    fn emit(self) {
+        let Self {
+            name,
+            key,
+            window,
+            response_time,
+            summary,
+        } = self;
         if response_time {
             tracing::info!(
                 target: "org.apache.rocketmq.client.stat.ConsumerStatsManager",
                 "[{}] [{}] Stats In {}, TIMES: {} AVGRT: {:.2}",
                 name,
                 key,
-                window.label(),
+                window,
                 summary.times,
                 summary.average,
             );
@@ -269,7 +360,7 @@ impl MetricSeries {
                 "[{}] [{}] Stats In {}, SUM: {} TPS: {:.2} AVGPT: {:.2}",
                 name,
                 key,
-                window.label(),
+                window,
                 summary.sum,
                 summary.tps,
                 summary.average,
@@ -471,7 +562,9 @@ fn java_stats_key(group: &str, topic: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConsumerConsumeStatus, ConsumerStatsManager, MetricSeries};
+    use super::{
+        ConsumerConsumeStatus, ConsumerStatsManager, MetricSeries, StatsItemSetKind, StatsLogWindow,
+    };
     use std::time::{Duration, Instant};
 
     #[test]
@@ -523,6 +616,74 @@ mod tests {
         assert_eq!(series.day.average(), (4.0, 12));
         assert!((series.day.rate() - (12.0 / 3600.0)).abs() < f64::EPSILON);
         assert_eq!(series.day.summary().times, 3);
+    }
+
+    #[test]
+    fn scheduled_sampling_advances_only_its_java_stats_item_set() {
+        let origin = Instant::now();
+        let stats = ConsumerStatsManager::with_sampling_origin(origin);
+        stats.update_topic_at(
+            "workers",
+            "orders",
+            origin + Duration::from_secs(1),
+            |topic, now| {
+                for set in StatsItemSetKind::ALL {
+                    topic.series_mut(set).record(now, 10, 1);
+                }
+            },
+        );
+
+        stats.sample_at(StatsItemSetKind::PullTps, origin + Duration::from_secs(10));
+
+        let topics = stats.lock_topics();
+        for set in StatsItemSetKind::ALL {
+            let samples = &topics["orders@workers"].series(set).minute.samples;
+            if set == StatsItemSetKind::PullTps {
+                assert_eq!(samples.len(), 2);
+            } else {
+                assert!(samples.is_empty(), "{set:?} was sampled by PullTPS");
+            }
+        }
+    }
+
+    #[test]
+    fn each_scheduled_print_emits_only_its_java_stats_item_set() {
+        let origin = Instant::now();
+        let stats = ConsumerStatsManager::with_sampling_origin(origin);
+        stats.update_topic_at(
+            "workers",
+            "orders",
+            origin + Duration::from_secs(1),
+            |topic, now| {
+                for set in StatsItemSetKind::ALL {
+                    topic.series_mut(set).record(now, 10, 1);
+                }
+            },
+        );
+        let expected = [
+            (StatsItemSetKind::ConsumeOkTps, "CONSUME_OK_TPS", false),
+            (StatsItemSetKind::ConsumeRt, "CONSUME_RT", true),
+            (
+                StatsItemSetKind::ConsumeFailedTps,
+                "CONSUME_FAILED_TPS",
+                false,
+            ),
+            (StatsItemSetKind::PullTps, "PULL_TPS", false),
+            (StatsItemSetKind::PullRt, "PULL_RT", true),
+        ];
+
+        let mut total_events = 0;
+        for (set, name, response_time) in expected {
+            let events = stats.log_events(set, StatsLogWindow::Minute);
+            assert_eq!(events.len(), 1, "{set:?} should emit one metric");
+            assert_eq!(events[0].name, name);
+            assert_eq!(events[0].key, "orders@workers");
+            assert_eq!(events[0].window, "One Minute");
+            assert_eq!(events[0].response_time, response_time);
+            total_events += events.len();
+        }
+
+        assert_eq!(total_events, 5);
     }
 
     #[test]
