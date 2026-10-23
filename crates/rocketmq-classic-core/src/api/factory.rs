@@ -243,18 +243,20 @@ impl FactoryAddressState {
         self.current(index)
     }
 
-    fn update_all(&self, addresses: Option<&str>) -> Option<String> {
+    fn update_all(&self, addresses: Option<&str>) -> Result<(), usize> {
         let count = self
             .current
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .len();
+        let clients = self.clients().ok_or(0usize)?;
         for index in 0..count {
+            if !matches!(clients.get(index), Some(Some(_))) {
+                return Err(index);
+            }
             self.update_slot(index, addresses);
         }
-        addresses
-            .map(str::to_owned)
-            .or_else(|| (0..count).find_map(|index| self.current(index)))
+        Ok(())
     }
 
     fn update_from_discovery(&self, index: usize, addresses: Option<&str>) -> Option<String> {
@@ -514,7 +516,9 @@ impl MQClientApiFactory {
         if self.address_state.clients().is_none() {
             return Err(MQClientApiFactoryError::NotStarted);
         }
-        self.address_state.update_all(addresses);
+        self.address_state
+            .update_all(addresses)
+            .map_err(MQClientApiFactoryError::NullClient)?;
         Ok(())
     }
 
@@ -697,6 +701,34 @@ mod tests {
             clients.len(),
             java["clientCountAfterStart"].as_u64().unwrap() as usize
         );
+        let expected_addresses = |key: &str| {
+            java[key]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|addresses| {
+                    addresses.as_array().map(|addresses| {
+                        addresses
+                            .iter()
+                            .map(|address| address.as_str().unwrap().to_owned())
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect::<Vec<Option<Vec<String>>>>()
+        };
+        let actual_addresses = || {
+            clients
+                .snapshot()
+                .into_iter()
+                .map(|client| {
+                    client.map(|api| {
+                        let mut addresses = api.get_name_server_address_list().unwrap();
+                        addresses.sort();
+                        addresses
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
         assert!(factory.get_client().unwrap().is_some());
         for api in clients.snapshot().into_iter().flatten() {
             let mut addresses = api.get_name_server_address_list().unwrap();
@@ -729,6 +761,31 @@ mod tests {
         }
         assert_eq!(java["publicConstructors"].as_array().unwrap().len(), 2);
         assert!(factory.get_client().unwrap().is_some());
+        assert_eq!(
+            java["addressChangeWithNullSlotError"],
+            "NullPointerException"
+        );
+        assert_eq!(java["nullAddressWithNullSlotError"], "NullPointerException");
+        let second = clients.get(1).unwrap().unwrap();
+        clients.set(1, None).unwrap();
+        let changed_address = java["addressChangeWithNullSlotInput"].as_str().unwrap();
+        assert!(matches!(
+            factory.on_name_server_address_change(Some(changed_address)),
+            Err(MQClientApiFactoryError::NullClient(1))
+        ));
+        assert_eq!(
+            actual_addresses(),
+            expected_addresses("clientAddressesAfterAddressChangeNullSlotFailure")
+        );
+        assert!(matches!(
+            factory.on_name_server_address_change(None),
+            Err(MQClientApiFactoryError::NullClient(1))
+        ));
+        assert_eq!(
+            actual_addresses(),
+            expected_addresses("clientAddressesAfterNullAddressNullSlotFailure")
+        );
+        clients.set(1, Some(second)).unwrap();
         factory
             .on_name_server_address_change(Some(
                 java["clientAddressesAfterChange"][0][0].as_str().unwrap(),

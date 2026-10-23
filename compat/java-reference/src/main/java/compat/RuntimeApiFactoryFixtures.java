@@ -104,6 +104,33 @@ public final class RuntimeApiFactoryFixtures {
                 fixture.put("arrayMutationVisible", factory.getClients()[0] == clients[1]);
                 clients[0] = first;
 
+                MQClientAPIExt second = clients[1];
+                clients[1] = null;
+                fixture.put("addressChangeWithNullSlotInput", "127.0.0.4:9876");
+                String changedAddressNullSlotError;
+                try {
+                    factory.onNameServerAddressChange("127.0.0.4:9876");
+                    changedAddressNullSlotError = "NONE";
+                } catch (Throwable error) {
+                    changedAddressNullSlotError = error.getClass().getSimpleName();
+                }
+                fixture.put("addressChangeWithNullSlotError", changedAddressNullSlotError);
+                fixture.put("clientAddressesAfterAddressChangeNullSlotFailure", Arrays.stream(clients)
+                    .map(client -> client == null ? null : sorted(client.getNameServerAddressList()))
+                    .collect(Collectors.toList()));
+                String nullAddressNullSlotError;
+                try {
+                    factory.onNameServerAddressChange(null);
+                    nullAddressNullSlotError = "NONE";
+                } catch (Throwable error) {
+                    nullAddressNullSlotError = error.getClass().getSimpleName();
+                }
+                fixture.put("nullAddressWithNullSlotError", nullAddressNullSlotError);
+                fixture.put("clientAddressesAfterNullAddressNullSlotFailure", Arrays.stream(clients)
+                    .map(client -> client == null ? null : sorted(client.getNameServerAddressList()))
+                    .collect(Collectors.toList()));
+                clients[1] = second;
+
                 factory.onNameServerAddressChange("127.0.0.3:9876");
                 fixture.put("clientAddressesAfterChange", Arrays.stream(factory.getClients())
                     .map(client -> sorted(client.getNameServerAddressList())).collect(Collectors.toList()));
