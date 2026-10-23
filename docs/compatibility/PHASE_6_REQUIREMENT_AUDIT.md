@@ -3762,3 +3762,30 @@ check --offline --workspace --all-targets --all-features --locked --target
 x86_64-pc-windows-gnu` also passes, compiling all test and example targets for
 the Windows GNU target. It adds cross-target compile evidence only; the native
 Windows runtime check remains open.
+
+## P18-V01 inherited `ServiceThread` controls — 2026-10-23 (`bd4e073c`)
+
+Pinned Java 5.5.1 exposes `ServiceThread.start`, both shutdown overloads,
+`getJoinTime`, `makeStop`, `wakeup`, `isStopped`, `isDaemon`, and
+`setDaemon`. The Rust Core now returns `RuntimeServiceThread` handles for the
+runtime-owned rebalance and pull services. They map the 90,000ms join interval,
+idempotent start/shutdown state, stop and wake behavior, daemon configuration
+and start-time daemon snapshot, bounded join, pull queue interruption, and the
+PullMessageService scheduled-executor shutdown override. Java's private wait
+point hooks remain internal implementation details.
+
+At code revision `bd4e073c`, the default and all-feature locked workspace test
+suites pass, as do strict all-target/all-feature workspace Clippy, formatting,
+`git diff --check`, pinned offline Maven `verify` (37 scenarios, 106 typed
+headers and 19 typed bodies), comparator self-test and 37-scenario manifest
+validation, workspace metadata checks, bounded fuzz smoke (163 frame seeds,
+11 message seeds and 2,784 mutations), 17 deterministic race/leak cases × 3,
+release example compilation, and the offline benchmark. The service-specific
+regressions cover inherited controls, pre-start PullMessageService shutdown,
+stopped-service task admission, and restart after full runtime shutdown.
+
+This closes the inherited ServiceThread API/control slice only. P18-V01's broad
+Java source/API/settings/input/error/control-flow and Rust reverse-export
+reconciliation remains PARTIAL. Current-revision remote Ubuntu CI, native
+Windows runtime execution, and Phase 19 Broker/Docker evidence also remain
+open.

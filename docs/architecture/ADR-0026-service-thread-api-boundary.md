@@ -1,62 +1,71 @@
 # ADR-0026: Map the inherited Java ServiceThread API boundary
 
-Status: audited in `afb1811`; whole-phase source and API reconciliation remains
-open.
+Status: inherited public controls are mapped by the Rust service handles;
+whole-phase source and API reconciliation remains open.
 
 ## Source contract
 
-In Java 5.5.1, both `RebalanceService` and `PullMessageService` inherit the
-public `ServiceThread` methods `start`, `shutdown()`, `shutdown(boolean)`,
+In Java 5.5.1, `RebalanceService` and `PullMessageService` inherit public
+`ServiceThread` methods `start`, `shutdown()`, `shutdown(boolean)`,
 `getJoinTime`, `makeStop`, `wakeup`, `isStopped`, `isDaemon`, and
-`setDaemon(boolean)`. `getServiceName()` is overridden on both classes and is
-mapped in [ADR-0025](ADR-0025-runtime-service-name-methods.md). The pinned
-bytecode returns a 90,000ms join time; new threads default to non-daemon and
-not stopped. `makeStop()` does nothing before the worker is started.
-`PullMessageService.shutdown()` also shuts down its separate scheduled
-executor.
+`setDaemon(boolean)`. `PullMessageService` is reachable through
+`MQClientInstance.getPullMessageService()`. `getServiceName()` is overridden on
+both classes and mapped in [ADR-0025](ADR-0025-runtime-service-name-methods.md).
+The join interval is 90,000ms, new threads default to non-daemon and not
+stopped, and `makeStop()` is a pre-start no-op. PullMessageService's overridden
+shutdown also closes its separate scheduled executor with a one-second grace.
 
-The generated `serviceThreadCases` fixture directly invokes state/configuration
-methods on both unstarted service instances. It checks the default
-join/daemon/stopped values, `setDaemon(true)` followed by `isDaemon()`, the
-observed state after `wakeup()` and pre-start `makeStop()`, and the unchanged
-stopped flag after pre-start `shutdown()`. It also records that the
-PullMessageService scheduled executor is closed.
+The Java `serviceThreadCases` fixture invokes state/configuration methods on
+both unstarted workers. `serviceLifecycleCases` uses latch-controlled run
+bodies to verify idempotent start, a stop flag that does not join, and
+`shutdown(true)` joining the worker. The probes do not run either RocketMQ
+worker loop or contact a Broker.
 
-The `serviceLifecycleCases` fixture uses subclasses that override `run()` with
-a latch-controlled body. It directly invokes `start()` twice, verifies only
-one run, calls `makeStop()` while the thread is blocked and verifies that the
-stopped flag changes without joining, then releases the run body and invokes
-`shutdown(true)`. The fixture observes the stopped flag, thread liveness, and
-PullMessageService executor closure. These probes exercise the inherited
-thread mechanics without executing either RocketMQ worker loop or contacting
-a Broker.
+## Rust mapping
 
-## Rust mapping and limits
+`ClientRuntime::{rebalance_service,pull_message_service}` returns a cloneable
+`RuntimeServiceThread` handle for the corresponding runtime-owned worker. Its
+`start()` and `shutdown(interrupt)` are async because Rust owns Tokio tasks.
+Runtime-wide `ClientRuntime::start/shutdown` continues to start and stop all
+client-owned workers.
 
-Rust does not expose standalone `RebalanceService`, `PullMessageService`, or
-JDK-thread objects. `ClientRuntime::start`, `shutdown`, and `state` manage the
-aggregate runtime; `rebalance_immediately` signals the owned rebalance task,
-and immediate pull/pop calls enqueue work. `OwnedPullWorker::finish_gracefully`
-preserves the one-second scheduled-work grace before cancellation and join.
-Existing lifecycle, rebalance-wakeup, and pull-dispatch tests cover those
-owned-task paths.
+The handle exposes `service_name`, `join_time_millis`, `is_stopped`,
+`make_stop`, `wakeup`, `is_daemon`, and `set_daemon`. Initial stopped/daemon
+values, pre-start stop/shutdown behavior, repeated start, daemon changes, and
+restart after a full runtime shutdown are covered by the runtime integration
+tests. `make_stop()` only sets the worker flag and never wakes or joins. The
+rebalance worker observes the flag after its current wait/run cycle. The pull
+worker waits for its queue; a queue item that wakes an already-blocked pull
+worker is processed before the stop flag takes effect.
 
-`runtime::SERVICE_THREAD_JOIN_TIME_MILLIS` exposes the fixed 90,000ms value
-returned by Java's `getJoinTime()`, checked against both invoked worker cases.
-There is no per-worker getter or Java `Thread.join` window. The Java daemon
-flag, interrupt boolean, and started-but-not-joined `makeStop()` operation have
-no direct Rust counterpart. Rust tasks are explicitly owned and joined through
-the runtime control task; `RuntimeState` is richer than the per-thread
-`isStopped()` boolean. These are documented worker-model differences, not
-claims of JDK thread parity.
-`waitForRunning(long)` and `onWaitEnd()` are protected methods, so they remain
-implementation details rather than public API entries.
+`shutdown(interrupt)` sets the stopped flag, performs the source worker's
+wakeup, and waits up to the pinned 90,000ms interval when the thread's daemon
+value captured at start is false. For PullMessageService, `interrupt=true`
+releases a worker blocked on the queue; an in-flight callback completes before
+the stop flag is observed. Pull shutdown closes its scheduled executor even
+when the inherited service shutdown is a pre-start no-op. It preserves the
+one-second scheduled-work grace before cancellation and join. The `isDaemon`
+getter and mutable daemon setting match Java; because Tokio tasks do not own
+process-exit policy, the setting controls the corresponding per-service join
+wait rather than an OS thread flag.
 
-The current `fixtures/runtime/client-config.json` SHA-256 is
-`631b1b9537c13cf1f5943b0e958b214a6bf4099b4edc6cd8643a02f4c207d4c0`.
+The inherited PullMessageService `wakeup()` operates on ServiceThread's
+wait-point, but its concrete `run()` blocks on `LinkedBlockingQueue.take()` and
+does not use that wait-point. The Rust handle therefore does not notify the
+pull queue for `wakeup()`; queued work remains the event that releases that
+wait. The rebalance handle signals the sticky rebalance notification.
+
+`ServiceThread.waitForRunning(long)` and `onWaitEnd()` are protected methods,
+not public API rows. Concrete worker loops and their runtime effects are mapped
+separately in the Phase 6 runtime inventory.
+
+## Evidence
+
 `inherited_service_thread_oracle_records_java_thread_controls` and
 `inherited_service_thread_oracle_records_java_start_stop_contract` pin the
-invoked values. Full workspace tests, strict Clippy, pinned offline Maven
-verification, comparator self-test, manifest validation, formatter, and diff
-checks pass. Whole Phase 6 reconciliation and P6-V04 Phase 19 evidence remain
-open.
+source observations. `runtime_service_thread_handles_match_inherited_controls`,
+`pull_service_prestart_shutdown_keeps_service_flag_and_closes_scheduler`, and
+`service_threads_can_restart_after_client_runtime_shutdown` exercise the Rust
+handle behavior. The pull-dispatch regressions cover stopped-service task
+admission and scheduler shutdown. Full Phase 6 reconciliation and P6-V04 Phase
+19 evidence remain open.

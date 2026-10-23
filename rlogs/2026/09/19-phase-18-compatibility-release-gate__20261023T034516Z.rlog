@@ -166,3 +166,30 @@ current-revision remote Ubuntu CI, native Windows runtime execution, and Phase
 19 Broker/Docker validation. No remote CI, push, Broker, or Docker action was
 performed; the four protected Phase 19 worktree paths remain unchanged and
 unstaged.
+
+## Inherited ServiceThread controls — 2026-10-23T05:38:02Z
+
+Code commit `bd4e073c` maps the pinned Java public `ServiceThread` controls on
+runtime-owned RebalanceService and PullMessageService handles. The Rust API
+covers async start/shutdown, the 90,000ms join interval, stop and wake
+semantics, stopped state, daemon getter/setter with a start-time snapshot,
+PullMessageService queue interruption, and its scheduled-executor shutdown
+override. Tests cover service controls, pre-start PullMessageService shutdown,
+stopped-service task admission, and service restart after full runtime
+shutdown.
+
+Current-tree validation passed: default and all-feature locked workspace tests;
+strict all-target/all-feature workspace Clippy; format and diff checks; offline
+Maven `verify` (37 scenarios, 106 typed headers, 19 typed bodies); differential
+self-test and 37-scenario manifest validation; workspace metadata; fuzz smoke
+(163 frame seeds, 11 message seeds, 2,784 mutations, 245 frame decodes, 192
+message decodes); deterministic race/leak smoke (17 cases × 3 repetitions);
+release examples; and the offline benchmark. The sample is appended to
+`docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+
+This closes the inherited ServiceThread API/control slice only. Broad P18-V01
+bidirectional source/API/settings/input/error/control-flow and reverse-export
+reconciliation remains PARTIAL. Current-revision remote Ubuntu CI, native
+Windows execution, and Phase 19 Broker/Docker validation remain open. No
+remote CI, push, Broker, or Docker action was performed; protected Phase 19
+worktree paths remain unchanged and unstaged.

@@ -8237,3 +8237,22 @@ owner-specific checks belong in the manual handoff.
   push, Broker, or Docker action was performed; protected Phase 19 worktree
   files remain untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V01 inherited ServiceThread API slice — 2026-10-23 (`bd4e073c`)
+
+- [x] Rust service handles expose inherited RebalanceService and
+  PullMessageService controls: async start/shutdown, join interval, stopped
+  state, stop/wakeup, and daemon getter/setter. Pull shutdown also closes its
+  separate scheduled executor, including when called before worker start.
+- [x] Current-tree default/all-feature workspace tests, strict workspace
+  Clippy, format/diff checks, pinned Maven verification, differential
+  self-test/37-scenario manifest validation, metadata, fuzz smoke, 17-case × 3
+  race/leak smoke, release examples, and offline benchmark passed. The current
+  benchmark sample is in the [baseline](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+- [ ] This closes only the inherited thread-control slice. Broad P18-V01
+  bidirectional source/API/settings/input/error/control-flow reconciliation
+  remains open. Current-revision remote Ubuntu CI, native Windows runtime, and
+  Phase 19 Broker/Docker validation remain pending. No remote CI, push, Broker,
+  or Docker action was performed. Protected Phase 19 worktree files remain
+  untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
