@@ -113,6 +113,13 @@ public final class ConsumerExpiredMessageFixtures {
         provenance.put("entrypoint", "ProcessQueue.cleanExpiredMsg(DefaultMQPushConsumer)");
         provenance.put("serverBaselineContacted", false);
         fixture.put("provenance", provenance);
+        String nullConsumerErrorClass = null;
+        try {
+            new ProcessQueue().cleanExpiredMsg(null);
+        } catch (Throwable error) {
+            nullConsumerErrorClass = error.getClass().getName();
+        }
+        fixture.put("nullConsumerErrorClass", nullConsumerErrorClass);
         fixture.put("expiredHead", runCase(false, false, 10, 11));
         fixture.put("sendBackFailure", runCase(false, true, 20, 21));
         fixture.put("attemptLimit", runCase(false, true, LongStream.range(60, 78).toArray()));

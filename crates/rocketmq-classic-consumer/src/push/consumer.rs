@@ -13935,6 +13935,18 @@ mod tests {
             fixture["provenance"]["sourceCommit"],
             "efa1be59d6fc747ad220f036c86030f05f0419f9"
         );
+        let null_consumer_error = ProcessQueue::new()
+            .clean_expired_msg_nullable(None)
+            .await
+            .expect_err("Java dereferences the consumer before scanning messages");
+        assert!(matches!(
+            &null_consumer_error,
+            ExpiredMessageCleanupError::NullPushConsumer
+        ));
+        assert_eq!(
+            null_consumer_error.to_string(),
+            fixture["nullConsumerErrorClass"].as_str().unwrap()
+        );
 
         let config = PushConsumerConfig::new("expired-message-cleanup").unwrap();
         config.set_consume_timeout_minutes(1);

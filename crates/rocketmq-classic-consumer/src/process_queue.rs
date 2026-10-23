@@ -509,6 +509,8 @@ pub enum ProcessQueueError {
 /// Failure raised when an expired-message timestamp cannot be parsed like Java's `Long.parseLong`.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ExpiredMessageCleanupError {
+    #[error("java.lang.NullPointerException")]
+    NullPushConsumer,
     #[error("invalid consume-start timestamp for message at offset {offset}: {value:?}")]
     InvalidConsumeStartTimestamp { offset: i64, value: String },
 }
@@ -986,6 +988,17 @@ impl ProcessQueue {
             let _ = self.remove_head_message(self.generation, offset, epoch_millis());
         }
         Ok(())
+    }
+
+    /// Preserves Java's null-consumer failure before the expiry scan starts.
+    pub async fn clean_expired_msg_nullable(
+        &self,
+        push_consumer: Option<&crate::push::PushConsumer>,
+    ) -> Result<(), ExpiredMessageCleanupError> {
+        let Some(push_consumer) = push_consumer else {
+            return Err(ExpiredMessageCleanupError::NullPushConsumer);
+        };
+        self.clean_expired_msg(push_consumer).await
     }
 
     pub(crate) fn queue(&self) -> &MessageQueue {
