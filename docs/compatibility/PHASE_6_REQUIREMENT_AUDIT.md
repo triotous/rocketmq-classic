@@ -4800,3 +4800,29 @@ completion, internal producer and trace flows, remoting command storage, and
 signed-timeout invocation. The scan found no additional client setting or
 wire operation in this set; it records adapter disposition rather than
 claiming the broad P18-V01 reverse-export audit is complete.
+
+## P18-V01 current Rustdoc export and controller DTO reverse scan — 2026-10-23 (`df5c3c59`)
+
+Regenerated all-feature Rustdoc JSON after the ConsumerStatsManager visibility
+follow-up. Distinct public item-name counts, excluding each crate root, are
+Common 439, Consumer 460, Core 788, Producer 361, Protocol 1,524, and Remoting
+337. These are name inventories, not evidence of Java behavior parity.
+
+The Core controller module declares 41 distinct public names. Its RPC method
+surface and DTO types/field aliases are now recorded in the Phase 6 API map.
+Review against the pinned `rocketmq-remoting-5.5.1-sources.jar` found remaining
+DTO behavior gaps: `BrokerReplicasInfo.addReplicaInfo` and the three
+`ReplicasInfo.isExistIn*` methods have no Rust counterparts, Rust's derived
+`ReplicaIdentity` equality includes `alive` although Java equality/hash code
+ignore it, and Rust `BrokerMemberGroup::minimum_broker_id` returns `None` for
+an absent address map where Java dereferences the map and throws. Java DTO
+hash-code and string-rendering methods also need explicit Rust dispositions.
+The source artifact SHA-256 is
+`ac2d2ad39cbe35e2125ce8cfdd2dd1c20ff7007f9960c1c4b597e292123a6bf6`.
+
+`RUSTDOCFLAGS='-Z unstable-options --output-format json' cargo +nightly doc
+--offline --workspace --all-features --locked --no-deps` passes. This pass
+records the exported-name and source-surface audit only; no unit tests or
+behavioral controller DTO verification were run. Broad P18-V01 reconciliation
+remains PARTIAL, and native Windows runtime, current-revision remote Ubuntu
+CI, and Phase 19 Broker/Docker validation remain open.

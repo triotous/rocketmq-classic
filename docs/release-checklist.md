@@ -9337,3 +9337,23 @@ owner-specific checks belong in the manual handoff.
   closes the P18-V03 local preparation review only; broad P18-V01 and P18-V04
   remain open. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T221410Z.rlog`.
+
+## P18-V01 Rustdoc export and controller DTO reverse scan — 2026-10-23 (`df5c3c59`)
+
+- [x] Current all-feature Rustdoc JSON generation passes. Distinct public name
+  counts are Common 439, Consumer 460, Core 788, Producer 361, Protocol 1,524,
+  and Remoting 337; these counts inventory names only.
+- [x] The 41 public names declared in Core's controller module now have a
+  Rust-to-Java DTO/type/field crosswalk, backed by the pinned
+  `rocketmq-remoting-5.5.1-sources.jar` (SHA-256
+  `ac2d2ad39cbe35e2125ce8cfdd2dd1c20ff7007f9960c1c4b597e292123a6bf6`).
+- [ ] Controller DTO behavior remains open: `BrokerReplicasInfo.addReplicaInfo`
+  and `ReplicasInfo.isExistInSync`/`isExistInNotSync`/`isExistInAllReplicas`
+  have no Rust counterparts; Rust `ReplicaIdentity` equality includes `alive`
+  while Java equality/hash code exclude it; Java DTO hash-code and string
+  rendering also need disposition. `BrokerMemberGroup.minimum_broker_id` also
+  differs on an absent address map. No behavioral tests were run for this scan.
+- [ ] Broad P18-V01 remains PARTIAL. Native Windows runtime, current-revision
+  remote Ubuntu CI, and Phase 19 Broker/Docker validation remain open. No plan
+  files were changed and no remote CI or push was run. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T221410Z.rlog`.
