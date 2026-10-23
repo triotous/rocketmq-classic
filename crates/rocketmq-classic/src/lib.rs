@@ -1,3 +1,13 @@
+//! Public RocketMQ Classic Rust facade.
+//!
+//! Internal Java-property bridging is kept in implementation crates and is
+//! not exposed by this facade.
+//!
+//! ```compile_fail
+//! use rocketmq_classic::utils::system_properties::get_property;
+//! # fn main() {}
+//! ```
+
 pub use rocketmq_classic_common::message::{
     Message, MessageExt, MessageExtSubtype, MessageQueue, SharedMessageBody,
     SharedMessageProperties,

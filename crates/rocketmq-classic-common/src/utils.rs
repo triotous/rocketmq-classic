@@ -1,6 +1,8 @@
 //! Public utilities shared by RocketMQ Classic client components.
 
 pub mod name_server_address;
+#[doc(hidden)]
+pub mod system_properties;
 
 pub use name_server_address::{
     ENDPOINT_PREFIX, INST_ENDPOINT_PATTERN, INSTANCE_PREFIX, INSTANCE_REGEX,

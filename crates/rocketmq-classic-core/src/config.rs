@@ -220,6 +220,16 @@ impl Default for ClientConfig {
     }
 }
 
+#[cfg(test)]
+fn java_client_property(key: &str) -> Option<String> {
+    std::env::var(key).ok()
+}
+
+#[cfg(not(test))]
+fn java_client_property(key: &str) -> Option<String> {
+    rocketmq_classic_common::utils::system_properties::get_property(key)
+}
+
 impl ClientConfig {
     pub const SEND_MESSAGE_WITH_VIP_CHANNEL_PROPERTY: &'static str =
         "com.rocketmq.sendMessageWithVIPChannel";
@@ -246,22 +256,19 @@ impl ClientConfig {
             .get_or_init(|| java_boolean_property(std::env::var("tls.enable").ok(), false));
         // NetworkUtil.getLocalAddress catches interface/DNS failures and returns
         // null; ClientConfig stores that null rather than failing construction.
-        Self::with_properties_and_tls_enable(
-            address.ok(),
-            |key| std::env::var(key).ok(),
-            tls_enable,
-        )
+        Self::with_properties_and_tls_enable(address.ok(), java_client_property, tls_enable)
     }
 
     /// Explicit client-IP selection, corresponding to Java `setClientIP`.
-    /// Known Java system-property keys are read from the process environment;
-    /// NAMESRV_ADDR remains the Java environment fallback.
+    /// Known Java system-property keys are read from the shared property
+    /// overlay before the process environment; NAMESRV_ADDR remains the Java
+    /// environment fallback.
     pub fn new(client_ip: impl Into<String>) -> Self {
         let tls_enable = *JAVA_TLS_ENABLE
             .get_or_init(|| java_boolean_property(std::env::var("tls.enable").ok(), false));
         Self::with_properties_and_tls_enable(
             Some(client_ip.into()),
-            |key| std::env::var(key).ok(),
+            java_client_property,
             tls_enable,
         )
     }

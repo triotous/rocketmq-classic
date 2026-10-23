@@ -1,11 +1,11 @@
 //! Rust-native pool lifecycle matching Java `MQClientAPIFactory`.
 //!
 //! The Java constructor writes NameServer and VIP values into JVM-wide system
-//! properties. This implementation applies the same effective values to its
-//! owned client configuration and NameServer provider, without changing the
-//! process environment. Pool selection, mutable array aliasing, address
-//! updates, and start/shutdown behavior are represented directly on
-//! [`MQClientApiFactory`].
+//! properties. This implementation applies those writes to the shared hidden
+//! property overlay, so later client configurations observe them without
+//! changing the operating-system environment. Pool selection, mutable array
+//! aliasing, address updates, and start/shutdown behavior are represented
+//! directly on [`MQClientApiFactory`].
 
 use std::{
     collections::HashMap,
@@ -268,9 +268,20 @@ impl FactoryAddressState {
 }
 
 fn java_process_properties() -> HashMap<String, String> {
-    std::env::vars_os()
+    let mut properties = std::env::vars_os()
         .filter_map(|(key, value)| Some((key.into_string().ok()?, value.into_string().ok()?)))
-        .collect()
+        .collect::<HashMap<_, _>>();
+    for key in [
+        ClientConfig::SEND_MESSAGE_WITH_VIP_CHANNEL_PROPERTY,
+        "rocketmq.namesrv.addr",
+        "rocketmq.namesrv.domain",
+        "rocketmq.namesrv.domain.subgroup",
+    ] {
+        if let Some(value) = rocketmq_classic_common::utils::system_properties::get_property(key) {
+            properties.insert(key.to_owned(), value);
+        }
+    }
+    properties
 }
 
 struct FactoryAddressCallback(Weak<FactoryAddressState>, usize);
@@ -374,6 +385,20 @@ impl MQClientApiFactory {
         creator: Option<Arc<RemotingClientCreator>>,
     ) -> Result<Self, MQClientApiFactoryError> {
         let domain = nameserver_access.namesrv_domain.as_deref().unwrap_or("");
+        let properties_applied =
+            rocketmq_classic_common::utils::system_properties::apply_mq_client_api_factory_properties(
+                nameserver_access.namesrv_addr.as_deref(),
+                nameserver_access.namesrv_domain.as_deref(),
+                nameserver_access.namesrv_domain_subgroup.as_deref(),
+            );
+        if !properties_applied {
+            return Err(if domain.is_empty() {
+                MQClientApiFactoryError::MissingNameServerAddress
+            } else {
+                MQClientApiFactoryError::NullNameServerDomainSubgroup
+            });
+        }
+
         let mut client_config = ClientConfig::default();
         client_config.set_vip_channel_enabled(false);
         client_config.set_decode_read_body(true);
@@ -393,7 +418,6 @@ impl MQClientApiFactory {
                 .namesrv_domain_subgroup
                 .as_deref()
                 .ok_or(MQClientApiFactoryError::NullNameServerDomainSubgroup)?;
-            client_config.set_namesrv_addr(None);
             let mut properties = java_process_properties();
             properties.insert("rocketmq.namesrv.domain".into(), domain.to_owned());
             properties.insert(

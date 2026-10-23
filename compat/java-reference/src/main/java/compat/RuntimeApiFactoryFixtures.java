@@ -63,6 +63,48 @@ public final class RuntimeApiFactoryFixtures {
             System.setProperty(vipProperty, "true");
             System.setProperty(domainProperty, "before.example");
             System.setProperty(subgroupProperty, "before-subgroup");
+
+            ScheduledExecutorService missingAddressScheduler = Executors.newSingleThreadScheduledExecutor();
+            try {
+                String missingAddressError;
+                try {
+                    new MQClientAPIFactory(new NameserverAccessConfig(null, "", null),
+                        "missing-", 0, null, null, missingAddressScheduler);
+                    missingAddressError = "NONE";
+                } catch (Throwable error) {
+                    missingAddressError = error.getClass().getSimpleName();
+                }
+                fixture.put("missingStaticAddressError", missingAddressError);
+                fixture.put("vipPropertyAfterMissingStaticAddress", System.getProperty(vipProperty));
+            } finally {
+                missingAddressScheduler.shutdownNow();
+            }
+
+            System.setProperty(vipProperty, "true");
+            System.setProperty(domainProperty, "before.example");
+            System.setProperty(subgroupProperty, "before-subgroup");
+            ScheduledExecutorService missingSubgroupScheduler = Executors.newSingleThreadScheduledExecutor();
+            try {
+                String missingSubgroupError;
+                try {
+                    new MQClientAPIFactory(new NameserverAccessConfig(null,
+                        "failed-domain.example", null), "bad-domain-", 0, null, null,
+                        missingSubgroupScheduler);
+                    missingSubgroupError = "NONE";
+                } catch (Throwable error) {
+                    missingSubgroupError = error.getClass().getSimpleName();
+                }
+                fixture.put("missingDomainSubgroupError", missingSubgroupError);
+                fixture.put("vipPropertyAfterMissingDomainSubgroup", System.getProperty(vipProperty));
+                fixture.put("domainPropertyAfterMissingSubgroup", System.getProperty(domainProperty));
+                fixture.put("subgroupPropertyAfterMissingSubgroup", System.getProperty(subgroupProperty));
+            } finally {
+                missingSubgroupScheduler.shutdownNow();
+            }
+
+            System.setProperty(vipProperty, "true");
+            System.setProperty(domainProperty, "before.example");
+            System.setProperty(subgroupProperty, "before-subgroup");
             NameserverAccessConfig access = new NameserverAccessConfig(
                 "127.0.0.1:9876;127.0.0.2:9876", "", null);
             ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();

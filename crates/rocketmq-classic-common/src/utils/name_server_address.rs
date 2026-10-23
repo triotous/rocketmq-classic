@@ -18,11 +18,10 @@ pub enum NameServerAddressError {
 
 /// Reads the Java system-property key and then the NAMESRV_ADDR environment fallback.
 ///
-/// Rust has no JVM system-property store, so the exact Java property key is read
-/// from the process environment.
+/// Factory-written Java properties use the shared hidden overlay; otherwise
+/// Rust reads the exact property key from the process environment.
 pub fn get_name_server_addresses() -> Option<String> {
-    std::env::var("rocketmq.namesrv.addr")
-        .ok()
+    super::system_properties::get_property("rocketmq.namesrv.addr")
         .or_else(|| std::env::var("NAMESRV_ADDR").ok())
 }
 
