@@ -44,6 +44,12 @@ pub struct PopProcessQueue {
     last_pop_timestamp: AtomicI64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum PopProcessQueueError {
+    #[error("java.lang.NullPointerException")]
+    NullInfo,
+}
+
 impl PopProcessQueue {
     pub fn new() -> Self {
         Self::new_for_assignment(rocketmq_classic_common::message::MessageQueue::default(), 0)
@@ -108,6 +114,18 @@ impl PopProcessQueue {
         info.set_wait_ack_count(self.get_wai_ack_msg_count());
         info.set_droped(self.is_dropped());
         info.set_last_pop_timestamp(self.get_last_pop_timestamp());
+    }
+
+    /// Maps Java's `fillPopProcessQueueInfo(null)` failure.
+    pub fn fill_pop_process_queue_info_nullable(
+        &self,
+        info: Option<&mut rocketmq_classic_protocol::body::ConsumerPopProcessQueueInfo>,
+    ) -> Result<(), PopProcessQueueError> {
+        let Some(info) = info else {
+            return Err(PopProcessQueueError::NullInfo);
+        };
+        self.fill_pop_process_queue_info(info);
+        Ok(())
     }
 
     pub fn set_last_pop_timestamp(&self, timestamp: i64) {

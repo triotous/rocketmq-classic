@@ -598,11 +598,15 @@ fn pop_process_queue_public_methods_match_pinned_java_behavior() {
 
     let mut info = ConsumerPopProcessQueueInfo::default();
     queue.fill_pop_process_queue_info(&mut info);
+    let null_info_error = queue
+        .fill_pop_process_queue_info_nullable(None)
+        .expect_err("Java fillPopProcessQueueInfo(null) throws");
     let actual = serde_json::json!({
         "ackResult": ack_result,
         "waitAckCount": queue.get_wai_ack_msg_count(),
         "lastPopTimestamp": queue.get_last_pop_timestamp(),
         "dropped": queue.is_dropped(),
+        "nullInfoErrorClass": null_info_error.to_string(),
         "info": {
             "waitAckCount": info.get_wait_ack_count(),
             "droped": info.is_droped(),
@@ -611,6 +615,98 @@ fn pop_process_queue_public_methods_match_pinned_java_behavior() {
         "toString": queue.to_string(),
     });
     assert_eq!(&actual, expected);
+}
+
+#[test]
+fn every_pinned_java_pop_process_queue_method_has_owner_mapping_or_disposition() {
+    let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
+    let methods = fixture["implementationApis"]["PopProcessQueue"]["declaredPublicMethods"]
+        .as_array()
+        .expect("pinned PopProcessQueue methods");
+    assert_eq!(methods.len(), 11);
+
+    let crosswalk =
+        include_str!("../../../docs/compatibility/PHASE_18_REBALANCE_PROCESS_QUEUE_API.md");
+    let pop_source = include_str!("../src/pop.rs");
+    let mappings = [
+        ("isDropped", "is_dropped"),
+        ("isPullExpired", "is_pull_expired"),
+        ("ack", "ack"),
+        ("getWaiAckMsgCount", "get_wai_ack_msg_count"),
+        ("toString", "to_string"),
+        ("getLastPopTimestamp", "get_last_pop_timestamp"),
+        ("decFoundMsg", "dec_found_msg"),
+        ("fillPopProcessQueueInfo", "fill_pop_process_queue_info"),
+        ("incFoundMsg", "inc_found_msg"),
+        ("setDropped", "set_dropped"),
+        ("setLastPopTimestamp", "set_last_pop_timestamp"),
+    ];
+    let java_methods = methods
+        .iter()
+        .map(|signature| {
+            signature
+                .as_str()
+                .expect("Java method signature")
+                .split('(')
+                .next()
+                .expect("method name")
+                .rsplit('.')
+                .next()
+                .expect("declaring type and method name")
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let mapped_java_methods = mappings
+        .iter()
+        .map(|(java_method, _)| *java_method)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(mapped_java_methods.len(), mappings.len());
+    assert_eq!(mapped_java_methods, java_methods);
+
+    for (java_method, rust_method) in mappings {
+        assert!(
+            crosswalk.contains(java_method),
+            "PopProcessQueue.{java_method} has a documented crosswalk"
+        );
+        assert!(
+            crosswalk.contains(rust_method),
+            "PopProcessQueue.{java_method} documents Rust {rust_method}"
+        );
+        if java_method == "toString" {
+            assert!(pop_source.contains("impl std::fmt::Display for PopProcessQueue"));
+        } else {
+            assert!(
+                pop_source.contains(&format!("fn {rust_method}(")),
+                "Rust owner implements {rust_method}"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_pop_process_queue_rust_only_surface_has_java_disposition() {
+    let crosswalk =
+        include_str!("../../../docs/compatibility/PHASE_18_REBALANCE_PROCESS_QUEUE_API.md");
+    let pop_source = include_str!("../src/pop.rs");
+    let facade_source = include_str!("../src/lib.rs");
+
+    for surface in [
+        "PopProcessQueue::new",
+        "fill_pop_process_queue_info_nullable",
+        "PopProcessQueueError",
+        "NullInfo",
+    ] {
+        let source_contains_surface = if surface == "PopProcessQueue::new" {
+            pop_source.contains("pub fn new()")
+        } else {
+            pop_source.contains(surface) || facade_source.contains(surface)
+        };
+        assert!(source_contains_surface, "source contains {surface}");
+        assert!(
+            crosswalk.contains(surface),
+            "the reverse audit gives {surface} a Java disposition"
+        );
+    }
+    assert!(facade_source.contains("PopProcessQueueError"));
 }
 
 #[test]

@@ -90,12 +90,19 @@ public final class ConsumerFacadeApiFixtures {
         infoResult.put("waitAckCount", info.getWaitAckCount());
         infoResult.put("droped", info.isDroped());
         infoResult.put("lastPopTimestamp", info.getLastPopTimestamp());
+        String nullInfoErrorClass = null;
+        try {
+            queue.fillPopProcessQueueInfo(null);
+        } catch (Throwable error) {
+            nullInfoErrorClass = error.getClass().getName();
+        }
         Map<String, Object> result = new TreeMap<>();
         result.put("ackResult", ackResult);
         result.put("waitAckCount", queue.getWaiAckMsgCount());
         result.put("lastPopTimestamp", queue.getLastPopTimestamp());
         result.put("dropped", queue.isDropped());
         result.put("info", infoResult);
+        result.put("nullInfoErrorClass", nullInfoErrorClass);
         result.put("toString", queue.toString());
         return result;
     }
