@@ -4585,3 +4585,15 @@ fixture failure. Broad P18-V01 source/API/settings/input/error/control-flow
 and reverse-export reconciliation remains PARTIAL. Native Windows runtime,
 current-revision remote CI, and Phase 19 Broker/Docker scenarios remain
 separate.
+
+### Offline Maven gate follow-up — 2026-10-23 (`e6e1d62e`)
+
+The lifecycle fixture that had triggered default NameServer DNS discovery now
+sets `127.0.0.1:1` explicitly before its expected zero-interval startup failure.
+This keeps its branch deterministic without contacting a NameServer. The
+consumer lifecycle fixture's `--verify` run and full offline Maven
+`mvn -o -q -f compat/java-reference/pom.xml verify` both pass on the updated
+tree. The full run validates 37 scenarios, the new four-case shutdown fixture,
+11 message fixtures, 106 typed headers, 19 typed bodies, and Java/Rust
+cross-decodes. The earlier interrupted Maven attempt is superseded by this
+successful run; the broad P18-V01 audit remains PARTIAL.

@@ -9134,11 +9134,30 @@ owner-specific checks belong in the manual handoff.
   tests, strict workspace Clippy, Windows GNU all-target/all-feature check and
   Clippy, formatting/diff checks, and the dedicated four-case Java fixture
   verification passed.
-- [ ] The full offline Maven `verify` attempt did not finish: the pre-existing
-  `ConsumerLifecycleFixtures` default NameServer lookup blocked in DNS, so the
-  process was stopped after preceding fixtures had passed. Broad P18-V01
-  reconciliation remains PARTIAL; native Windows runtime, current-revision
-  remote CI, and Phase 19 live Broker/Docker scenarios remain separate. No plan
-  was edited, no remote CI or push was run, and the four Phase 19 worktree paths
-  remain untouched and unstaged. Run record:
+- [x] The first full offline Maven `verify` attempt stopped at the pre-existing
+  `ConsumerLifecycleFixtures` default NameServer DNS lookup. Follow-up commit
+  `e6e1d62e` pins that fixture to loopback; the full Maven gate then passed, as
+  recorded in the next entry. Broad P18-V01 reconciliation remains PARTIAL;
+  native Windows runtime, current-revision remote CI, and Phase 19 live
+  Broker/Docker scenarios remain separate. No plan was edited, no remote CI or
+  push was run, and the four Phase 19 worktree paths remain untouched and
+  unstaged. First-attempt run record:
   `rlogs/2026/09/phase-18-compatibility-release-gate__20261023T193945Z.rlog`.
+
+## P18-V02 offline Maven fixture isolation refresh — 2026-10-23 (`e6e1d62e`)
+
+- [x] `ConsumerLifecycleFixtures.failedLitePullMetadataSchedule` now uses an
+  explicit loopback NameServer address, preventing the expected startup-failure
+  probe from attempting default external DNS discovery. Its fixture verification
+  and the full offline Maven `verify` pass; the full run validated 37 scenarios,
+  11 message fixtures, 106 typed headers, 19 typed bodies, and Java/Rust
+  cross-decodes, including the four new shutdown cases.
+- [x] Current-tree sequential default/all-feature workspace tests, strict
+  all-target/all-feature Clippy, Windows GNU all-target/all-feature check and
+  Clippy, formatting, and diff checks also pass. The current P18-V01 shutdown
+  behavior remains a narrow closure only; the broad API/settings/input/error/
+  control-flow and reverse-export audit remains PARTIAL. Native Windows runtime,
+  current-revision remote CI, and Phase 19 live Broker/Docker scenarios remain
+  separate. No plan was edited, no push or remote CI was run, and the four
+  pre-existing Phase 19 paths remain untouched and unstaged. Run record:
+  `rlogs/2026/09/phase-18-compatibility-release-gate__20261023T194523Z.rlog`.
