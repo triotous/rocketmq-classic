@@ -130,7 +130,8 @@ impl Drop for SchedulerTerminationGuard {
 /// A handle to one task accepted by a runtime's client scheduler.
 ///
 /// Dropping the handle leaves the scheduled task running. Call [`cancel`](Self::cancel)
-/// to cancel it explicitly.
+/// to cancel it explicitly. Cloned handles compare equal by scheduled-task
+/// identity.
 #[derive(Clone)]
 pub struct RuntimeScheduledTaskHandle {
     state: Arc<AtomicU8>,
@@ -238,6 +239,14 @@ impl<T> RuntimeScheduledCall<T> {
         self.task.is_cancelled()
     }
 
+    /// Returns a clone of the scheduled task handle associated with this call.
+    ///
+    /// This is useful when matching a call against the queued handles returned
+    /// by [`RuntimeScheduler::shutdown_now`].
+    pub fn task_handle(&self) -> RuntimeScheduledTaskHandle {
+        self.task.clone()
+    }
+
     /// Waits asynchronously for the call's result.
     ///
     /// The receive error indicates cancellation, a panicking callback, or
@@ -260,6 +269,15 @@ impl<T> RuntimeScheduledCall<T> {
 }
 
 impl RuntimeScheduledTaskHandle {
+    pub(super) fn pending(due: Instant) -> Self {
+        Self {
+            state: Arc::new(AtomicU8::new(TASK_PENDING)),
+            cancel: Arc::new(Notify::new()),
+            changed: Arc::new(Notify::new()),
+            due: Arc::new(Mutex::new(due)),
+        }
+    }
+
     /// Cancels a task that has not already finished or been cancelled.
     pub fn cancel(&self) -> bool {
         let mut current = self.state.load(Ordering::Acquire);
@@ -341,6 +359,14 @@ impl RuntimeScheduledTaskHandle {
     }
 }
 
+impl PartialEq for RuntimeScheduledTaskHandle {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.state, &other.state)
+    }
+}
+
+impl Eq for RuntimeScheduledTaskHandle {}
+
 #[derive(Clone)]
 pub(super) struct UserSchedule {
     pub(super) delay: Duration,
@@ -382,6 +408,15 @@ impl UserSchedule {
                 due,
             },
         )
+    }
+
+    pub(super) fn task_handle(&self) -> RuntimeScheduledTaskHandle {
+        RuntimeScheduledTaskHandle {
+            state: self.state.clone(),
+            cancel: self.cancel.clone(),
+            changed: self.changed.clone(),
+            due: self.due.clone(),
+        }
     }
 
     pub(super) fn due_at(&self) -> Instant {
@@ -497,9 +532,11 @@ impl RuntimeScheduler {
         }
     }
 
-    /// Stops admission, cancels queued work, and returns its queued task count.
-    /// Running work is cancelled without waiting for this worker to finish.
-    pub async fn shutdown_now(&self) -> Result<usize, RuntimeError> {
+    /// Stops admission and returns handles for queued work without cancelling
+    /// those tasks, matching `ScheduledExecutorService.shutdownNow()`'s return
+    /// list. Running work is cancelled without waiting for this worker to
+    /// finish.
+    pub async fn shutdown_now(&self) -> Result<Vec<RuntimeScheduledTaskHandle>, RuntimeError> {
         match self.owner {
             RuntimeSchedulerOwner::Client => {
                 self.runtime
@@ -1241,7 +1278,7 @@ impl OwnedTasks {
         Ok(())
     }
 
-    pub async fn shutdown_now(&mut self) -> Result<usize, RuntimeError> {
+    pub async fn shutdown_now(&mut self) -> Result<Vec<RuntimeScheduledTaskHandle>, RuntimeError> {
         self.status.shutdown();
         let pending = {
             let mut queue = self
@@ -1251,15 +1288,16 @@ impl OwnedTasks {
             queue.closed = true;
             std::mem::take(&mut queue.jobs)
         };
-        let cancelled = pending.len();
-        for (_, job) in pending {
-            if let ScheduledJob::User(schedule) = job {
-                schedule.reject();
-            }
-        }
+        let returned = pending
+            .into_iter()
+            .map(|((due, _), job)| match job {
+                ScheduledJob::Periodic(_) => RuntimeScheduledTaskHandle::pending(due),
+                ScheduledJob::User(schedule) => schedule.task_handle(),
+            })
+            .collect();
         self.changed.notify_one();
         self.cancel.send_replace(true);
-        Ok(cancelled)
+        Ok(returned)
     }
 
     pub fn activate(&self) {
@@ -1916,8 +1954,9 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn client_scheduler_immediate_shutdown_cancels_queued_work() {
+    async fn client_scheduler_immediate_shutdown_returns_pending_queued_work() {
         let runtime = runtime();
+        runtime.start().await.unwrap();
         let scheduler = runtime.scheduled_executor_service();
         let first = scheduler
             .schedule_call_after(Duration::from_secs(60), async { 1_u8 })
@@ -1925,16 +1964,33 @@ mod tests {
         let second = scheduler
             .schedule_call_after(Duration::from_secs(60), async { 2_u8 })
             .unwrap();
+        let first_handle = first.task_handle();
+        let second_handle = second.task_handle();
 
-        assert_eq!(scheduler.shutdown_now().await.unwrap(), 2);
+        let returned = scheduler.shutdown_now().await.unwrap();
+        assert_eq!(
+            returned.len(),
+            schedules(&runtime.config_snapshot()).unwrap().len() + 2
+        );
+        assert!(returned.contains(&first_handle));
+        assert!(returned.contains(&second_handle));
         assert!(scheduler.is_shutdown());
         settle().await;
         assert!(scheduler.is_terminated());
-        assert!(first.is_finished());
-        assert!(second.is_finished());
+        assert!(!first.is_finished());
+        assert!(!first.is_cancelled());
+        assert!(!second.is_finished());
+        assert!(!second.is_cancelled());
+        for task in &returned {
+            assert!(!task.is_finished());
+            assert!(task.cancel());
+        }
+        assert!(first.is_cancelled());
+        assert!(second.is_cancelled());
         assert!(first.join().await.is_err());
         assert!(second.join().await.is_err());
         assert!(scheduler.execute(async {}).is_err());
+        runtime.shutdown().await.unwrap();
     }
 
     #[tokio::test(start_paused = true)]
@@ -1964,22 +2020,51 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn pull_scheduler_immediate_shutdown_cancels_queued_work() {
+    async fn pull_scheduler_immediate_shutdown_returns_pending_queued_work() {
         let runtime = runtime();
         let scheduler = runtime.pull_scheduled_executor_service();
+        let callbacks = Arc::new(AtomicUsize::new(0));
+        let callback_count = callbacks.clone();
+        runtime
+            .execute_task_later(
+                async move {
+                    callback_count.fetch_add(1, Ordering::SeqCst);
+                },
+                60_000,
+            )
+            .unwrap();
+        let request_drops = Arc::new(AtomicUsize::new(0));
+        runtime
+            .execute_pull_request_later(Arc::new(DispatchRequest(request_drops.clone())), 60_000)
+            .unwrap();
         let first = scheduler
             .schedule_call_after(Duration::from_secs(60), async { 1_u8 })
             .unwrap();
         let second = scheduler
             .schedule_call_after(Duration::from_secs(60), async { 2_u8 })
             .unwrap();
+        let first_handle = first.task_handle();
+        let second_handle = second.task_handle();
 
-        assert_eq!(scheduler.shutdown_now().await.unwrap(), 2);
+        let returned = scheduler.shutdown_now().await.unwrap();
+        assert_eq!(returned.len(), 4);
+        assert!(returned.contains(&first_handle));
+        assert!(returned.contains(&second_handle));
         assert!(scheduler.is_shutdown());
         settle().await;
         assert!(scheduler.is_terminated());
-        assert!(first.is_finished());
-        assert!(second.is_finished());
+        assert!(!first.is_finished());
+        assert!(!first.is_cancelled());
+        assert!(!second.is_finished());
+        assert!(!second.is_cancelled());
+        for task in &returned {
+            assert!(!task.is_finished());
+            assert!(task.cancel());
+        }
+        assert!(first.is_cancelled());
+        assert!(second.is_cancelled());
+        assert_eq!(callbacks.load(Ordering::SeqCst), 0);
+        assert_eq!(request_drops.load(Ordering::SeqCst), 1);
         assert!(first.join().await.is_err());
         assert!(second.join().await.is_err());
         assert!(scheduler.execute(async {}).is_err());

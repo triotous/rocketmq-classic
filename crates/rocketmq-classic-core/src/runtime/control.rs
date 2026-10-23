@@ -84,11 +84,11 @@ pub(super) enum Command {
     ScheduleRuntimeTask(super::tasks::UserSchedule),
     ShutdownRuntimeScheduler {
         immediate: bool,
-        reply: oneshot::Sender<Result<usize, RuntimeError>>,
+        reply: oneshot::Sender<Result<Vec<super::tasks::RuntimeScheduledTaskHandle>, RuntimeError>>,
     },
     ShutdownPullTaskScheduler {
         immediate: bool,
-        reply: oneshot::Sender<Result<usize, RuntimeError>>,
+        reply: oneshot::Sender<Result<Vec<super::tasks::RuntimeScheduledTaskHandle>, RuntimeError>>,
     },
     Shutdown {
         reply: oneshot::Sender<Result<bool, RuntimeError>>,
@@ -495,14 +495,14 @@ async fn run(
                     } else {
                         runtime.task_scheduler_status.shutdown();
                         runtime.task_scheduler_status.terminate();
-                        Ok(0)
+                        Ok(Vec::new())
                     }
                 } else if let Some(tasks) = periodic.as_mut() {
-                    tasks.shutdown_gracefully().map(|()| 0)
+                    tasks.shutdown_gracefully().map(|()| Vec::new())
                 } else {
                     runtime.task_scheduler_status.shutdown();
                     runtime.task_scheduler_status.terminate();
-                    Ok(0)
+                    Ok(Vec::new())
                 };
                 let _ = reply.send(result);
             }

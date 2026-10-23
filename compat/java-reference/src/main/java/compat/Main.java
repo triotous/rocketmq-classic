@@ -233,6 +233,10 @@ public final class Main {
             RuntimeRemotingShutdownFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "runtime-scheduled-executor-shutdown-fixtures".equals(args[0])) {
+            RuntimeScheduledExecutorShutdownFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "runtime-heartbeat-fixtures".equals(args[0])) {
             RuntimeHeartbeatFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;

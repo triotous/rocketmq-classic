@@ -220,9 +220,9 @@ impl ClientRuntime {
     pub(super) async fn shutdown_task_scheduler(
         self: &Arc<Self>,
         immediate: bool,
-    ) -> Result<usize, RuntimeError> {
+    ) -> Result<Vec<super::tasks::RuntimeScheduledTaskHandle>, RuntimeError> {
         if self.task_scheduler_status.is_terminated() {
-            return Ok(0);
+            return Ok(Vec::new());
         }
         let (reply, receive) = tokio::sync::oneshot::channel();
         self.control
@@ -246,9 +246,9 @@ impl ClientRuntime {
     pub(super) async fn shutdown_pull_task_scheduler(
         self: &Arc<Self>,
         immediate: bool,
-    ) -> Result<usize, RuntimeError> {
+    ) -> Result<Vec<super::tasks::RuntimeScheduledTaskHandle>, RuntimeError> {
         if self.pull.is_scheduler_terminated() {
-            return Ok(0);
+            return Ok(Vec::new());
         }
         let (reply, receive) = tokio::sync::oneshot::channel();
         self.control

@@ -1,4 +1,4 @@
-use super::tasks::UserSchedule;
+use super::tasks::{RuntimeScheduledTaskHandle, UserSchedule};
 use super::{ClientRuntime, RuntimeError, RuntimeState};
 use rocketmq_classic_protocol::body::MessageRequestMode;
 use std::{
@@ -125,8 +125,11 @@ impl PullService {
         self.scheduler_terminated_watch.send_replace(true);
     }
 
-    pub fn shutdown_scheduler(&self, immediate: bool) -> Result<usize, RuntimeError> {
-        let (cancelled, jobs) = {
+    pub fn shutdown_scheduler(
+        &self,
+        immediate: bool,
+    ) -> Result<Vec<RuntimeScheduledTaskHandle>, RuntimeError> {
+        let (jobs, returned) = {
             let mut queues = self
                 .queues
                 .lock()
@@ -134,7 +137,14 @@ impl PullService {
             queues.scheduler_closed = true;
             if immediate {
                 let jobs = std::mem::take(&mut queues.scheduled);
-                (jobs.len(), jobs.into_values().collect::<Vec<_>>())
+                let returned = jobs
+                    .iter()
+                    .map(|((due, _), job)| match job {
+                        Job::ScheduledTask(task) => task.task_handle(),
+                        Job::Request(_) | Job::Task(_) => RuntimeScheduledTaskHandle::pending(*due),
+                    })
+                    .collect();
+                (jobs.into_values().collect::<Vec<_>>(), returned)
             } else {
                 let keys = queues
                     .scheduled
@@ -148,16 +158,18 @@ impl PullService {
                     .into_iter()
                     .filter_map(|key| queues.scheduled.remove(&key))
                     .collect::<Vec<_>>();
-                (jobs.len(), jobs)
+                (jobs, Vec::new())
             }
         };
-        for job in jobs {
-            if let Job::ScheduledTask(task) = job {
-                task.reject();
+        if !immediate {
+            for job in jobs {
+                if let Job::ScheduledTask(task) = job {
+                    task.reject();
+                }
             }
         }
         self.scheduled.notify_one();
-        Ok(cancelled)
+        Ok(returned)
     }
 
     fn discard_cancelled_user_tasks(&self) {

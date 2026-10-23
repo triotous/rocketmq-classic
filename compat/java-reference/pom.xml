@@ -73,6 +73,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-runtime-scheduled-executor-shutdown-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.RuntimeScheduledExecutorShutdownFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/runtime/scheduled-executor-shutdown.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-discovery-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>
