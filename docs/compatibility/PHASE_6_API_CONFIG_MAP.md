@@ -1826,6 +1826,19 @@ checks each listed Rust-only surface against the owner source and audit table.
 This closes the ProcessQueue reverse-support-surface slice only; P18-V01
 remains open.
 
+## PopProcessQueue null info and method crosswalk — 2026-10-23
+
+Pinned Java `fillPopProcessQueueInfo(null)` propagates
+`NullPointerException`. Rust adds `fill_pop_process_queue_info_nullable` and
+`PopProcessQueueError::NullInfo`; the invoked facade fixture and Rust comparison
+check the Java exception class. The audit also maps all 11 declared public
+`PopProcessQueue` methods to Rust methods or `Display::to_string`, and records
+the nullable adapter in the reverse Rust API inventory. Updated
+`fixtures/consumer/facade-api.json` SHA-256:
+`a32d9a980e5079fa5fccaa6f6d46287946883099550e0bc4f04854892b0ca065`.
+This closes the PopProcessQueue null-info and direct-method inventory slices
+only; P18-V01 remains open.
+
 ## `MQClientAPIImpl.getClusterList` stub — 2026-10-21
 
 The pinned `getClusterList(String,long)` implementation ignores both inputs,

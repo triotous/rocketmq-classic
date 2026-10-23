@@ -3599,3 +3599,25 @@ regression and strict Consumer Clippy also pass. This closes the ProcessQueue
 reverse-support-surface slice only; broad P18-V01
 source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains PARTIAL.
+
+## P18-V01 PopProcessQueue null queue-info argument — 2026-10-23
+
+Pinned Java `fillPopProcessQueueInfo(null)` throws
+`java.lang.NullPointerException`. Rust now exposes
+`fill_pop_process_queue_info_nullable` and returns the same exception class as
+`PopProcessQueueError::NullInfo`; the invoked Java facade fixture and Rust
+comparison cover the result. The regenerated facade fixture SHA-256 is
+`a32d9a980e5079fa5fccaa6f6d46287946883099550e0bc4f04854892b0ca065`.
+
+## P18-V01 PopProcessQueue declared and reverse API crosswalk — 2026-10-23
+
+The pinned Java facade fixture records 11 declared public `PopProcessQueue`
+methods. The audit maps all 11 to Rust methods or `Display::to_string`, checks
+the complete method-name denominator, and records the constructor, nullable
+DTO adapter, and public error type in the Rust-side reverse inventory.
+
+The direct PopProcessQueue comparison, Java-to-Rust method crosswalk, reverse
+support-surface regression, targeted Java facade fixture verification, strict
+Consumer Clippy, and formatting/diff checks pass. This closes the PopProcessQueue
+null-info and method-inventory slices only; broad P18-V01 source/API/settings/
+input/error/control-flow and reverse-export reconciliation remains PARTIAL.

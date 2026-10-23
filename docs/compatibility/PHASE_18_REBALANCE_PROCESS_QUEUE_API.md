@@ -26,7 +26,7 @@ declared method counts and callable method counts in
 | `ProcessQueue.putMessage`, `takeMessages`, `removeMessage`, `commit`, `rollback`, `makeMessageToConsumeAgain`, `clear` | Public `ProcessQueue` operations map to retained queue state and in-flight batches. `put_message_nullable(None)` maps Java's null-list `NullPointerException` before queue mutation; `put_message_items_nullable` preserves valid-prefix mutation and size accounting before a null-element error; `remove_message_nullable(None)` maps Java's caught failure, consume timestamp update, and current next-offset result; `remove_message_items_nullable` preserves the caught null-element prefix removal and byte-counter effects; the item-null requeue adapter applies valid prefix entries before returning Java's uncaught null error. `getMsgTreeMap()` returns a lock-backed live view whose edits preserve Java's separate count/size counters; `getMsgCount()` and `getMsgSize()` return mutable, linearizable AtomicLong-style handles. | Direct behavior, null-list outcomes, and tree/counter mutation are compared with the pinned Java fixture. |
 | `ProcessQueue.isPullExpired`, `cleanExpiredMsg` | Public direct expiry methods use the pinned Java pull-idle property and async Broker send-back adapter. `clean_expired_msg_nullable(None)` maps Java's immediate `NullPointerException` before the expiry scan. The ProcessQueue timeout is captured once when its Rust class-equivalent cache is first used; POP keeps its independent cache, matching Java's two static fields. The runtime concurrent consume service records `CONSUME_START_TIME` and runs its owned expiry sweep. It checks the oldest message, retries send-back at delay level 3 up to the bounded queue attempt count, removes only after successful send-back, and skips orderly consume. Missing/empty timestamps skip cleanup; Java Unicode decimal digits parse; orderly mode returns before parsing; malformed non-empty values return `ExpiredMessageCleanupError` before send-back, and the scheduled owner logs the error. Java direct fixtures and Rust tests cover these cases, repeated send-back failure, retry cap, strict timeout boundary, cache lifetime, in-flight completion and initial timer delay. | UNIT_VERIFIED for the direct methods and runtime expiry flow. |
 | `ProcessQueue` message tree/count/size/consume-lock/timestamp/info getters and setters; `containsMessage` | Public locked tree view, mutable counter handles, async read/write consume gate, timestamp/settings accessors and `ConsumerProcessQueueInfo` fill method. `contains_message_nullable(None)` preserves Java's explicit null guard and returns false; `fill_process_queue_info_nullable(None)` preserves Java's swallowed null-info exception as a no-op. | Direct getter/setter behavior, info values, and null-input results are compared with the pinned Java fixture. |
-| `PopProcessQueue` timestamp, dropped state, ACK counter and queue-info methods | Public atomic state, Java signed `decFoundMsg(int)` semantics, `ack`, `isPullExpired`, queue-info fill and `toString`; Push exposes the live POP table. Phase 13 assignment tests cover runtime flow. | Public type and direct method behavior implemented; fixture SHA is recorded below. |
+| `PopProcessQueue` timestamp, dropped state, ACK counter and queue-info methods | Public atomic state, Java signed `decFoundMsg(int)` semantics, `ack`, `isPullExpired`, queue-info fill and `toString`; `fill_pop_process_queue_info_nullable(None)` returns Java's `NullPointerException` as `PopProcessQueueError`. Push exposes the live POP table. Phase 13 assignment tests cover runtime flow. | Direct behavior and null-info error are compared with the pinned Java fixture. |
 | `RebalancePullImpl.clientRebalance`, consume type, pull-offset helpers, queue factories and POP init mode | Pull owner returns client rebalance `true`, `CONSUME_ACTIVELY`, offset `0`, creates a ProcessQueue and no POP queue, and reports the Java unsupported init-mode error. Its pull and POP dispatch hooks are no-ops; the Pull POP assignment table stays empty. | Direct behavior is compared with the pinned Java fixture. |
 
 ### ProcessQueue removal and dispatch state
@@ -356,6 +356,41 @@ explicit representation.
 `every_pinned_java_process_queue_method_has_owner_mapping_or_disposition`
 checks the fixture denominator, each Java method name, and its Rust mapping.
 
+## Pinned `PopProcessQueue` method crosswalk
+
+The fixture records all 11 declared public methods on `PopProcessQueue`. Rust's
+`to_string()` uses the `Display` implementation; the other methods map directly
+to the listed owner methods.
+
+| Java `PopProcessQueue` method | Rust owner mapping or disposition |
+| --- | --- |
+| `isDropped()` | `is_dropped()` reads the atomic dropped flag. |
+| `isPullExpired()` | `is_pull_expired()` uses the POP queue's independently cached idle timeout. |
+| `ack()` | `ack()` decrements and returns the prior wait-ACK count. |
+| `getWaiAckMsgCount()` | `get_wai_ack_msg_count()` reads the atomic counter. |
+| `toString()` | `Display` supplies the Java-compatible text through `to_string()`. |
+| `getLastPopTimestamp()` | `get_last_pop_timestamp()` reads the atomic timestamp. |
+| `decFoundMsg(int)` | `dec_found_msg(delta)` adds the signed argument, including negative values. |
+| `fillPopProcessQueueInfo(PopProcessQueueInfo)` | `fill_pop_process_queue_info` fills the DTO; `fill_pop_process_queue_info_nullable` maps null to `PopProcessQueueError::NullInfo`. |
+| `incFoundMsg(int)` | `inc_found_msg(count)` adds the signed argument. |
+| `setDropped(boolean)` | `set_dropped(dropped)` stores the atomic dropped flag. |
+| `setLastPopTimestamp(long)` | `set_last_pop_timestamp(timestamp)` stores the atomic timestamp. |
+
+`every_pinned_java_pop_process_queue_method_has_owner_mapping_or_disposition`
+checks the fixture denominator, each Java method name, and its Rust mapping.
+
+## Rust `PopProcessQueue` public support-surface reverse audit
+
+`PopProcessQueue::new()` maps Java's no-argument constructor.
+`fill_pop_process_queue_info_nullable` represents the nullable DTO argument and
+returns `PopProcessQueueError::NullInfo`, whose display text is Java's
+`java.lang.NullPointerException`. `PopProcessQueueError` is re-exported from
+the Consumer facade. The invoked fixture and Rust facade comparison verify
+this error class.
+
+`every_pop_process_queue_rust_only_surface_has_java_disposition` checks the
+constructor, nullable DTO adapter, and public error type against this mapping.
+
 ## Rust ProcessQueue public support-surface reverse audit
 
 `ProcessQueue::new()` maps the Java no-argument constructor. The nullable
@@ -416,6 +451,6 @@ client source/configuration/flow row and the reverse Rust API audit.
 Fixture SHA-256 values:
 
 - `fixtures/consumer/facade-api.json` —
-  `29cc00f7cf9b8194f08007a12c5e75f0499a5601c140a78855b14cb244bef771`
+  `a32d9a980e5079fa5fccaa6f6d46287946883099550e0bc4f04854892b0ca065`
 - `fixtures/consumer/expired-messages.json` —
   `2934eb15b2fb599bd6309fd8d8dc394ad0deef817060bc3883373da0942ce40c`
