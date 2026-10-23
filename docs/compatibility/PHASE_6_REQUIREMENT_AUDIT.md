@@ -4711,3 +4711,23 @@ passes. No production code or Java fixture changed; Maven fixture verification
 was not rerun. This closes the portable collection-flow disposition only;
 broad P18-V01 source/API/settings/input/error/control-flow and reverse-export
 reconciliation remains PARTIAL.
+
+## P18-V01 internal producer latency-fault path follow-up — 2026-10-23
+
+The pinned `MQClientInstance` copies its `ClientConfig` into the
+`CLIENT_INNER_PRODUCER`; `MQFaultStrategy` reads `sendLatencyEnable` and
+`startDetectorEnable` from that configuration. Rust retry-topic publication
+now routes through the Producer send loop using the Consumer's existing
+`ClientRuntime`. `ClientRuntime` retains one typed internal Producer extension,
+so Consumer owners sharing a runtime also share the producer's latency-fault
+table and detector settings. The existing Producer selector, fault updates,
+response classification, default synchronous retry budget, message
+compression, and route lookup are reused.
+
+`cargo check -p rocketmq-classic-core -p rocketmq-classic-producer
+-p rocketmq-classic-consumer`, formatting, and `git diff --check` pass. Tests
+were not run in this slice. The current Consumer scripted fallback returns
+before the production Producer path, so a dedicated production-path regression
+for latency-fault selection and detector reachability remains required before
+this behavior is considered behaviorally verified. Broad P18-V01 reconciliation
+and P18-V04 current-revision platform evidence remain open.
