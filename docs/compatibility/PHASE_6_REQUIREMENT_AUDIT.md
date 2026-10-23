@@ -4227,3 +4227,17 @@ JSON generation passed and shows no public tuple-field `0`; current distinct
 public-name counts are Common 439, Consumer 460, Core 746, Producer 361,
 Protocol 1,524, and Remoting 337. This closes two extra public mutation/access
 surfaces only; broad P18-V01 remains PARTIAL.
+
+## P18-V01 transaction callback error identity semantics — 2026-10-23 (`a4228eb2`)
+
+After the tuple payload was made private, `TransactionCallbackError` still
+derived `Clone`, `PartialEq`, and `Eq` over its message. Java callback
+exceptions inherit identity-based `equals` from `Object`; message equality
+would report two distinct errors as equal. The Rust wrapper no longer exposes
+those value traits, with a compile-fail doctest guarding the trait boundary.
+Transaction callback failures still resolve to `Unknown` exactly as before.
+
+The full Producer all-feature test suite and doctests passed, including the
+trait-bound compile-fail case, and strict all-target/all-feature Producer
+Clippy passed. This closes one error-wrapper identity mismatch only; broad
+P18-V01 remains PARTIAL.

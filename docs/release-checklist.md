@@ -8771,3 +8771,17 @@ owner-specific checks belong in the manual handoff.
   push or remote CI was run; the four existing user-owned Phase 19 paths remain
   untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-error-payload-privacy__20261023T133226Z.rlog`.
+
+## P18-V01 transaction callback error identity semantics — 2026-10-23 (`a4228eb2`)
+
+- [x] Removed `Clone`, `PartialEq`, and `Eq` from `TransactionCallbackError`;
+  Java callback exceptions use inherited identity equality. A compile-fail
+  doctest guards against adding value traits over the message.
+- [x] Producer all-feature tests/doctests and strict all-target/all-feature
+  Clippy passed; formatting and diff checks passed.
+- [ ] This closes one error-wrapper identity mismatch only. Broad P18-V01
+  remains open; native Windows execution and current-revision remote Ubuntu CI
+  remain pending. Phase 19 Broker/Docker validation remains outside scope. No
+  push or remote CI was run; the four existing user-owned Phase 19 paths remain
+  untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-callback-error-identity__20261023T133454Z.rlog`.

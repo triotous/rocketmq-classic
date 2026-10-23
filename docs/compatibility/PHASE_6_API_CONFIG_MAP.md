@@ -2341,7 +2341,7 @@ trace dispatch, and request-future lifecycle operations.
 | `TopicPublishInfoTableError` | Typed Rust errors for Java `ConcurrentHashMap` null key/value/map/callback and null remapping-result failures. Java throws `NullPointerException`; the Phase 7 producer-table matrix records this typed-error adaptation and collection behavior. |
 | `TraceProducerKind` | Java `TraceDispatcher.Type` (`PRODUCE`, `CONSUME`), with matching names, order, ordinals, and lookup behavior. |
 | `TraceDispatcherError` | Rust `Result` carrier for the Java `AsyncTraceDispatcher` startup, worker, and shutdown lifecycle. It represents Rust worker/lifecycle failures and does not add a trace mode. |
-| `TransactionCallbackError::{new,message}` | Typed Rust callback failure for Java `TransactionListener` / `TransactionCheckListener` calls. Its stored message is private and read-only through `message()`, adapting Java throwable construction/message access. Java callback exceptions and null-like results resolve to `UNKNOW`; Rust error, panic, and `None` paths preserve that decision, as recorded in the Phase 14 transaction matrix. |
+| `TransactionCallbackError::{new,message}` | Typed Rust callback failure for Java `TransactionListener` / `TransactionCheckListener` calls. Its stored message is private and read-only through `message()`, adapting Java throwable construction/message access. It does not implement `Clone`, `PartialEq`, or `Eq`, because Java `Throwable` inherits identity-based equality. Java callback exceptions and null-like results resolve to `UNKNOW`; Rust error, panic, and `None` paths preserve that decision, as recorded in the Phase 14 transaction matrix. |
 
 ## P18-V01 Rustdoc Consumer-export reverse scan — 2026-10-22
 
@@ -2581,9 +2581,10 @@ factory regressions verify per-client registrations, Java timing, slot-local
 updates, and rejected-registration failure handling. This closes the public
 scheduler-injection gap only; broad P18-V01 remains open.
 
-The subsequent nullable factory constructor adapters add three public Core
+The subsequent nullable factory constructor adapters added three public Core
 names: `new_nullable`, `new_nullable_with_remoting_client_creator`, and
-`NullNameServerAccessConfig`. The current all-feature Rustdoc JSON scan counts
+`NullNameServerAccessConfig`. The all-feature Rustdoc JSON scan at that
+revision counted
 Common 439, Consumer 460, Core 747, Producer 362, Protocol 1,524, and Remoting
 337 public names after excluding crate-root items. The injected Java fixture
 and Rust regression cover the seven-argument creator path with a null prefix,
