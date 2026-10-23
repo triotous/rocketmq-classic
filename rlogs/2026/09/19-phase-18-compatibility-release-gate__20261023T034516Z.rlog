@@ -111,3 +111,58 @@ reconciliation remains open, as do current-revision remote Ubuntu CI, native
 Windows runtime execution, and Phase 19 Broker/Docker validation. No external
 CI, push, Broker, or Docker action was performed; the four protected Phase 19
 worktree paths remain unchanged and unstaged.
+
+## Timed ExecutorService calls and ScheduledFuture waits — 2026-10-23T04:54:53Z
+
+Code revision `c0cb787b` adds timed `invoke_all_with_timeout` and
+`invoke_any_with_timeout` to both `RuntimeScheduler` owners, plus per-task
+cancelled/finished status, remaining-delay inspection, async wait and
+wait-with-timeout methods. `RuntimeScheduledCall` also supports cancellation
+status and repeatable result waits with deadlines. The async equivalents retain
+completed timed-invoke-all values and identify callback failures and deadline
+cancellations; timed invoke-any reports `RuntimeError::InvocationTimeout` and
+cancels accepted tasks. Callback panics now have a distinct handle failure
+state from cancellation.
+
+Current Core validation passed on `c0cb787b`: `cargo test --offline -p
+rocketmq-classic-core --lib --locked` (233 tests), all 26
+`runtime::tasks::tests`, strict all-target/all-feature Core Clippy,
+`cargo fmt --all -- --check`, and `git diff --check`. The timed bulk and handle
+wait regressions use paused Tokio time on both client and pull scheduler owners.
+Broad P18-V01 bidirectional source/API/settings/input/error/control-flow/
+reverse-export reconciliation, current-revision remote Ubuntu CI, native
+Windows runtime execution, and Phase 19 Broker/Docker validation remain open.
+No external CI, push, Broker, or Docker action was performed; the four
+protected Phase 19 paths remain unchanged and unstaged.
+
+## Timed bulk calls on the pull scheduler — 2026-10-23T04:56:09Z
+
+Test-only revision `04eec879` adds success-path assertions for timed
+`invoke_all_with_timeout` and `invoke_any_with_timeout` through the independent
+PullMessageService scheduler. The pull-owner regression and all 26
+`runtime::tasks::tests` passed, as did strict all-target/all-feature Core
+Clippy, formatting, and `git diff --check`. The separate client and pull
+scheduler handles therefore exercise the timed bulk methods on their own
+queues. Broad P18-V01 and current-revision platform/live evidence remain open.
+
+## P18-V02 server-free refresh — 2026-10-23T05:07:52Z
+
+Current code revision `04eec879` passed `cargo test --offline --workspace
+--locked`, `cargo test --offline --workspace --all-features --locked`, and
+strict all-target/all-feature workspace Clippy. Offline Maven verify passed
+with all 37 scenarios. The differential comparator self-test, manifest
+validation (37 scenarios), workspace metadata check, fuzz smoke (163 frame
+seeds, 11 message seeds, 2,784 bounded mutations, 245 frame decodes, 192
+message decodes), and deterministic race/leak smoke (17 cases × 3 repetitions)
+passed. Release examples built, the offline benchmark completed, and formatter
+and `git diff --check` passed.
+
+The latest benchmark sample is recorded in
+`docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`. Its timings remain
+machine-specific observations, not thresholds. Broad P18-V01 bidirectional
+source/API/settings/input/error/control-flow/reverse-export reconciliation,
+including inherited `ServiceThread` controls, remains open, as do
+current-revision remote Ubuntu CI, native Windows runtime execution, and Phase
+19 Broker/Docker validation. No remote CI, push, Broker, or Docker action was
+performed; the four protected Phase 19 worktree paths remain unchanged and
+unstaged.

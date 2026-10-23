@@ -8169,6 +8169,32 @@ owner-specific checks belong in the manual handoff.
   Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
 
+## P18-V01 timed scheduler and `ScheduledFuture` surface — 2026-10-23 (`c0cb787b`)
+
+- [x] Both scheduler owners now expose timed `invoke_all_with_timeout` and
+  `invoke_any_with_timeout`. Timed invoke-all retains one outcome per input:
+  completed values, failed/cancelled callbacks, and tasks cancelled at the
+  deadline. Timed invoke-any returns `RuntimeError::InvocationTimeout` and
+  cancels accepted tasks if no callback returns before its deadline.
+- [x] Scheduled task handles expose cancellation/completion status,
+  `remaining_delay`, async `wait`, and `wait_with_timeout`. Result-bearing
+  calls expose `is_cancelled` and repeatable `join_with_timeout`; a wait timeout
+  leaves the task and result receiver available. Callback failure is distinct
+  from cancellation in the task-handle wait result.
+- [x] All 233 Core library tests and all 26 scheduler tests passed. Strict
+  all-target/all-feature Core Clippy, formatting, and `git diff --check` also
+  passed on `c0cb787b`.
+- [x] Follow-up `04eec879` exercises both timed bulk methods through the
+  separate PullMessageService queue; the pull-owner regression, all 26
+  scheduler tests, and strict all-target/all-feature Core Clippy passed.
+- [ ] The scheduler inheritance slice is locally mapped. Other P18-V01
+  bidirectional source/API/settings/input/error/control-flow reconciliation,
+  inherited `ServiceThread` controls, current-revision remote Ubuntu CI, native
+  Windows runtime, and Phase 19 Broker/Docker validation remain open. No
+  external CI, push, Broker, or Docker action was performed; protected Phase 19
+  worktree files remain untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
 ## P18-V02 current-tree server-free refresh — 2026-10-23 (`4c337b1e`)
 
 - [x] Default and all-feature locked workspace tests passed; strict
@@ -8187,4 +8213,27 @@ owner-specific checks belong in the manual handoff.
   Windows runtime, and Phase 19 Broker/Docker validation remain pending. No
   remote CI, push, Broker, or Docker action was performed; protected Phase 19
   worktree files remain untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V02 scheduler-invocation revision refresh — 2026-10-23 (`04eec879`)
+
+- [x] Default and all-feature locked workspace tests, strict all-target and
+  all-feature workspace Clippy, formatter and diff checks passed. Offline
+  Maven verify passed its pinned Java reference checks and all 37 scenarios;
+  the differential comparator self-test and 37-scenario manifest validation
+  passed.
+- [x] Workspace metadata check passed. Fuzz smoke passed 163 frame seeds,
+  11 message seeds, 2,784 bounded mutations, 245 frame decodes, and 192 message
+  decodes. The deterministic race/leak smoke passed all 17 cases for three
+  repetitions. Release examples built successfully.
+- [x] The offline benchmark completed on macOS 26.6.1 AArch64 / Apple M5 Max /
+  Rust 1.85.0. This sample recorded 31.7 ns for the 128-entry publish-address
+  lookup and 51,556.0 ns for loopback pending-request completion; all operation
+  and allocation observations are in the [benchmark baseline](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+- [ ] P18-V01 bidirectional source/API/settings/input/error/control-flow and
+  reverse-export reconciliation remains open, including inherited
+  `ServiceThread` controls. Current-revision remote Ubuntu CI, native Windows
+  runtime, and Phase 19 Broker/Docker validation remain pending. No remote CI,
+  push, Broker, or Docker action was performed; protected Phase 19 worktree
+  files remain untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
