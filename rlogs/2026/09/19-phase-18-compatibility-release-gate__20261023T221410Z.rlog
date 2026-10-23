@@ -49,3 +49,9 @@ P18-V01 statistics scheduler audit correction:
 - The client runtime queue contains Java's 30 constructor-time `ConsumerStatsManager` jobs; the Rust pre-start shutdown fixture returns the same 32 entries (30 maintenance jobs plus two submitted tasks).
 - Each sample/log callback retains its owning `StatsItemSet`; sampling advances only the matching series and print jobs emit only that set's minute/hour/day event. `ConsumerStatsManager::with_scheduler` registers the same 30 jobs on the supplied scheduler, using the shared schedule specification.
 - Updated `PHASE_6_REQUIREMENT_AUDIT.md`, `PHASE_6_API_CONFIG_MAP.md`, and `docs/release-checklist.md`. The previously stated queue-count and statistics-event gaps are closed for this scheduler slice; broad P18-V01 remains PARTIAL. Existing implementation and verification evidence is in the cited run logs; this correction changes documentation only.
+
+P18-V01 hidden-public Rust API reverse scan on code revision `ea17b8fc`:
+- `rg -n 'doc(hidden)' crates --glob '*.rs'` found 29 annotations across 15 library source files.
+- Reviewed the hidden items as Rust `pub` surface, including runtime/property bridges, request/reply controls, internal-producer helpers, trace and unique-ID helpers, remoting command storage, decoder-mode adaptation, and the signed-millisecond sync invocation.
+- Added a Java owner/disposition crosswalk to `PHASE_6_API_CONFIG_MAP.md` and summarized the reverse scan in `PHASE_6_REQUIREMENT_AUDIT.md` and `docs/release-checklist.md`.
+- No extra client setting or wire operation was identified in this hidden-doc set. This is a bounded API inventory only; broad P18-V01 remains PARTIAL. Documentation only; no tests were run.

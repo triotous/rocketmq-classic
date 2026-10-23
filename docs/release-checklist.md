@@ -114,6 +114,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   per-set minute/hour/day log events are all represented in Rust. The
   scheduler queue and statistics callback gaps are closed for this slice;
   broad P18-V01 remains PARTIAL.
+- P18-V01 hidden-public Rust API reverse scan (`ea17b8fc`, 2026-10-23): reviewed
+  all 29 `#[doc(hidden)]` annotations across the library crates. The Phase 6
+  crosswalk maps the property/runtime bridges, request/reply controls, inner
+  producer path, trace helpers, typed remoting state, and signed-timeout
+  adapter to Java owners. No additional client setting or wire operation was
+  found in this set; the broader reverse-export audit remains open.
 - P18-V02 server-free refresh on code revision `4251b2b3` (documentation
   revision `23265067`, 2026-10-23): default/all-feature workspace tests and
   doctests, strict workspace Clippy, offline Maven `verify` (37 scenarios and

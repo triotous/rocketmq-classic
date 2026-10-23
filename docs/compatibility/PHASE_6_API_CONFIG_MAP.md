@@ -3317,3 +3317,29 @@ feature branch adds a Rust-only client capability; `--all-features` does not
 select an additional workspace configuration. This closes the Cargo
 feature-flag inventory only. Broad P18-V01 settings, public APIs, inputs,
 errors, control flow, and reverse-export reconciliation remain open.
+
+## P18-V01 `doc(hidden)` Rust API reverse scan — 2026-10-23 (`ea17b8fc`)
+
+A source scan of library crates found 29 `#[doc(hidden)]` annotations across
+15 Rust source files. Hidden documentation does not make a Rust `pub` item
+inaccessible to callers. The following crosswalk records the Java behavior
+behind these implementation-facing public items; this is a narrow surface
+inventory and does not close the broader source/input/error/control-flow
+audit.
+
+| Hidden Rust item family | Pinned Java counterpart and disposition |
+| --- | --- |
+| Common `utils::system_properties::{get_property,apply_mq_client_api_factory_properties}` | Java `System.getProperty`/`System.setProperty` effects from `MQClientAPIFactory.init` and later Common/ClientConfig reads. Rust's retained in-process overlay carries those source-ordered side effects; it is not an additional user configuration store. |
+| `ClientConfig::to_java_properties`; `ClientRuntimeManager::{shared_default,get_or_create_with_hook_and_tls_config}` | `MixAll.object2Properties`, Java's shared `MQClientManager` owner, and the mapped TLS/config values passed when creating that owner. These are cross-crate/reflection adapters, not separate Java settings or owner controls. |
+| `RequestFutureTable::{expire_due,expire_due_for_current_runtime}`; `PendingReplyControl::{mark_send_succeeded,fail_send,cancel,expire_if_due}`; `ClientRuntime::register_reply_request_with_future` | Java `RequestFutureHolder`'s request-future scan and `RequestResponseFuture` reply, timeout, send-failure, cancellation, and owner-registration paths. They carry existing request/reply completion behavior; `cancel` is internal cleanup, not another wire mode. The Phase 15 matrix records the lifecycle disposition. |
+| `ClientRuntime::get_or_insert_extension<T>`; `Producer::send_internal_with_runtime` | The runtime-scoped `CLIENT_INNER_PRODUCER` from `MQClientInstance.getDefaultMQProducer()` and its `DefaultMQProducerImpl.sendDefaultImpl` path. These cross-crate owner adapters are mapped separately above; they add no user producer setting or send mode. |
+| `MQClientApi::{send_kind_for_message,probe_broker}` | Java `MQClientAPIImpl.sendSmartMsg` request-code selection and `DefaultMQProducerImpl`'s `MQFaultStrategy` detector probe through `getMaxOffset`. These hidden Core entry points preserve Producer behavior rather than add RPCs. |
+| `CommandHeader::decode_fields_with_mode`; `RemotingCommand::{initialize_client_api_version,custom_header,cached_header,process_timer,callback_list}`; `CustomHeaderValue` | Java `decodeCommandCustomHeaderDirectly(useFastEncode)`, `MQClientAPIImpl`'s cached remoting-version initialization, and `RemotingCommand` typed-header/timer/callback state exposed through its mapped methods. `CustomHeaderValue` is a type-erased storage carrier, not a separate Java bean. The fast/reflection and command-state rows above record the behavior and adapter limits. |
+| `RemotingClient::invoke_sync_with_timeout_millis` | Java `NettyRemotingClient.invokeSync` with its signed millisecond timeout and channel-acquisition-before-expiry ordering. This is the low-level adapter used by client API calls; it adds no transport operation beyond the Java sync call. |
+| Hidden `unique_id` module: `UniqueIdError`, `UniqueIdGenerator::{new,set_if_missing,create}`, `{get_ip_from_id,get_ip_str_from_id,get_pid_from_id,get_nearly_time_from_id,create_fake_ip}`; `TraceDispatcher::new`; `TraceContext::transfer_keys` | Java `MessageClientIDSetter` constructor, unique-ID creation/set/decode helpers, and fake-IP behavior; Java `AsyncTraceDispatcher` owner construction; and trace encoder transfer-key selection. Their public Java declarations or owner-flow dispositions are recorded in the Phase 7 and Phase 16 matrices. |
+
+This pass reviewed each of the 29 hidden-documentation annotations, including
+the public hidden fields and bridge methods. It found no additional client
+setting or wire operation in this set. Rust `pub` accessibility remains part
+of the API surface even where Rustdoc hides the name; the table records its
+adapter role rather than waiving the broader P18-V01 reverse-export review.

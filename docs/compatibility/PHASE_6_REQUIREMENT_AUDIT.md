@@ -4787,3 +4787,15 @@ Rust-only client capability; the `--all-features` test configuration selects
 no additional workspace feature set. This closes the Cargo feature-flag
 inventory only; broad P18-V01 settings, public API, input, error, control-flow,
 and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 `doc(hidden)` Rust API reverse scan — 2026-10-23 (`ea17b8fc`)
+
+A source scan found 29 `#[doc(hidden)]` annotations across 15 library source
+files. Because `#[doc(hidden)]` affects generated documentation only, each
+`pub` item was reviewed as part of the Rust API. The crosswalk in
+[`PHASE_6_API_CONFIG_MAP.md`](PHASE_6_API_CONFIG_MAP.md) maps these items to
+Java property side effects, client/runtime owner adapters, request/reply
+completion, internal producer and trace flows, remoting command storage, and
+signed-timeout invocation. The scan found no additional client setting or
+wire operation in this set; it records adapter disposition rather than
+claiming the broad P18-V01 reverse-export audit is complete.
