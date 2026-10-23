@@ -6,9 +6,9 @@ Run the bounded repeat suite with:
 bash tests/stress/run-offline-smoke.sh
 ```
 
-The script runs 17 existing barrier-, paused-time-, and scripted-peer cases
-three times. It fails if a named test filter matches zero tests or any test
-fails. It contacts no Broker and requires no Docker daemon.
+The script runs 18 barrier-, paused-time-, and scripted-peer cases three
+times. It fails if a named test filter matches zero tests or any test fails.
+It contacts no Broker and requires no Docker daemon.
 
 The selected assertions cover these resource and ownership boundaries:
 
@@ -20,6 +20,7 @@ The selected assertions cover these resource and ownership boundaries:
 | Reconnect and callbacks | GO_AWAY retry obtains a fresh connection; pending callbacks drain on shutdown. |
 | Shared runtime construction | Barrier-synchronized first lookups share one runtime and transport socket; worker counters return to zero after shutdown. |
 | Request/reply registry | Reply/timeout/send-failure/cancellation races claim one terminal path; admission slots become available after cleanup. |
+| Concurrent producer sends | 2,000 async sends run concurrently against a scripted loopback Broker; every send completes, each body arrives once, and all message IDs are unique. |
 | Consumer scheduling and offsets | Membership join/leave converges; reset fences slow callbacks and late pulls; stale lock generations cannot restore ownership. |
 | Orderly shutdown | Slow listener/rebalance work is bounded and dropped work cannot advance committed offsets. |
 

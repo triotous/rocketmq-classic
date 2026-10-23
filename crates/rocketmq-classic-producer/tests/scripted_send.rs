@@ -691,6 +691,73 @@ async fn sync_send_retries_across_two_brokers_and_preserves_one_prepared_message
 }
 
 #[tokio::test]
+async fn producer_handles_two_thousand_concurrent_async_sends_without_losing_requests() {
+    const CONCURRENT_SENDS: usize = 2_000;
+
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::new(Mutex::new(Vec::with_capacity(CONCURRENT_SENDS)));
+    let (broker, broker_task) =
+        broker_peer("broker-a", attempts.clone(), 0, false, requests.clone()).await;
+    let route = route_body(&[("broker-a", &broker)]);
+    let (nameserver, nameserver_task, _) = name_server_peer(route, BTreeSet::new()).await;
+    let producer = Arc::new(Producer::new(producer_config(
+        "concurrent-send-stress",
+        &nameserver,
+    )));
+    producer.start().await.unwrap();
+
+    let mut sends = tokio::task::JoinSet::new();
+    for index in 0..CONCURRENT_SENDS {
+        let producer = producer.clone();
+        sends.spawn(async move {
+            let body = format!("concurrent-send-{index}").into_bytes();
+            let mut message = Message::new("concurrent-send", body);
+            producer
+                .send_future_with_timeout(&mut message, std::time::Duration::from_secs(30))
+                .await
+                .expect("concurrent send returns a successful Java-style result");
+        });
+    }
+
+    let completed = tokio::time::timeout(std::time::Duration::from_secs(45), async {
+        let mut completed = 0;
+        while let Some(result) = sends.join_next().await {
+            result.expect("concurrent send task does not panic");
+            completed += 1;
+        }
+        completed
+    })
+    .await
+    .expect("all concurrent sends finish before the stress deadline");
+    assert_eq!(completed, CONCURRENT_SENDS);
+    assert_eq!(attempts.load(Ordering::SeqCst), CONCURRENT_SENDS);
+
+    let sent = requests.lock().unwrap().clone();
+    assert_eq!(sent.len(), CONCURRENT_SENDS);
+    assert!(sent.iter().all(|request| {
+        request.request_code == request::SEND_MESSAGE_V2
+            && request.topic.as_deref() == Some("concurrent-send")
+    }));
+    let unique_ids = sent
+        .iter()
+        .filter_map(|request| request.unique_id.as_deref())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(unique_ids.len(), CONCURRENT_SENDS);
+    let bodies = sent
+        .iter()
+        .filter_map(|request| request.body.clone())
+        .collect::<BTreeSet<_>>();
+    let expected_bodies = (0..CONCURRENT_SENDS)
+        .map(|index| format!("concurrent-send-{index}").into_bytes())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(bodies, expected_bodies);
+
+    producer.shutdown().await.unwrap();
+    nameserver_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
 async fn direct_send_preserves_existing_unique_id_on_caller_and_wire() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let requests = Arc::new(Mutex::new(Vec::new()));

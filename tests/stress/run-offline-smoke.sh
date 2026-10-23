@@ -46,6 +46,8 @@ run_repeated request-reply-admission-cleanup \
     cargo test --locked -p rocketmq-classic-core --lib pending_reply_slots_are_bounded_until_terminal_removal
 run_repeated producer-callback-timeout-shutdown \
     cargo test --locked -p rocketmq-classic-producer --lib callback_timeout_uses_java_housekeeping_initial_delay_and_period
+run_repeated producer-two-thousand-concurrent-sends \
+    cargo test --locked -p rocketmq-classic-producer --test scripted_send producer_handles_two_thousand_concurrent_async_sends_without_losing_requests
 run_repeated consumer-assignment-churn \
     cargo test --locked -p rocketmq-classic-consumer --lib clustering_membership_join_leave_and_unavailable_cycles_converge
 run_repeated consumer-offset-callback-fence \
@@ -57,4 +59,4 @@ run_repeated consumer-stale-generation-fence \
 run_repeated orderly-slow-callback-shutdown \
     cargo test --locked -p rocketmq-classic-consumer --lib orderly_rebalance_bounds_slow_callback_wait_and_never_commits_dropped_work
 
-printf 'offline deterministic race/leak smoke passed: 17 cases x 3 repetitions\n'
+printf 'offline deterministic race/leak smoke passed: 18 cases x 3 repetitions\n'
