@@ -21,3 +21,9 @@ Current-tree P18-V02 refresh on code/test revision `ea17b8fc` (documentation hea
 - Whole-workspace Windows GNU all-target/all-feature `cargo check` and strict Clippy — pass as compile-only evidence.
 
 The refreshed local server-free gate passes. Broad P18-V01 remains PARTIAL. Native Windows runtime and current-revision remote Ubuntu CI remain unverified; no push/remote CI was run. Phase 19 paths were not modified or staged.
+
+Reverse-export follow-up on source/test revision `325c77fe` / `ea17b8fc`:
+- Reviewed newly introduced cross-crate helpers `ClientRuntime::get_or_insert_extension<T>` and `Producer::send_internal_with_runtime` against the pinned Java `MQClientInstance.CLIENT_INNER_PRODUCER` and `DefaultMQProducerImpl.sendDefaultImpl` path.
+- Added the helper-to-Java owner disposition to `docs/compatibility/PHASE_6_API_CONFIG_MAP.md` and recorded facade reachability in `docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md`.
+- Regenerated current all-feature Rustdoc JSON with `RUSTDOCFLAGS='-Z unstable-options --output-format json' CARGO_TARGET_DIR=/tmp/rocketmq-phase18-target CARGO_NET_OFFLINE=true cargo +nightly doc --offline --workspace --all-features --locked --no-deps` — pass. Both Rustdoc-hidden helper names are absent from the generated Core and Producer indexes. Existing workspace `publish` and Consumer `AtomicU64::fetch_update` warnings remain.
+- Existing full default/all-feature workspace tests, strict Clippy, Maven fixtures, and helper-specific tests pass on the current code tree. This closes only these two reverse-export dispositions; broad P18-V01 remains PARTIAL.

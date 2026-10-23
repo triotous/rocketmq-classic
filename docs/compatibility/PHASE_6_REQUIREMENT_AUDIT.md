@@ -4754,3 +4754,18 @@ reverse-export reconciliation. Native Windows runtime and current-revision
 remote Ubuntu CI remain unverified; no push or remote CI was run. Phase 19
 Broker/Docker evidence remains outside this phase. Run record:
 `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T221410Z.rlog`.
+
+## P18-V01 cross-crate internal-producer helper exports — 2026-10-23 (`325c77fe`)
+
+The internal Producer path adds two Rust `pub` helpers across crate
+boundaries: `ClientRuntime::get_or_insert_extension<T>` and
+`Producer::send_internal_with_runtime`. The API/config crosswalk maps the first
+to the per-`MQClientInstance` `CLIENT_INNER_PRODUCER` identity and the second
+to Java's internal `DefaultMQProducerImpl.sendDefaultImpl` retry path. Both
+names are `#[doc(hidden)]`; current all-feature Rustdoc JSON omits them. The
+first is not on the high-level facade, while the second is callable through
+the facade's re-exported `Producer` type. Their in-tree ownership, runtime
+replacement, fault selection, and detector tests pass in the full current-tree
+default/all-feature workspace runs. This closes the reverse-export disposition
+for these two cross-crate helpers only; broad P18-V01 source/API/settings/input/
+error/control-flow and reverse-export reconciliation remains PARTIAL.

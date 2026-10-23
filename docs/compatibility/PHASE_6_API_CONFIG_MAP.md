@@ -3290,3 +3290,20 @@ Protocol/Core tests, pinned offline Maven `verify`, formatting, and diff checks
 pass. This closes the nullable attachment-key API/input/encoding gap only;
 broad P18-V01 reconciliation remains open, Phase 6 remains PARTIAL, and
 P6-V04 remains `PENDING_PHASE_19`.
+
+## P18-V01 cross-crate internal-producer helper exports — 2026-10-23 (`325c77fe`)
+
+| Rust public helper | Pinned Java owner and disposition |
+| --- | --- |
+| `ClientRuntime::get_or_insert_extension<T>` (`#[doc(hidden)]`) | Cross-crate implementation storage for one strongly retained typed extension per `ClientRuntime`. The only in-tree extension is the runtime's `CLIENT_INNER_PRODUCER`, matching the per-`MQClientInstance` owner identity returned by `MQClientInstance.getDefaultMQProducer()`. This is an ownership adapter, not another client setting or producer operation. |
+| `Producer::send_internal_with_runtime` (`#[doc(hidden)]`) | Cross-crate entry to the Producer send loop using an already-owned `ClientRuntime`, without registering a separate user producer. It maps the internal retry-topic send through Java's `CLIENT_INNER_PRODUCER` and `DefaultMQProducerImpl.sendDefaultImpl` path. |
+
+Both helpers must be Rust `pub` for the separate Core, Producer, and Consumer
+crates to call each other. They are hidden from generated public Rustdoc.
+`ClientRuntime` is not re-exported by the high-level facade; the Producer helper
+is callable on the facade's re-exported `Producer` type, but its Rustdoc-hidden
+name marks it as an internal cross-crate adapter. The Core runtime-extension
+identity test, Consumer shared-owner/runtime-change test, and Producer
+fault-selector test cover their only in-tree use. Broad P18-V01 public
+API/settings/input/error/control-flow and reverse-export reconciliation
+remains open.
