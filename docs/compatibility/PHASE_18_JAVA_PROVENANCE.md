@@ -70,19 +70,24 @@ The invoked fixture uses a `ScheduledExecutorService` proxy to retain the five
 `2.0` after sampling an increment of 20, and `2.0` after a later increment of
 5 that has not yet been sampled. Fixture SHA-256:
 `57b6f19d68fb3460e7fa86bd6b08bf16f43a03d28cce2558716f88c110ccb369`.
-Rust's client scheduler now queues the same 30 manager-wide jobs before
-runtime start. Each job carries the identity of its owning `StatsItemSet`:
+Rust's client scheduler queues the matching 30 manager-wide jobs before
+runtime start. Standalone Rust managers map Java's public scheduler-injected
+constructor through `ConsumerStatsManager::with_scheduler(&RuntimeScheduler)`,
+which registers another 30 jobs with the supplied scheduler. Each job carries
+the identity of its owning `StatsItemSet`:
 sampling advances only that metric series, and each minute, hour, or day print
 callback emits only its matching metric group under the Java
 `org.apache.rocketmq.client.stat.ConsumerStatsManager` target. This preserves
 one log event per set and avoids fivefold callback fan-out. The day window
 samples hourly and keeps 25 samples. Subscriber-provided timestamp, thread, and
 formatting decorations remain backend-specific. Commit `b0189bd3` closes the
-callback identity and fan-out discrepancy with focused Rust regressions. The
+callback identity and fan-out discrepancy with focused Rust regressions.
+Commit `3b9d9473` maps the public Java constructor for standalone managers to
+`with_scheduler`, with a regression that verifies the extra 30 jobs. The
 `scheduled-executor-shutdown` fixture and Rust scheduler regression verify the
-same 32 returned entries in the pre-start case with two submitted calls. Core
-tests use deterministic timestamps, while consumer-flow tests wait for their
-first real sample when they assert positive TPS/RT values.
+same 32 returned entries in the pre-start client case with two submitted calls.
+Core tests use deterministic timestamps, while consumer-flow tests wait for
+their first real sample when they assert positive TPS/RT values.
 
 ## Rust package graph
 

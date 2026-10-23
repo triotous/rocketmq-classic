@@ -119,6 +119,18 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   are inventories, not behavior evidence. Benchmark observations are recorded
   without thresholds. Native Windows runtime and current-revision remote CI
   remain open; broad P18-V01 remains PARTIAL.
+- P18-V01 `ConsumerStatsManager` constructor parity (`3b9d9473`, 2026-10-23):
+  Java's public constructor accepts a `ScheduledExecutorService` and registers
+  five sets of six jobs. Rust now exposes
+  `ConsumerStatsManager::with_scheduler(&RuntimeScheduler)`, which registers
+  the same 30 jobs; the `ClientRuntime`-owned manager continues to use its
+  built-in queue. A paused-time regression verifies the added queue entries.
+  Default/all-feature workspace tests and doctests, strict all-target/all-feature
+  Clippy, Windows GNU workspace check/Clippy, offline Maven `verify` (37
+  scenarios, 11 message fixtures, 106 headers, 19 bodies), formatting, and diff
+  checks pass. Rust `new`/`Default` remains an unscheduled convenience. This
+  closes constructor scheduling only; broad P18-V01 remains PARTIAL. Native
+  Windows runtime and current-revision remote CI remain open.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. Remoting after-response
   hooks now mutate request/response commands on outbound and inbound paths;
