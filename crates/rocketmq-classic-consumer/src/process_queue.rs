@@ -908,9 +908,7 @@ impl ProcessQueue {
             info.set_cached_msg_max_offset(*maximum);
             info.set_cached_msg_count(i32::try_from(ready.len()).unwrap_or(i32::MAX));
         }
-        info.set_cached_msg_size_in_mib(
-            i32::try_from(state.cached_bytes / (1024 * 1024)).unwrap_or(i32::MAX),
-        );
+        info.set_cached_msg_size_in_mib((state.cached_bytes / (1024 * 1024)) as i32);
         let consuming = state
             .messages
             .iter()

@@ -227,6 +227,11 @@ public final class ConsumerFacadeApiFixtures {
         infoResult.put("lastPullTimestamp", info.getLastPullTimestamp());
         infoResult.put("lastConsumeTimestamp", info.getLastConsumeTimestamp());
 
+        ProcessQueue sizeNarrowingQueue = new ProcessQueue();
+        sizeNarrowingQueue.getMsgSize().set(2_147_483_648L * 1024L * 1024L);
+        ProcessQueueInfo sizeNarrowingInfo = new ProcessQueueInfo();
+        sizeNarrowingQueue.fillProcessQueueInfo(sizeNarrowingInfo);
+
         Map<String, Object> result = new TreeMap<>();
         result.put("dispatch", dispatch);
         result.put("initialTreeKeys", initialTreeKeys);
@@ -255,6 +260,7 @@ public final class ConsumerFacadeApiFixtures {
         result.put("locked", queue.isLocked());
         result.put("consumeLockPresent", queue.getConsumeLock() != null);
         result.put("info", infoResult);
+        result.put("sizeMiBNarrowing", sizeNarrowingInfo.getCachedMsgSizeInMiB());
         queue.clear();
 
         ProcessQueue duplicateQueue = new ProcessQueue();

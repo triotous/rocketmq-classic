@@ -1081,6 +1081,12 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
             .copied()
             .collect::<Vec<_>>(),
     });
+    let size_narrowing_queue = ProcessQueue::new();
+    size_narrowing_queue
+        .get_msg_size()
+        .set(2_147_483_648_i64 * 1024 * 1024);
+    let mut size_narrowing_info = ConsumerProcessQueueInfo::default();
+    size_narrowing_queue.fill_process_queue_info(&mut size_narrowing_info);
     let info_result = serde_json::json!({
         "cachedMsgCount": info.get_cached_msg_count(),
         "cachedMsgSizeInMiB": info.get_cached_msg_size_in_mib(),
@@ -1142,6 +1148,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "duplicateRemoval": duplicate_removal_result,
         "duplicateOffsetMaxNextOffset": duplicate_offset_max_next_offset,
         "clearLifecycle": clear_lifecycle_result,
+        "sizeMiBNarrowing": size_narrowing_info.get_cached_msg_size_in_mib(),
     });
     assert_eq!(&actual, expected);
     queue.clear();

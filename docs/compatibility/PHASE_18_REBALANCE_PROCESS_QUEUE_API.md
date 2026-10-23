@@ -106,6 +106,14 @@ The invoked facade fixture checks this subsequent dispatch and the cleared
 count/size/tree. Fixture SHA-256:
 `8ab5b2da6cd00449b2af89e5f4a3879608e00990cd2b5562cc2eef2dc23f18ff`.
 
+### `fillProcessQueueInfo` size narrowing
+
+Java divides the cached byte size by one MiB and narrows the `long` result to
+`int`, preserving Java's two's-complement wrap. Rust now uses the equivalent
+integer cast. The invoked facade fixture sets a byte count whose MiB value is
+one above `i32::MAX` and compares the resulting info field. Fixture SHA-256:
+`afb517bc5c6ce78f7f0d4afa0bd31f22d6fba586c8b37a3616a5b27fbf7a29de`.
+
 ### POP assignment retention
 
 The invoked Java `RebalanceImpl.updateMessageQueueAssignment` runtime fixture
@@ -236,6 +244,6 @@ client source/configuration/flow row and the reverse Rust API audit.
 Fixture SHA-256 values:
 
 - `fixtures/consumer/facade-api.json` —
-  `8ab5b2da6cd00449b2af89e5f4a3879608e00990cd2b5562cc2eef2dc23f18ff`
+  `afb517bc5c6ce78f7f0d4afa0bd31f22d6fba586c8b37a3616a5b27fbf7a29de`
 - `fixtures/consumer/expired-messages.json` —
   `0ecf6ca6795174a96a90123cebb5415c2108cc81842ce84469e721d599f90d01`
