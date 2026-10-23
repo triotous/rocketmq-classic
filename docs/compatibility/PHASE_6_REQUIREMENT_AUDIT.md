@@ -4597,3 +4597,32 @@ tree. The full run validates 37 scenarios, the new four-case shutdown fixture,
 11 message fixtures, 106 typed headers, 19 typed bodies, and Java/Rust
 cross-decodes. The earlier interrupted Maven attempt is superseded by this
 successful run; the broad P18-V01 audit remains PARTIAL.
+
+## P18-V01 scheduler immediate-shutdown returned tasks — 2026-10-23
+
+Pinned Java 5.5.1 probes show that both `MQClientInstance` and
+`PullMessageService` expose a `ScheduledExecutorService` whose `shutdownNow()`
+returns queued futures without marking them cancelled or done. The two
+submitted one-day futures are present in each returned list and no callback
+runs. The client scheduler returns 32 entries in the pre-start fixture: two
+submitted tasks and 30 tasks from the five constructor-created `StatsItemSet`s
+(six recurring tasks each). The pull scheduler returns the two submitted
+futures.
+
+Rust `RuntimeScheduler::shutdown_now()` now returns task handles for queued
+jobs represented in its scheduler. Submitted call handles compare by task
+identity, remain pending after shutdown, and can be explicitly cancelled from
+the returned list. Queued client periodic work and delayed pull request/task
+entries receive pending handles as well. Running worker cancellation remains a
+separate Rust behavior.
+
+Rust consumer statistics are sampled lazily instead of registering the 30
+constructor-time Java maintenance jobs. Therefore the Rust client scheduler's
+returned list still omits those 30 Java entries; this queue-content delta is
+open. Focused client and pull scheduler tests pass. This closes the returned
+future semantics for work represented in the Rust queues only. Default and
+all-feature workspace tests, strict all-target/all-feature Clippy, Windows GNU
+workspace check/Clippy, the direct fixture verification, and the full offline
+Maven verify pass. Broad P18-V01 source/API/input/reverse-export reconciliation
+remains PARTIAL. The detailed run record is
+`rlogs/2026/10/23-phase-18-scheduler-shutdown-return-list__20261023T200933Z.rlog`.

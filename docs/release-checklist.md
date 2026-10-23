@@ -9161,3 +9161,29 @@ owner-specific checks belong in the manual handoff.
   separate. No plan was edited, no push or remote CI was run, and the four
   pre-existing Phase 19 paths remain untouched and unstaged. Run record:
   `rlogs/2026/09/phase-18-compatibility-release-gate__20261023T194523Z.rlog`.
+
+## P18-V01 scheduler `shutdownNow()` returned-task semantics — 2026-10-23 (`124afee8`)
+
+- [x] Pinned Java 5.5.1 `ScheduledExecutorService.shutdownNow()` returns the
+  queued future objects and leaves them neither cancelled nor done; queued
+  callbacks do not run. `fixtures/runtime/scheduled-executor-shutdown.json`
+  captures both scheduler owners. The client scheduler returns 32 tasks in
+  this pre-start probe: two submitted futures plus 30 recurring
+  `ConsumerStatsManager` jobs; the pull scheduler returns the two submitted
+  futures.
+- [x] Rust `RuntimeScheduler::shutdown_now()` now returns queued task handles.
+  Submitted calls preserve handle identity, queued handles remain pending,
+  and callers may cancel them after shutdown. Client periodic work and delayed
+  pull request/task entries are also represented in the returned list.
+- [x] Focused client and pull scheduler regressions pass. Default and
+  all-feature `cargo test --workspace`, strict all-target/all-feature
+  workspace Clippy, Windows GNU workspace check/Clippy, formatting, diff
+  checks, and direct Java fixture verification pass. The full offline Maven
+  `verify` also passes with 37 scenarios, 11 message fixtures, 106 typed
+  headers, 19 typed bodies, and Rust/Java cross-decodes.
+- [ ] Rust consumer statistics use lazy sampling, so the 30 constructor-owned
+  Java `StatsItemSet` scheduler entries are not present in the Rust client
+  scheduler's returned list. This queue-content delta remains open, along with
+  broad P18-V01 reconciliation. No plan was edited, no remote CI or push was
+  run, and the four Phase 19 worktree paths remain untouched and unstaged. Run
+  record: `rlogs/2026/10/23-phase-18-scheduler-shutdown-return-list__20261023T200933Z.rlog`.
