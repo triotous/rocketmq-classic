@@ -331,7 +331,12 @@ async fn run(
 ) {
     let mut inner_producer: Option<Arc<dyn ProducerRuntime>> = None;
     let mut inner_lease: Option<GroupLease> = None;
-    let mut periodic: Option<super::tasks::OwnedTasks> = None;
+    let mut periodic = runtime.upgrade().map(|runtime| {
+        super::tasks::OwnedTasks::new(
+            Arc::downgrade(&runtime),
+            runtime.task_scheduler_status.clone(),
+        )
+    });
     let mut inbound = Vec::new();
     let mut rebalance: Vec<super::rebalance::OwnedRebalance> = Vec::new();
     let mut pull_workers: Vec<super::pull::OwnedPullWorker> = Vec::new();

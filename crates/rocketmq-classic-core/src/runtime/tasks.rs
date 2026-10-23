@@ -39,6 +39,12 @@ pub(super) enum TaskKind {
     Heartbeat,
     Persist,
     Adjust,
+    StatsSampleSeconds,
+    StatsSampleMinutes,
+    StatsSampleHour,
+    StatsPrintMinutes,
+    StatsPrintHour,
+    StatsPrintDay,
 }
 
 #[derive(Clone, Copy)]
@@ -980,6 +986,90 @@ pub(super) fn schedules(
     Ok(result)
 }
 
+/// `ConsumerStatsManager` constructs five `StatsItemSet`s. Each set registers
+/// three sampling jobs and three log jobs with the shared Java client executor.
+/// Keep these separate from `schedules`, which represents the jobs registered
+/// by `MQClientInstance.startScheduledTask()`.
+pub(super) fn stats_schedules() -> Vec<Schedule> {
+    let mut result = Vec::with_capacity(30);
+    for _ in 0..5 {
+        for (kind, delay, period) in [
+            (
+                TaskKind::StatsSampleSeconds,
+                Duration::ZERO,
+                Duration::from_secs(10),
+            ),
+            (
+                TaskKind::StatsSampleMinutes,
+                Duration::ZERO,
+                Duration::from_secs(10 * 60),
+            ),
+            (
+                TaskKind::StatsSampleHour,
+                Duration::ZERO,
+                Duration::from_secs(60 * 60),
+            ),
+            (
+                TaskKind::StatsPrintMinutes,
+                next_local_boundary_delay(LocalBoundary::Minute),
+                Duration::from_secs(60),
+            ),
+            (
+                TaskKind::StatsPrintHour,
+                next_local_boundary_delay(LocalBoundary::Hour),
+                Duration::from_secs(60 * 60),
+            ),
+            (
+                TaskKind::StatsPrintDay,
+                next_local_boundary_delay(LocalBoundary::Day),
+                Duration::from_secs(24 * 60 * 60),
+            ),
+        ] {
+            result.push(Schedule {
+                kind,
+                delay,
+                period,
+            });
+        }
+    }
+    result
+}
+
+#[derive(Clone, Copy)]
+enum LocalBoundary {
+    Minute,
+    Hour,
+    Day,
+}
+
+fn next_local_boundary_delay(boundary: LocalBoundary) -> Duration {
+    use time::{Duration as CalendarDuration, OffsetDateTime, Time};
+
+    let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let target = match boundary {
+        LocalBoundary::Minute => now
+            .replace_second(0)
+            .ok()
+            .and_then(|value| value.replace_nanosecond(0).ok())
+            .and_then(|value| value.checked_add(CalendarDuration::minutes(1))),
+        LocalBoundary::Hour => now
+            .replace_minute(0)
+            .ok()
+            .and_then(|value| value.replace_second(0).ok())
+            .and_then(|value| value.replace_nanosecond(0).ok())
+            .and_then(|value| value.checked_add(CalendarDuration::hours(1))),
+        LocalBoundary::Day => now
+            .date()
+            .next_day()
+            .map(|date| date.with_time(Time::MIDNIGHT).assume_offset(now.offset())),
+    };
+    let Some(target) = target else {
+        return Duration::from_secs(1);
+    };
+    let nanos = target.unix_timestamp_nanos() - now.unix_timestamp_nanos();
+    Duration::from_nanos(nanos.clamp(1, u64::MAX as i128) as u64)
+}
+
 /// Java's single scheduled executor: fixed-rate deadlines, no overlapping jobs,
 /// catch-up after slow work, and one cancellation/join owner.
 pub(super) struct OwnedTasks {
@@ -1004,10 +1094,19 @@ impl OwnedTasks {
         });
         let (active, mut activation) = watch::channel(false);
         let (cancel, mut cancellation) = watch::channel(false);
-        let schedules = Arc::new(Mutex::new(SchedulerQueue {
+        let mut queue = SchedulerQueue {
             closed: status.is_shutdown(),
             ..SchedulerQueue::default()
-        }));
+        };
+        if !queue.closed {
+            for schedule in stats_schedules() {
+                queue.insert(
+                    Instant::now() + schedule.delay,
+                    ScheduledJob::Periodic(schedule),
+                );
+            }
+        }
+        let schedules = Arc::new(Mutex::new(queue));
         let changed = runtime
             .upgrade()
             .map(|runtime| runtime.task_scheduler_changed.clone())
@@ -1275,6 +1374,7 @@ impl OwnedTasks {
             }
         }
         self.changed.notify_one();
+        self.activate();
         Ok(())
     }
 
@@ -1970,7 +2070,7 @@ mod tests {
         let returned = scheduler.shutdown_now().await.unwrap();
         assert_eq!(
             returned.len(),
-            schedules(&runtime.config_snapshot()).unwrap().len() + 2
+            stats_schedules().len() + schedules(&runtime.config_snapshot()).unwrap().len() + 2
         );
         assert!(returned.contains(&first_handle));
         assert!(returned.contains(&second_handle));
@@ -1990,6 +2090,48 @@ mod tests {
         assert!(first.join().await.is_err());
         assert!(second.join().await.is_err());
         assert!(scheduler.execute(async {}).is_err());
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn client_scheduler_exists_with_stats_jobs_before_runtime_start() {
+        let runtime = runtime();
+        let scheduler = runtime.scheduled_executor_service();
+        let first = scheduler
+            .schedule_call_after(Duration::from_secs(60), async { 1_u8 })
+            .unwrap();
+        let second = scheduler
+            .schedule_call_after(Duration::from_secs(60), async { 2_u8 })
+            .unwrap();
+        let first_handle = first.task_handle();
+        let second_handle = second.task_handle();
+
+        let returned = scheduler.shutdown_now().await.unwrap();
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/scheduled-executor-shutdown.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            returned.len(),
+            fixture["cases"][0]["queuedTaskCount"].as_u64().unwrap() as usize
+        );
+        assert!(returned.contains(&first_handle));
+        assert!(returned.contains(&second_handle));
+        assert!(scheduler.is_shutdown());
+        for task in &returned {
+            assert!(!task.is_finished());
+            assert!(!task.is_cancelled());
+        }
+        assert!(!first.is_finished());
+        assert!(!first.is_cancelled());
+        assert!(!second.is_finished());
+        assert!(!second.is_cancelled());
+        for task in &returned {
+            assert!(task.cancel());
+        }
+        assert!(first.is_cancelled());
+        assert!(second.is_cancelled());
+        assert!(scheduler.await_termination(Duration::ZERO).await);
         runtime.shutdown().await.unwrap();
     }
 

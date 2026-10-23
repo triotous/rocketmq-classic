@@ -44,6 +44,13 @@ impl ConsumerStatsManager {
     /// Java's lifecycle hooks are no-ops; the runtime owns this manager.
     pub fn shutdown(&self) {}
 
+    pub(super) fn sample(&self) {
+        let now = Instant::now();
+        for stats in self.lock_topics().values_mut() {
+            stats.advance(now);
+        }
+    }
+
     pub fn inc_pull_rt(&self, group: &str, topic: &str, rt: i64) {
         self.update_topic(group, topic, |stats, now| {
             stats.pull_rt.record(now, java_int(rt), 1);

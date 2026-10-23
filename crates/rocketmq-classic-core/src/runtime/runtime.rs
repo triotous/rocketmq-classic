@@ -1121,6 +1121,10 @@ impl ClientRuntime {
                 }
             }
             TaskKind::Adjust => self.adjust_thread_pool().await?,
+            TaskKind::StatsSampleSeconds
+            | TaskKind::StatsSampleMinutes
+            | TaskKind::StatsSampleHour => self.consumer_stats_manager.sample(),
+            TaskKind::StatsPrintMinutes | TaskKind::StatsPrintHour | TaskKind::StatsPrintDay => {}
         }
         Ok(())
     }
