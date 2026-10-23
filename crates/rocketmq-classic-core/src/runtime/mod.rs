@@ -79,6 +79,10 @@ pub enum RuntimeError {
     InvalidHeartbeatData(&'static str),
     #[error("periodic interval must be positive")]
     InvalidSchedule,
+    #[error("cannot invoke an empty task set")]
+    EmptyTaskSet,
+    #[error("all invoked tasks failed or were cancelled")]
+    NoSuccessfulTask,
     #[error("periodic callback panicked")]
     TaskCallbackFailed,
     #[error("runtime operation is invalid in state {0:?}")]

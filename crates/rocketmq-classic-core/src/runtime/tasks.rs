@@ -143,6 +143,46 @@ pub struct RuntimeScheduledCall<T> {
     result: tokio::sync::oneshot::Receiver<T>,
 }
 
+struct ScheduledCallsCancellationGuard {
+    tasks: Vec<RuntimeScheduledTaskHandle>,
+    armed: bool,
+}
+
+impl ScheduledCallsCancellationGuard {
+    fn new() -> Self {
+        Self {
+            tasks: Vec::new(),
+            armed: true,
+        }
+    }
+
+    fn track(&mut self, task: RuntimeScheduledTaskHandle) {
+        self.tasks.push(task);
+    }
+
+    fn cancel_except(&self, keep: usize) {
+        for (index, task) in self.tasks.iter().enumerate() {
+            if index != keep {
+                task.cancel();
+            }
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ScheduledCallsCancellationGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            for task in &self.tasks {
+                task.cancel();
+            }
+        }
+    }
+}
+
 impl<T> RuntimeScheduledCall<T> {
     /// Cancels the scheduled call if it has not already completed.
     pub fn cancel(&self) -> bool {
@@ -412,6 +452,83 @@ impl RuntimeScheduler {
         Fut: Future<Output = T> + Send + 'static,
     {
         self.schedule_call_after(Duration::ZERO, task)
+    }
+
+    /// Schedules every task, then waits for all results in submission order.
+    ///
+    /// A failed or cancelled callback is represented by its individual
+    /// receive error. If this future is cancelled, all accepted tasks are
+    /// cancelled as well. Wrap the future in `tokio::time::timeout` to apply a
+    /// caller-selected deadline.
+    pub async fn invoke_all<T, Fut, Tasks>(
+        &self,
+        tasks: Tasks,
+    ) -> Result<Vec<Result<T, tokio::sync::oneshot::error::RecvError>>, RuntimeError>
+    where
+        T: Send + 'static,
+        Fut: Future<Output = T> + Send + 'static,
+        Tasks: IntoIterator<Item = Fut>,
+    {
+        let mut cancellation = ScheduledCallsCancellationGuard::new();
+        let mut calls = Vec::new();
+        for task in tasks {
+            let call = self.submit(task)?;
+            cancellation.track(call.task.clone());
+            calls.push(call);
+        }
+
+        let mut results = Vec::with_capacity(calls.len());
+        for call in calls {
+            results.push(call.join().await);
+        }
+        cancellation.disarm();
+        Ok(results)
+    }
+
+    /// Returns the first successful result from the scheduled tasks.
+    ///
+    /// Tasks run on this scheduler's single worker, so they are considered in
+    /// submission order. Failed or panicking tasks are skipped. If this future
+    /// is cancelled, all accepted tasks are cancelled as well. Wrap the future
+    /// in `tokio::time::timeout` to apply a caller-selected deadline.
+    pub async fn invoke_any<T, Fut, Tasks>(&self, tasks: Tasks) -> Result<T, RuntimeError>
+    where
+        T: Send + 'static,
+        Fut: Future<Output = T> + Send + 'static,
+        Tasks: IntoIterator<Item = Fut>,
+    {
+        let mut cancellation = ScheduledCallsCancellationGuard::new();
+        let mut calls = Vec::new();
+        let any_succeeded = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        for task in tasks {
+            let any_succeeded = any_succeeded.clone();
+            let call = self.submit(async move {
+                if any_succeeded.load(Ordering::Acquire) {
+                    None
+                } else {
+                    let result = task.await;
+                    any_succeeded.store(true, Ordering::Release);
+                    Some(result)
+                }
+            })?;
+            cancellation.track(call.task.clone());
+            calls.push(call);
+        }
+        if calls.is_empty() {
+            cancellation.disarm();
+            return Err(RuntimeError::EmptyTaskSet);
+        }
+
+        for (index, call) in calls.into_iter().enumerate() {
+            if let Ok(Some(result)) = call.join().await {
+                cancellation.cancel_except(index);
+                cancellation.disarm();
+                return Ok(result);
+            }
+        }
+
+        cancellation.disarm();
+        Err(RuntimeError::NoSuccessfulTask)
     }
 
     /// Schedules result-bearing work and returns a handle that can await its
@@ -1194,6 +1311,101 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn invoke_all_returns_results_in_submission_order() {
+        let runtime = runtime();
+        let scheduler = runtime.scheduled_executor_service();
+        let order = Arc::new(AtomicUsize::new(0));
+        let tasks = [11_u8, 23, 37].into_iter().map(|value| {
+            let order = order.clone();
+            async move { (value, order.fetch_add(1, Ordering::SeqCst)) }
+        });
+
+        let results = scheduler.invoke_all(tasks).await.unwrap();
+        assert_eq!(
+            results.into_iter().map(Result::unwrap).collect::<Vec<_>>(),
+            [(11, 0), (23, 1), (37, 2)]
+        );
+
+        runtime.start().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn invoke_any_skips_failed_tasks_and_cancels_the_remainder() {
+        let runtime = runtime();
+        let scheduler = runtime.scheduled_executor_service();
+        let third_calls = Arc::new(AtomicUsize::new(0));
+        let third_task_calls = third_calls.clone();
+        let tasks: Vec<Pin<Box<dyn Future<Output = usize> + Send>>> = vec![
+            Box::pin(async { panic!("scripted invoke_any failure") }),
+            Box::pin(async { 42 }),
+            Box::pin(async move { third_task_calls.fetch_add(1, Ordering::SeqCst) }),
+        ];
+
+        assert_eq!(scheduler.invoke_any(tasks).await.unwrap(), 42);
+        settle().await;
+        assert_eq!(third_calls.load(Ordering::SeqCst), 0);
+
+        let empty = std::iter::empty::<std::future::Ready<usize>>();
+        assert!(matches!(
+            scheduler.invoke_any(empty).await,
+            Err(RuntimeError::EmptyTaskSet)
+        ));
+
+        let failures: Vec<Pin<Box<dyn Future<Output = usize> + Send>>> = vec![
+            Box::pin(async { panic!("first task failed") }),
+            Box::pin(async { panic!("second task failed") }),
+        ];
+        assert!(matches!(
+            scheduler.invoke_any(failures).await,
+            Err(RuntimeError::NoSuccessfulTask)
+        ));
+
+        runtime.start().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelling_invoke_all_cancels_running_and_queued_tasks() {
+        struct DropCount(Arc<AtomicUsize>);
+        impl Drop for DropCount {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let runtime = runtime();
+        let scheduler = Arc::new(runtime.scheduled_executor_service());
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let active_drops = Arc::new(AtomicUsize::new(0));
+        let active_task_drops = active_drops.clone();
+        let queued_calls = Arc::new(AtomicUsize::new(0));
+        let queued_task_calls = queued_calls.clone();
+        let tasks: Vec<Pin<Box<dyn Future<Output = usize> + Send>>> = vec![
+            Box::pin(async move {
+                let _drop_count = DropCount(active_task_drops);
+                let _ = started_tx.send(());
+                std::future::pending::<usize>().await
+            }),
+            Box::pin(async move { queued_task_calls.fetch_add(1, Ordering::SeqCst) }),
+        ];
+        let invocation = {
+            let scheduler = scheduler.clone();
+            tokio::spawn(async move { scheduler.invoke_all(tasks).await })
+        };
+
+        started_rx.await.unwrap();
+        invocation.abort();
+        assert!(invocation.await.unwrap_err().is_cancelled());
+        settle().await;
+        assert_eq!(active_drops.load(Ordering::SeqCst), 1);
+        assert_eq!(queued_calls.load(Ordering::SeqCst), 0);
+
+        runtime.start().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn public_pull_scheduler_uses_its_own_pre_start_queue() {
         let runtime = runtime();
         let scheduler = runtime.pull_scheduled_executor_service();
@@ -1215,6 +1427,22 @@ mod tests {
         advance(1).await;
         assert_eq!(task.join().await.unwrap(), 29);
         settle().await;
+
+        let batch = scheduler
+            .invoke_all([std::future::ready(31_u32), std::future::ready(47)])
+            .await
+            .unwrap();
+        assert_eq!(
+            batch.into_iter().map(Result::unwrap).collect::<Vec<_>>(),
+            [31, 47]
+        );
+        assert_eq!(
+            scheduler
+                .invoke_any([std::future::ready(53_u32)])
+                .await
+                .unwrap(),
+            53
+        );
 
         runtime.start().await.unwrap();
         runtime.shutdown().await.unwrap();
