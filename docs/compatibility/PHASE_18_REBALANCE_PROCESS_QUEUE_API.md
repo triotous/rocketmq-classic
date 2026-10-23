@@ -25,7 +25,7 @@ declared method counts and callable method counts in
 | `getSubscriptionInner`, `getTopicSubscribeInfoTable`, `getProcessQueueTable`, `getPopProcessQueueTable`, `createProcessQueue`, `createPopProcessQueue` | Push and Pull owners expose live subscription/topic/process-queue tables and queue factories. Push creates both queue types. Pull creates ProcessQueue and returns no POP queue, matching Java; assignment reconciliation updates its process table. | Table identity and direct factory behavior are checked with the pinned fixture and Rust tests. |
 | `ProcessQueue.putMessage`, `takeMessages`, `removeMessage`, `commit`, `rollback`, `makeMessageToConsumeAgain`, `clear` | Public `ProcessQueue` operations map to retained queue state and in-flight batches. `getMsgTreeMap()` returns a lock-backed live view whose edits preserve Java's separate count/size counters; `getMsgCount()` and `getMsgSize()` return mutable, linearizable AtomicLong-style handles. | Direct behavior and tree/counter mutation are compared with the pinned Java fixture. |
 | `ProcessQueue.isPullExpired`, `cleanExpiredMsg` | Public direct expiry methods use the pinned Java pull-idle property and async Broker send-back adapter. The ProcessQueue timeout is captured once when its Rust class-equivalent cache is first used; POP keeps its independent cache, matching Java's two static fields. The runtime concurrent consume service records `CONSUME_START_TIME` and runs its owned expiry sweep. It checks the oldest message, retries send-back at delay level 3 up to the bounded queue attempt count, removes only after successful send-back, and skips orderly consume. Missing/empty timestamps skip cleanup; Java Unicode decimal digits parse; orderly mode returns before parsing; malformed non-empty values return `ExpiredMessageCleanupError` before send-back, and the scheduled owner logs the error. Java direct fixtures and Rust tests cover these cases, repeated send-back failure, retry cap, strict timeout boundary, cache lifetime, in-flight completion and initial timer delay. | UNIT_VERIFIED for the direct methods and runtime expiry flow. |
-| `ProcessQueue` message tree/count/size/consume-lock/timestamp/info getters and setters; `containsMessage` | Public locked tree view, mutable counter handles, async read/write consume gate, timestamp/settings accessors and `ConsumerProcessQueueInfo` fill method. `contains_message_nullable(None)` preserves Java's explicit null guard and returns false. | Direct getter/setter behavior, info values, and null-message result are compared with the pinned Java fixture. |
+| `ProcessQueue` message tree/count/size/consume-lock/timestamp/info getters and setters; `containsMessage` | Public locked tree view, mutable counter handles, async read/write consume gate, timestamp/settings accessors and `ConsumerProcessQueueInfo` fill method. `contains_message_nullable(None)` preserves Java's explicit null guard and returns false; `fill_process_queue_info_nullable(None)` preserves Java's swallowed null-info exception as a no-op. | Direct getter/setter behavior, info values, and null-input results are compared with the pinned Java fixture. |
 | `PopProcessQueue` timestamp, dropped state, ACK counter and queue-info methods | Public atomic state, Java signed `decFoundMsg(int)` semantics, `ack`, `isPullExpired`, queue-info fill and `toString`; Push exposes the live POP table. Phase 13 assignment tests cover runtime flow. | Public type and direct method behavior implemented; fixture SHA is recorded below. |
 | `RebalancePullImpl.clientRebalance`, consume type, pull-offset helpers, queue factories and POP init mode | Pull owner returns client rebalance `true`, `CONSUME_ACTIVELY`, offset `0`, creates a ProcessQueue and no POP queue, and reports the Java unsupported init-mode error. Its pull and POP dispatch hooks are no-ops; the Pull POP assignment table stays empty. | Direct behavior is compared with the pinned Java fixture. |
 
@@ -145,6 +145,15 @@ the tree lock. Rust keeps the non-null `contains_message` method and adds
 invoked Java fixture and Rust facade comparison assert the same result.
 Fixture SHA-256:
 `edb43a544374bb1c5ae969bcdaa09ea3746a310b3d28dc86b459a18ecfcff551`.
+
+### Null `fillProcessQueueInfo` argument
+
+Pinned Java acquires the read lock, encounters a null `ProcessQueueInfo`, logs
+and swallows the resulting exception, then releases the lock. Rust's
+`fill_process_queue_info_nullable(None)` is a no-op with the same observable
+return behavior. The invoked Java fixture and Rust facade comparison exercise
+this input. Fixture SHA-256:
+`57e2890ebeace93ecf00e2509e2bf7557c28f681ad19141f81430fecfe57ddf3`.
 
 ### POP assignment retention
 
@@ -276,6 +285,6 @@ client source/configuration/flow row and the reverse Rust API audit.
 Fixture SHA-256 values:
 
 - `fixtures/consumer/facade-api.json` —
-  `edb43a544374bb1c5ae969bcdaa09ea3746a310b3d28dc86b459a18ecfcff551`
+  `57e2890ebeace93ecf00e2509e2bf7557c28f681ad19141f81430fecfe57ddf3`
 - `fixtures/consumer/expired-messages.json` —
   `0ecf6ca6795174a96a90123cebb5415c2108cc81842ce84469e721d599f90d01`

@@ -21,6 +21,10 @@ Consumer package tests, strict Consumer Clippy, formatting/diff checks, and
 pinned Maven verify pass. The full workspace, fuzz, race/leak, release-example,
 and benchmark gate above remains the recorded run on `c3b53fcb`.
 
+Follow-up revision `e5075bfe` also preserves Java's swallowed null-info input
+for `fillProcessQueueInfo`; the focused facade comparison, pinned Java facade
+fixture verification, strict Consumer Clippy, and formatting/diff checks pass.
+
 Locked Cargo metadata, workspace metadata/license/dependency checks, seven
 package-content listings with `LICENSE`/`NOTICE`, and UTC plus Asia/Taipei
 Unique ID fixtures passed at revision `60238931`. At that revision the Consumer
@@ -3402,3 +3406,17 @@ Consumer integration tests (including all features), strict Consumer Clippy,
 format/diff checks, and pinned Maven verify pass. This closes the null-message
 input branch only; broad P18-V01 source/API/settings/input/error/control-flow
 and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 ProcessQueue null `fillProcessQueueInfo` argument — 2026-10-23
+
+Pinned Java catches and logs the exception raised when
+`fillProcessQueueInfo(null)` dereferences the DTO, releases its read lock, and
+returns normally. Rust adds `fill_process_queue_info_nullable(None)` as an
+observable no-op. The invoked Java fixture and Rust facade comparison exercise
+the null input. Fixture SHA-256:
+`57e2890ebeace93ecf00e2509e2bf7557c28f681ad19141f81430fecfe57ddf3`.
+
+The focused Consumer facade test, strict Consumer Clippy, formatting/diff
+checks, and targeted pinned Java facade fixture verification pass. This closes
+the null-info input branch only; broad P18-V01 source/API/settings/input/error/
+control-flow and reverse-export reconciliation remains PARTIAL.
