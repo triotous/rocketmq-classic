@@ -4126,3 +4126,18 @@ Clippy, offline Maven verify, differential self-test/37-scenario manifest,
 metadata checks, race/leak smoke (17 × 3), fuzz smoke, examples, benchmark,
 Windows GNU cross-check, formatting and diff checks pass. This closes the
 factory schedule-rejection ordering gap only; broad P18-V01 remains PARTIAL.
+
+
+## P18-V01 `MQClientAPIFactory` null scheduler input — 2026-10-23
+
+Pinned Java accepts a null scheduler in either constructor. Static-address
+startup never schedules a NameServer refresh and completes; domain startup
+constructs the API client, registers its callback, completes initial discovery,
+then throws `NullPointerException` at refresh scheduling before remoting start
+and factory-array assignment. Rust now represents this input explicitly through
+`with_optional_refresh_scheduler(None)`: static mode succeeds, while domain
+mode returns `NullRefreshScheduler` after discovery and retains a null slot.
+The invoked `RuntimeApiFactoryFixtures` records both Java outcomes, and the
+Core regression compares the domain error/slot and static success. This closes
+only the null-scheduler input branch; broad P18-V01 reconciliation remains
+PARTIAL.

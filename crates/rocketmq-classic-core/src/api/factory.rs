@@ -67,6 +67,12 @@ pub trait FactoryRefreshScheduler: Send + Sync {
     ) -> Result<(), String>;
 }
 
+enum FactoryRefreshSchedulerChoice {
+    DefaultTokio,
+    CallerOwned(Arc<dyn FactoryRefreshScheduler>),
+    JavaNull,
+}
+
 /// NameServer inputs accepted by Java `NameserverAccessConfig`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NameserverAccessConfig {
@@ -119,6 +125,8 @@ pub enum MQClientApiFactoryError {
     AddressingCallbackFailed,
     #[error("NameServer refresh scheduling failed: {0}")]
     RefreshScheduleFailed(String),
+    #[error("java.lang.NullPointerException")]
+    NullRefreshScheduler,
     #[error("client startup task failed: {0}")]
     StartupTask(String),
     #[error("client shutdown task failed: {0}")]
@@ -379,7 +387,7 @@ pub struct MQClientApiFactory {
     client_remoting_processor: Option<Arc<dyn RequestProcessor>>,
     rpc_hook: Option<Arc<dyn RpcHook>>,
     remoting_client_creator: Arc<RemotingClientCreator>,
-    refresh_scheduler: Option<Arc<dyn FactoryRefreshScheduler>>,
+    refresh_scheduler: FactoryRefreshSchedulerChoice,
     top_addressing: Option<Arc<dyn TopAddressing>>,
     address_state: Arc<FactoryAddressState>,
     refresh_shutdown: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
@@ -404,7 +412,7 @@ impl MQClientApiFactory {
             client_remoting_processor,
             rpc_hook,
             None,
-            None,
+            FactoryRefreshSchedulerChoice::DefaultTokio,
         )
     }
 
@@ -431,7 +439,7 @@ impl MQClientApiFactory {
             client_remoting_processor,
             rpc_hook,
             Some(Arc::new(creator)),
-            None,
+            FactoryRefreshSchedulerChoice::DefaultTokio,
         )
     }
 
@@ -441,7 +449,22 @@ impl MQClientApiFactory {
     /// The scheduler's lifetime and shutdown remain the caller's
     /// responsibility, as with Java's injected `ScheduledExecutorService`.
     pub fn with_refresh_scheduler(mut self, scheduler: Arc<dyn FactoryRefreshScheduler>) -> Self {
-        self.refresh_scheduler = Some(scheduler);
+        self.refresh_scheduler = FactoryRefreshSchedulerChoice::CallerOwned(scheduler);
+        self
+    }
+
+    /// Represents Java's nullable `ScheduledExecutorService` constructor
+    /// argument. A missing scheduler is ignored by static-address factories;
+    /// domain-address startup reaches the same null dereference after its
+    /// initial address discovery and before the client is started or stored.
+    pub fn with_optional_refresh_scheduler(
+        mut self,
+        scheduler: Option<Arc<dyn FactoryRefreshScheduler>>,
+    ) -> Self {
+        self.refresh_scheduler = match scheduler {
+            Some(scheduler) => FactoryRefreshSchedulerChoice::CallerOwned(scheduler),
+            None => FactoryRefreshSchedulerChoice::JavaNull,
+        };
         self
     }
 
@@ -452,7 +475,7 @@ impl MQClientApiFactory {
         client_remoting_processor: Option<Arc<dyn RequestProcessor>>,
         rpc_hook: Option<Arc<dyn RpcHook>>,
         creator: Option<Arc<RemotingClientCreator>>,
-        refresh_scheduler: Option<Arc<dyn FactoryRefreshScheduler>>,
+        refresh_scheduler: FactoryRefreshSchedulerChoice,
     ) -> Result<Self, MQClientApiFactoryError> {
         let domain = nameserver_access.namesrv_domain.as_deref().unwrap_or("");
         let properties_applied =
@@ -593,9 +616,11 @@ impl MQClientApiFactory {
         }
 
         let default_refresh_shutdown = self.top_addressing.as_ref().and_then(|_| {
-            self.refresh_scheduler
-                .is_none()
-                .then(|| self.begin_refresh())
+            matches!(
+                &self.refresh_scheduler,
+                FactoryRefreshSchedulerChoice::DefaultTokio
+            )
+            .then(|| self.begin_refresh())
         });
 
         for index in 0..client_count {
@@ -628,20 +653,28 @@ impl MQClientApiFactory {
             }
 
             if let Some(provider) = &self.top_addressing {
-                if let Some(scheduler) = &self.refresh_scheduler {
-                    self.start_refresh_with_scheduler(
-                        provider.clone(),
-                        index,
-                        scheduler.as_ref(),
-                        remoting.clone(),
-                    )?;
-                } else if let Some(shutdown) = &default_refresh_shutdown {
-                    self.start_refresh_task(
-                        provider.clone(),
-                        index,
-                        remoting.clone(),
-                        shutdown.clone(),
-                    );
+                match &self.refresh_scheduler {
+                    FactoryRefreshSchedulerChoice::CallerOwned(scheduler) => {
+                        self.start_refresh_with_scheduler(
+                            provider.clone(),
+                            index,
+                            scheduler.as_ref(),
+                            remoting.clone(),
+                        )?;
+                    }
+                    FactoryRefreshSchedulerChoice::JavaNull => {
+                        return Err(MQClientApiFactoryError::NullRefreshScheduler);
+                    }
+                    FactoryRefreshSchedulerChoice::DefaultTokio => {
+                        if let Some(shutdown) = &default_refresh_shutdown {
+                            self.start_refresh_task(
+                                provider.clone(),
+                                index,
+                                remoting.clone(),
+                                shutdown.clone(),
+                            );
+                        }
+                    }
                 }
             }
 
@@ -1470,6 +1503,85 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(rust_slots, java_slots);
         factory.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn factory_matches_java_null_refresh_scheduler_modes() {
+        struct StaticProvider;
+        impl TopAddressing for StaticProvider {
+            fn fetch_ns_addr(
+                &self,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send + '_>>
+            {
+                Box::pin(async { Some("null-scheduler-ns:9876".into()) })
+            }
+        }
+
+        let java: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/api-factory.json"
+        ))
+        .unwrap();
+        let creator_calls = Arc::new(AtomicUsize::new(0));
+        let observed_creator_calls = creator_calls.clone();
+        let domain_factory = MQClientApiFactory::with_remoting_client_creator(
+            NameserverAccessConfig::new(
+                None,
+                Some("factory-domain.example".into()),
+                Some("factory-subgroup".into()),
+            ),
+            "null-scheduler-domain-",
+            1,
+            None,
+            None,
+            move |_, mut config| {
+                observed_creator_calls.fetch_add(1, Ordering::SeqCst);
+                config.transport = TransportMode::Plain;
+                RemotingClient::with_config(config)
+            },
+        )
+        .unwrap()
+        .with_optional_refresh_scheduler(None)
+        .with_top_addressing(Arc::new(StaticProvider))
+        .unwrap();
+
+        assert!(matches!(
+            domain_factory.start().await,
+            Err(MQClientApiFactoryError::NullRefreshScheduler)
+        ));
+        assert_eq!(
+            java["domainNullSchedulerStartError"],
+            "NullPointerException"
+        );
+        assert_eq!(creator_calls.load(Ordering::SeqCst), 1);
+        let rust_slots = domain_factory
+            .get_clients()
+            .unwrap()
+            .snapshot()
+            .into_iter()
+            .map(|client| client.map(|_| "started"))
+            .collect::<Vec<_>>();
+        let java_slots = java["domainNullSchedulerClientSlots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(serde_json::Value::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(rust_slots, java_slots);
+        domain_factory.shutdown().await.unwrap();
+
+        let static_factory = MQClientApiFactory::new(
+            NameserverAccessConfig::new(Some("127.0.0.1:9876".into()), None, None),
+            "null-scheduler-static-",
+            1,
+            None,
+            None,
+        )
+        .unwrap()
+        .with_optional_refresh_scheduler(None);
+        static_factory.start().await.unwrap();
+        assert_eq!(java["staticNullSchedulerStartError"], "NONE");
+        assert_eq!(static_factory.get_clients().unwrap().len(), 1);
+        static_factory.shutdown().await.unwrap();
     }
 
     #[tokio::test]

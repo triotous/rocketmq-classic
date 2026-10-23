@@ -246,6 +246,71 @@ public final class RuntimeApiFactoryFixtures {
                 domainScheduler.shutdownNow();
             }
 
+            MQClientAPIFactory staticNullSchedulerFactory = new MQClientAPIFactory(
+                new NameserverAccessConfig("127.0.0.1:9876", "", null),
+                "static-null-scheduler-", 1, null, null, null);
+            String staticNullSchedulerStartError;
+            try {
+                staticNullSchedulerFactory.start();
+                staticNullSchedulerStartError = "NONE";
+                staticNullSchedulerFactory.shutdown();
+            } catch (Throwable error) {
+                staticNullSchedulerStartError = error.getClass().getSimpleName();
+            }
+            fixture.put("staticNullSchedulerStartError", staticNullSchedulerStartError);
+
+            ServerSocket nullSchedulerDiscoveryServer = new ServerSocket(0);
+            nullSchedulerDiscoveryServer.setSoTimeout(5000);
+            AtomicReference<Throwable> nullSchedulerDiscoveryFailure = new AtomicReference<>();
+            Thread nullSchedulerDiscoveryResponder = new Thread(() -> {
+                try (Socket socket = nullSchedulerDiscoveryServer.accept()) {
+                    socket.setSoTimeout(5000);
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(
+                        socket.getInputStream(), StandardCharsets.UTF_8));
+                    while (true) {
+                        String line = reader.readLine();
+                        if (line == null || line.isEmpty()) {
+                            break;
+                        }
+                    }
+                    byte[] body = "127.0.0.13:9876".getBytes(StandardCharsets.UTF_8);
+                    OutputStream output = socket.getOutputStream();
+                    output.write(("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=UTF-8\r\n"
+                        + "Content-Length: " + body.length + "\r\nConnection: close\r\n\r\n")
+                        .getBytes(StandardCharsets.US_ASCII));
+                    output.write(body);
+                    output.flush();
+                } catch (Throwable error) {
+                    nullSchedulerDiscoveryFailure.set(error);
+                }
+            }, "api-factory-null-scheduler-discovery-fixture");
+            nullSchedulerDiscoveryResponder.setDaemon(true);
+            nullSchedulerDiscoveryResponder.start();
+            MQClientAPIFactory nullSchedulerFactory = new MQClientAPIFactory(
+                new NameserverAccessConfig(null,
+                    "127.0.0.1:" + nullSchedulerDiscoveryServer.getLocalPort(), "factory-fixture"),
+                "domain-null-scheduler-", 1, null, null, null);
+            String domainNullSchedulerStartError;
+            try {
+                nullSchedulerFactory.start();
+                domainNullSchedulerStartError = "NONE";
+            } catch (Throwable error) {
+                domainNullSchedulerStartError = error.getClass().getSimpleName();
+            }
+            fixture.put("domainNullSchedulerStartError", domainNullSchedulerStartError);
+            fixture.put("domainNullSchedulerClientSlots", Arrays.stream(nullSchedulerFactory.getClients())
+                .map(client -> client == null ? null : "started")
+                .collect(Collectors.toList()));
+            nullSchedulerDiscoveryServer.close();
+            nullSchedulerDiscoveryResponder.join(5000);
+            if (nullSchedulerDiscoveryResponder.isAlive()) {
+                throw new IllegalStateException("Null-scheduler NameServer discovery fixture did not finish");
+            }
+            if (nullSchedulerDiscoveryFailure.get() != null) {
+                throw new IllegalStateException("Null-scheduler NameServer discovery fixture failed",
+                    nullSchedulerDiscoveryFailure.get());
+            }
+
             String[] discoveredAddresses = {"127.0.0.11:9876", "127.0.0.12:9876"};
             ServerSocket discoveryServer = new ServerSocket(0);
             discoveryServer.setSoTimeout(5000);
