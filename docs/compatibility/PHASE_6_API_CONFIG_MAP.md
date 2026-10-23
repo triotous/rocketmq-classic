@@ -1792,6 +1792,18 @@ Fixture SHA-256:
 `a9fb84f276c05f4f55481b03fa2316cf28ec0ca691ecfbe1ae027522abfd6365`.
 This closes the null-list requeue branch only; P18-V01 remains open.
 
+## ProcessQueue `removeMessage` null-element prefix — 2026-10-23
+
+Pinned Java catches a null-element exception after removing each valid prefix
+message from the ready tree and subtracting its body size. The exception skips
+the aggregate count update and final first-key result calculation, so Java
+returns the precomputed `queueOffsetMax + 1`. Rust adds
+`remove_message_items_nullable` with the same partial tree, byte-size, count,
+timestamp, and return-offset effects. The invoked fixture also checks the next
+insertion and dispatch result. Fixture SHA-256:
+`29cc00f7cf9b8194f08007a12c5e75f0499a5601c140a78855b14cb244bef771`.
+This closes the null-element removal branch only; P18-V01 remains open.
+
 ## `MQClientAPIImpl.getClusterList` stub — 2026-10-21
 
 The pinned `getClusterList(String,long)` implementation ignores both inputs,

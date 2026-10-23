@@ -54,6 +54,13 @@ Follow-up revision `9be7efed` requeues the valid prefix from
 focused facade comparison, pinned Java fixture verification, strict Consumer
 Clippy, and formatting/diff checks pass.
 
+Follow-up revision `463db95a` preserves `removeMessage([message, null])`'s
+caught partial effects: the ready-tree prefix and byte size change, aggregate
+count remains unchanged, and Java returns the precomputed next offset. The
+focused facade comparison, targeted pinned Java fixture verification, all 260
+Consumer library tests and 69 integration tests with all features, strict
+Consumer Clippy, and formatting/diff checks pass.
+
 Locked Cargo metadata, workspace metadata/license/dependency checks, seven
 package-content listings with `LICENSE`/`NOTICE`, and UTC plus Asia/Taipei
 Unique ID fixtures passed at revision `60238931`. At that revision the Consumer
@@ -3537,3 +3544,21 @@ The focused ProcessQueue facade test, targeted pinned Java facade fixture
 verification, strict Consumer Clippy, and formatting/diff checks pass. This
 closes the null-element requeue branch only; broad P18-V01 source/API/settings/
 input/error/control-flow and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 ProcessQueue null removal element and prefix state — 2026-10-23 (`463db95a`)
+
+Pinned Java catches the exception from a null element in `removeMessage` after
+removing valid prefix entries from the ready tree and subtracting their body
+sizes. It skips the aggregate count update and returns the precomputed
+`queueOffsetMax + 1`; the Rust `remove_message_items_nullable` adapter matches
+these partial effects. The invoked Java fixture and Rust facade comparison
+check timestamp, tree, count, size, return offset, and the next insertion's
+dispatch behavior. Fixture SHA-256:
+`29cc00f7cf9b8194f08007a12c5e75f0499a5601c140a78855b14cb244bef771`.
+
+The focused Consumer facade test, targeted pinned Java facade fixture
+verification, all 260 Consumer library tests and all 69 Consumer integration
+tests with all features, strict Consumer Clippy, formatting, and diff checks
+pass. This closes the null-element removal branch only; broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains PARTIAL.
