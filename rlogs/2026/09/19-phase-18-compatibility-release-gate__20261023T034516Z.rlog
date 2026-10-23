@@ -269,3 +269,19 @@ No external CI run or push was performed. Current-revision GitHub
 Ubuntu/Windows evidence and broad P18-V01 bidirectional source/API/settings/
 input/error/control-flow/reverse-export reconciliation remain open. The
 protected Phase 19 user changes were not staged or modified.
+
+## P18-V02 pinned Java oracle refresh — 2026-10-23T07:00:27Z
+
+`mvn -o -f compat/java-reference/pom.xml verify` completed with BUILD SUCCESS
+on current tree `bc58a528` (three minutes eight seconds). The Java reference
+self-test and all 37 manifest scenarios passed. Runtime invoked fixtures for
+routing/VIP, config, address, hooks, consumers, offsets, Broker lookup/admin,
+headers and DTO identity passed; the Java decoder accepted all 106 generated
+typed headers and all 19 generated typed bodies. Maven left no tracked
+fixture changes.
+
+This updates the pinned offline oracle evidence only. Broad P18-V01
+bidirectional Java/Rust source/API/settings/input/error/control-flow and
+reverse-export reconciliation remains open, as do current-revision GitHub
+Ubuntu/Windows results. No external CI run or push was performed. Protected
+Phase 19 user changes remain unstaged and untouched.

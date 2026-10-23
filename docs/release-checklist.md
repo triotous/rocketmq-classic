@@ -8314,3 +8314,15 @@ owner-specific checks belong in the manual handoff.
   work and protected user changes are out of scope and were left untouched.
   No external CI run or push was performed. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V02 pinned Java oracle refresh — 2026-10-23 (`bc58a528`)
+
+- [x] `mvn -o -f compat/java-reference/pom.xml verify` passed on the current
+  tree. The Java self-test and 37-scenario manifest passed; runtime fixtures
+  verified route/VIP, config, address, consumer operations, offsets, hooks,
+  lookup, admin, protocol identities, and Java-to-Rust/Rust-to-Java typed
+  serialization. Java decoded all 106 typed headers and 19 typed bodies.
+- [ ] This refresh does not close broad P18-V01 reconciliation or establish
+  current-revision GitHub Ubuntu/native Windows evidence for P18-V04. No
+  external CI or push was performed. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
