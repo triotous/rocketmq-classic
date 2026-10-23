@@ -2928,6 +2928,54 @@ The same pinned-source property scan found `java.io.tmpdir` only in
 call site for that remapping snapshot helper; it is not a client configuration
 or a client operation.
 
+## P18-V01 `LocalFileOffsetStore.LOCAL_OFFSET_STORE_DIR` public field — 2026-10-23 (`6d0f4523`)
+
+Pinned Java 5.5.1 declares `LOCAL_OFFSET_STORE_DIR` as a public static final
+field and snapshots `rocketmq.client.localOffsetStoreDir` or the
+`user.home/.rocketmq_offsets` fallback when the class initializes. Rust now
+exposes `LocalFileOffsetStore::local_offset_store_dir()` and uses that same
+first-access snapshot when constructing the store. This closes the missing
+public-field mapping and the prior per-construction environment reread. The
+invoked Java fixture verifies the value before and after changing `user.home`;
+the isolated Rust subprocess regression checks that value and the actual path
+for explicit, empty, home-fallback, empty-home, and missing-home cases.
+
+Validation passed: the focused Rust subprocess test, Consumer all-features
+package tests, strict Consumer Clippy, focused Java runtime-offset fixture
+verify, and full offline Maven `verify` (exit 0). This closes only this
+field/property slice; broad P18-V01 remains partial.
+
+## P18-V01 Java client process-property census — 2026-10-23 (`ed909c11`)
+
+The pinned Java source scan used `git grep` for `System.getProperty`,
+`System.getenv`, `Boolean.getBoolean`, `Integer.getInteger`, `Long.getLong`,
+and `System.setProperty` at client commit
+`efa1be59d6fc747ad220f036c86030f05f0419f9`, across `client`, `common`, and
+`remoting`. Rust production environment reads were reverse-scanned in the
+Common, Protocol, Remoting, Core, Producer, and Consumer crates.
+
+| Java setting owner | Rust owner / existing source-backed evidence |
+| --- | --- |
+| `ClientConfig` properties and NameServer address/domain inputs | Core `ClientConfig`, `NameServerAddressUtils`, and `NameServerAddressProvider`; the complete 33-field/property and initialization-timing inventory is above. |
+| `SessionCredentials.KEY_FILE` | Core `SessionCredentials::key_file_path` and ACL credential/file fixtures; [Phase 16 security matrix](PHASE_16_NAMESPACE_SECURITY_OPERATIONS_MATRIX.md). |
+| `LocalFileOffsetStore.LOCAL_OFFSET_STORE_DIR` | Consumer `LocalFileOffsetStore::local_offset_store_dir()` exposes the Java public static field value and shares its one-time snapshot with store construction; the default home-directory fallback, property override, path layout, and restart persistence are recorded in the [Phase 9 matrix](PHASE_9_OFFLINE_METHOD_MATRIX.md). |
+| `ProcessQueue`, `PopProcessQueue`, `ConsumeMessageOrderlyService`, and `RebalancePushImpl` timing properties | Consumer queue/orderly owners; separate class-initialization caches and exact defaults are recorded in the [Phase 12 matrix](PHASE_12_ORDERLY_MATRIX.md) and [runtime consumer operations](PHASE_18_RUNTIME_CONSUMER_OPERATIONS.md). |
+| `MQClientAPIImpl.sendSmartMsg` and `RemotingCommand.REMOTING_VERSION_KEY` | Core API initialization and Producer send-kind selection; the invoked oracle and subprocess tests are recorded in the current P18-V01 audit entries. |
+| `DefaultMQProducer` compression type/level and recall-trace enable | Producer config and trace hook; constructor property parsing and source selection are recorded in the [Phase 7 producer matrix](PHASE_7_PRODUCER_MATRIX.md) and [Phase 16 operations matrix](PHASE_16_NAMESPACE_SECURITY_OPERATIONS_MATRIX.md). |
+| `NettyClientConfig`, `NettySystemConfig`, `TlsSystemConfig`, and `RemotingCommand` serialization type | Remoting config, TLS property state, and serialization-type initialization; see the [Phase 3 Remoting inventory](PHASE_3_REMOTING_INVENTORY.md). |
+| `DynamicalExtFieldRPCHook` zone properties/environment fallbacks | Core dynamic RPC hook; values are read at each hook invocation, as recorded in the Phase 3 inventory. |
+
+The remaining common-module reads are server/configuration utilities, JVM or
+OS implementation selection, or the unused `TopicQueueMappingUtils` temp-file
+helper; they do not add a client setting or an active client operation. The
+reverse Rust scan found no unexplained production environment-backed public
+setting. The public Java `MQClientAPIFactory` still has no construction or
+call site outside its own class in the pinned client source. Its existing
+runtime-inventory disposition says it is not a separate user-facing client
+operation; because P18 reopens unmatched public APIs, that scope disposition
+must be revisited in the final reverse API audit. This census closes the
+process-property slice only; broad P18-V01 remains PARTIAL.
+
 ## P18-V01 `MessageDecoder` body-skip malformed-tail coverage — 2026-10-22 (`608fe801`)
 
 The invoked malformed-tail fixture now also calls Java `decodes(..., false)`

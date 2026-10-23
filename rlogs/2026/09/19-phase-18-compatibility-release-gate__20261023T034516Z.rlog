@@ -350,3 +350,58 @@ does not execute tests on Windows or establish a current GitHub Actions result.
 Native Windows runtime and current-revision remote Ubuntu evidence remain open.
 Broad P18-V01 remains PARTIAL. No push or remote CI was performed; protected
 Phase 19 worktree files remain untouched and unstaged.
+
+## P18-V01 Java client process-property census — 2026-10-23T08:13:58Z
+
+Pinned Java 5.5.1 `System.getProperty`/`System.getenv` and property-parsing
+reads across `client`, `common`, and `remoting` were cross-checked against Rust
+production environment reads in Common, Protocol, Remoting, Core, Producer, and
+Consumer. Active client property owners include ClientConfig/NameServer,
+SessionCredentials, LocalFileOffsetStore, ProcessQueue/POP/orderly timing,
+MQClientAPIImpl's `sendSmartMsg` and Remoting version initialization, Producer
+compression/recall tracing, Remoting/TLS configuration, and the dynamic zone
+hook. Their existing source-backed mappings are linked in
+`docs/compatibility/PHASE_6_API_CONFIG_MAP.md`. No unexplained production
+environment-backed public setting was found in this bounded reverse scan.
+
+The public Java `MQClientAPIFactory` has no construction/call site outside its
+own class in the pinned client source. Its earlier no-separate-user-facing-API
+disposition is left open for re-evaluation under P18's reverse public-API
+contract. This closes the property census only; broad P18-V01 remains PARTIAL.
+Current-revision remote Ubuntu CI, native Windows runtime execution, and
+Phase 19 Broker/Docker evidence remain open. No push or remote CI was run;
+protected Phase 19 worktree files remain untouched and unstaged.
+
+## P18-V01 LocalFileOffsetStore public static field — 2026-10-23T08:26:38Z
+
+Pinned Java 5.5.1 exposes `LOCAL_OFFSET_STORE_DIR` as a public static final
+field initialized once from `rocketmq.client.localOffsetStoreDir` or the
+`user.home/.rocketmq_offsets` fallback. Rust now exposes the corresponding
+`LocalFileOffsetStore::local_offset_store_dir()` and uses the shared snapshot
+for `new()`, including Java-compatible explicit-empty and missing-home string
+construction. Invoked Java fixture checks the class-init snapshot across a
+`user.home` mutation. Isolated Rust subprocess cases check explicit property
+and mutation, default home, empty property, empty home, and missing home.
+
+Implementation commit: `6d0f4523 fix(consumer): match Java local offset root property`.
+Validation passed: `cargo fmt --all -- --check`, focused Rust subprocess test,
+`cargo test -p rocketmq-classic-consumer --all-features --locked`, strict
+Consumer Clippy, and focused Java runtime-offset fixture verification. A full
+Maven verify showed all fixture output without errors but its process exit code
+was not captured; this is not recorded as a confirmed gate. Full P18-V01
+source/API/settings/input/error/control-flow/reverse-export audit remains
+PARTIAL; final `MQClientAPIFactory` scope review, native Windows runtime,
+current-revision remote Ubuntu CI, and Phase 19 Broker/Docker evidence remain
+open. No push or remote CI was performed; protected Phase 19 worktree files
+remain untouched and unstaged.
+
+## P18-V01 LocalFileOffsetStore full Java reference verify — 2026-10-23T08:29:42Z
+
+Follow-up rerun of `mvn -o -q -f compat/java-reference/pom.xml verify`
+completed with exit code 0. The full reference suite verified runtime offset
+conversion including 10 base and 7 nullable cases, the new property
+class-initialization fixture, and all remaining Java/Rust fixture and typed
+header/body decoders. This resolves the uncaptured-exit status noted in the
+08:26 entry. Existing Java/Netty `Unsafe` and reflective final-field warnings
+were emitted; they did not fail the verify. Broad P18-V01 and platform/live
+evidence remain open.

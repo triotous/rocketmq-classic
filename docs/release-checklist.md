@@ -8367,3 +8367,30 @@ owner-specific checks belong in the manual handoff.
   current-revision remote Ubuntu CI remain open, as does broad P18-V01. No
   push or remote CI was run. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V01 Java client process-property census — 2026-10-23 (`ed909c11`)
+
+- [x] Pinned Java `System` property/environment reads and Rust production
+  environment-backed settings were cross-checked. Each active client setting
+  maps to its existing Rust owner and source evidence.
+- [ ] `MQClientAPIFactory` remains for final scope review: it is Java-public
+  but has no construction/call site outside its own class. Broad P18-V01
+  source/API/settings/input/error/control-flow and reverse-export audit remains
+  partial. No remote CI or push was run. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V01 LocalFileOffsetStore public static field — 2026-10-23 (`6d0f4523`)
+
+- [x] Added `LocalFileOffsetStore::local_offset_store_dir()` and made `new()`
+  use the same first-access snapshot as Java's public static field.
+- [x] Invoked Java fixture verifies class-initialization snapshot behavior;
+  isolated Rust subprocess cases cover property override, property mutation,
+  default home, blank property, blank home, and absent home.
+- [x] Focused Rust test, full Consumer all-features package tests, strict
+  Consumer Clippy, focused Java runtime-offset fixture verify, and full offline
+  Maven `verify` passed.
+- [ ] Broad P18-V01 and final reverse API review remain open, including
+  `MQClientAPIFactory` scope. Native Windows runtime, current-revision remote
+  Ubuntu CI, and Phase 19 Broker/Docker evidence are pending. No push or remote
+  CI was run. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
