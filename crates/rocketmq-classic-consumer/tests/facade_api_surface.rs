@@ -1167,6 +1167,46 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
             .copied()
             .collect::<Vec<_>>(),
     });
+    let mut null_prefix_message = MessageExt::new();
+    null_prefix_message.set_queue_offset(232);
+    null_prefix_message.set_body(vec![6, 7, 8]);
+    let null_message_element_queue = ProcessQueue::new();
+    let null_message_element_error = null_message_element_queue
+        .put_message_items_nullable(Some(&[Some(null_prefix_message), None]))
+        .expect_err("Java dereferencing a null list element throws NullPointerException");
+    assert!(matches!(
+        &null_message_element_error,
+        ProcessQueueError::NullMessageElement
+    ));
+    let null_message_element_count_after_error = null_message_element_queue.get_msg_count().get();
+    let null_message_element_size_after_error = null_message_element_queue.get_msg_size().get();
+    let null_message_element_tree_after_error = null_message_element_queue
+        .get_msg_tree_map()
+        .read()
+        .keys()
+        .copied()
+        .collect::<Vec<_>>();
+    let mut after_null_element = MessageExt::new();
+    after_null_element.set_queue_offset(233);
+    after_null_element.set_body(vec![8]);
+    let null_message_element_next_dispatch = null_message_element_queue
+        .put_message(&[after_null_element])
+        .expect("valid message after null element failure");
+    let null_message_element_result = serde_json::json!({
+        "errorClass": null_message_element_error.to_string(),
+        "countAfterError": null_message_element_count_after_error,
+        "sizeAfterError": null_message_element_size_after_error,
+        "treeKeysAfterError": null_message_element_tree_after_error,
+        "nextDispatch": null_message_element_next_dispatch,
+        "finalCount": null_message_element_queue.get_msg_count().get(),
+        "finalSize": null_message_element_queue.get_msg_size().get(),
+        "finalTreeKeys": null_message_element_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+    });
     let info_result = serde_json::json!({
         "cachedMsgCount": info.get_cached_msg_count(),
         "cachedMsgSizeInMiB": info.get_cached_msg_size_in_mib(),
@@ -1235,6 +1275,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "nullMessageList": null_message_list_result,
         "nullRemoveMessage": null_remove_message_result,
         "nullRequeueMessage": null_requeue_message_result,
+        "nullMessageElement": null_message_element_result,
     });
     assert_eq!(&actual, expected);
     queue.clear();

@@ -492,6 +492,8 @@ pub enum ProcessQueueError {
     StaleGeneration,
     #[error("java.lang.NullPointerException")]
     NullMessageList,
+    #[error("java.lang.NullPointerException")]
+    NullMessageElement,
     #[error("process queue assignment has been dropped")]
     Dropped,
     #[error("consume batch does not belong to this process queue")]
@@ -754,6 +756,83 @@ impl ProcessQueue {
             return Err(ProcessQueueError::NullMessageList);
         };
         self.put_message(messages)
+    }
+
+    /// Maps Java `putMessage` lists containing null elements, including prefix mutations.
+    pub fn put_message_items_nullable(
+        &self,
+        messages: Option<&[Option<MessageExt>]>,
+    ) -> Result<bool, ProcessQueueError> {
+        let Some(messages) = messages else {
+            return Err(ProcessQueueError::NullMessageList);
+        };
+        let Some(null_index) = messages.iter().position(Option::is_none) else {
+            let messages = messages
+                .iter()
+                .map(|message| message.as_ref().unwrap().clone())
+                .collect::<Vec<_>>();
+            return self.put_message(&messages);
+        };
+
+        let mut state = self.lock_state();
+        self.ensure_generation(self.generation)?;
+        for message in messages[..null_index].iter().flatten() {
+            let offset = message.queue_offset();
+            let body_bytes = message.body().len() as u64;
+            state.highest_seen_offset = Some(
+                state
+                    .highest_seen_offset
+                    .map_or(offset, |highest| highest.max(offset)),
+            );
+            match state.messages.get(&offset).map(|entry| entry.state) {
+                Some(MessageState::Ready) => {
+                    if let Some(existing) = state.messages.get_mut(&offset) {
+                        existing.message = Arc::new(message.clone());
+                        existing.body_bytes = body_bytes;
+                        existing.consume_start_timestamp_millis = consume_start_timestamp(message);
+                    }
+                }
+                Some(MessageState::InFlight(_) | MessageState::Held) => {
+                    if let Some(existing) = state.ready_duplicates.get_mut(&offset) {
+                        existing.message = Arc::new(message.clone());
+                        existing.body_bytes = body_bytes;
+                        existing.consume_start_timestamp_millis = consume_start_timestamp(message);
+                    } else {
+                        state.ready_duplicates.insert(
+                            offset,
+                            QueueMessage {
+                                message: Arc::new(message.clone()),
+                                body_bytes,
+                                state: MessageState::Ready,
+                                consume_start_timestamp_millis: consume_start_timestamp(message),
+                            },
+                        );
+                        state.queue_offset_max = offset;
+                        state.cached_bytes = state.cached_bytes.wrapping_add(body_bytes as i64);
+                    }
+                }
+                None => {
+                    if let Some(existing) = state.ready_duplicates.get_mut(&offset) {
+                        existing.message = Arc::new(message.clone());
+                        existing.body_bytes = body_bytes;
+                        existing.consume_start_timestamp_millis = consume_start_timestamp(message);
+                    } else {
+                        state.messages.insert(
+                            offset,
+                            QueueMessage {
+                                message: Arc::new(message.clone()),
+                                body_bytes,
+                                state: MessageState::Ready,
+                                consume_start_timestamp_millis: consume_start_timestamp(message),
+                            },
+                        );
+                        state.queue_offset_max = offset;
+                        state.cached_bytes = state.cached_bytes.wrapping_add(body_bytes as i64);
+                    }
+                }
+            }
+        }
+        Err(ProcessQueueError::NullMessageElement)
     }
 
     pub fn take_messages(

@@ -317,6 +317,29 @@ public final class ConsumerFacadeApiFixtures {
         nullRequeueMessage.put("treeKeys", new ArrayList<>(nullRequeueMessageQueue.getMsgTreeMap().keySet()));
         result.put("nullRequeueMessage", nullRequeueMessage);
 
+        ProcessQueue nullMessageElementQueue = new ProcessQueue();
+        String nullMessageElementErrorClass = null;
+        try {
+            nullMessageElementQueue.putMessage(Arrays.asList(
+                processQueueMessage(232L, new byte[] {6, 7, 8}), null));
+        } catch (Throwable error) {
+            nullMessageElementErrorClass = error.getClass().getName();
+        }
+        Map<String, Object> nullMessageElement = new TreeMap<>();
+        nullMessageElement.put("errorClass", nullMessageElementErrorClass);
+        nullMessageElement.put("countAfterError", nullMessageElementQueue.getMsgCount().get());
+        nullMessageElement.put("sizeAfterError", nullMessageElementQueue.getMsgSize().get());
+        nullMessageElement.put("treeKeysAfterError",
+            new ArrayList<>(nullMessageElementQueue.getMsgTreeMap().keySet()));
+        boolean nullMessageElementNextDispatch = nullMessageElementQueue.putMessage(
+            List.of(processQueueMessage(233L, new byte[] {8})));
+        nullMessageElement.put("nextDispatch", nullMessageElementNextDispatch);
+        nullMessageElement.put("finalCount", nullMessageElementQueue.getMsgCount().get());
+        nullMessageElement.put("finalSize", nullMessageElementQueue.getMsgSize().get());
+        nullMessageElement.put("finalTreeKeys",
+            new ArrayList<>(nullMessageElementQueue.getMsgTreeMap().keySet()));
+        result.put("nullMessageElement", nullMessageElement);
+
         ProcessQueue negativeBatchQueue = new ProcessQueue();
         negativeBatchQueue.setLastConsumeTimestamp(777L);
         Map<String, Object> negativeBatchResult = new TreeMap<>();
