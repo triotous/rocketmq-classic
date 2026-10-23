@@ -3718,3 +3718,22 @@ isolated Producer subprocess verifies normal/reply/batch selection under both
 switch values. Focused Core and Producer tests pass. This closes the named
 setting and high-level request-code gap only; broad P18-V01 source/API/settings/
 input/error/control-flow and reverse-export reconciliation remains PARTIAL.
+
+## P18-V02 current macOS offline gates — 2026-10-23 (`9fdea903`)
+
+On macOS AArch64 with Rust 1.85.0, the default and all-features locked
+workspace tests pass, as do strict all-target/all-feature workspace Clippy,
+format checking, and `git diff --check`. The pinned Java 5.5.1 Maven `verify`
+passes with 37 scenarios, 106 typed headers, 19 typed bodies, and fixture drift
+checks. Differential comparator self-test and all 37 manifest scenarios pass.
+Fixed-seed fuzz smoke passes with 163 frame seeds, 11 message seeds, 2,784
+mutations, 245 frame decodes, and 192 message decodes. The deterministic
+race/leak smoke passes 17 cases × 3 repetitions, release workspace examples
+build, and the offline benchmark completes; its current-tree sample is recorded
+in [`PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`](PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+
+These results close the current local P18-V02 checks at this code revision.
+Broad P18-V01 Java source/API/settings/input/error/control-flow and Rust
+reverse-export reconciliation remains PARTIAL. Current-revision remote Ubuntu
+CI, native Windows runtime execution, and Phase 19 Broker/Docker evidence
+remain open.

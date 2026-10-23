@@ -600,6 +600,26 @@ the current release baseline and sets no performance threshold.
 Timing varies between runs and is not evidence of a regression or improvement;
 loopback time includes local TCP and Tokio scheduling.
 
+## ProcessQueue lock fields and `sendSmartMsg` current-tree sample — 2026-10-23 (`9fdea903`)
+
+Captured with `cargo bench --offline -p rocketmq-classic --bench offline
+--locked` on Phase 18 code revision `9fdea903584f893158a4ab1d5622c36b27fbf910`.
+Environment and fixed inputs match the native macOS samples above. This sample
+does not isolate ProcessQueue or Producer compatibility branches and sets no
+performance threshold.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 1,943.2 ns | 40.00 (1,000 samples) | 4,676.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 1,429.5 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 1,642.2 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 20.5 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 62,463.3 ns | 81.00 (100 samples) | 9,546.0 (100 samples) |
+
+Timing varies between runs and is not evidence of a regression or improvement;
+loopback time includes local TCP and Tokio scheduling. Allocation totals are
+aggregate allocator calls and requested bytes divided by sampled operations.
+
 ## ProcessQueue lifecycle parity current-tree sample — 2026-10-23 (`2ce652e7`)
 
 Captured with `cargo bench --offline -p rocketmq-classic --bench offline
