@@ -4241,3 +4241,22 @@ The full Producer all-feature test suite and doctests passed, including the
 trait-bound compile-fail case, and strict all-target/all-feature Producer
 Clippy passed. This closes one error-wrapper identity mismatch only; broad
 P18-V01 remains PARTIAL.
+
+## P18-V01 Lite subscription control request-header inheritance — 2026-10-23 (`5acaab89`)
+
+Pinned Java 5.5.1 `LiteSubscriptionCtlRequestHeader` inherits namespace,
+namespaced, broker-name, and oneway state plus field-based equality, hash, and
+string behavior from `RpcRequestHeader`. Rust previously modeled it as a unit
+header and dropped all four inherited wire fields. It now stores those fields
+privately, exposes the inherited accessor set, encodes/decodes `ns`, `nsd`,
+`bname`, and `oway`, and uses the same four fields for equality and hashing.
+The identity fixture now includes this class and records 46 request-header
+API/identity entries; its SHA-256 is
+`421e054be509f5f56fb5f1fe0cd5870745c83e956f56831082858e9780b4a10d`.
+
+Protocol header inventory and validation tests, all Protocol all-feature tests
+and doctests, strict Protocol Clippy, formatting/diff checks, and pinned Java
+5.5.1 Maven verification passed. This closes the Lite request-header mapping
+gap only. Broad P18-V01 remains PARTIAL; current-revision remote Ubuntu CI and
+native Windows runtime evidence remain open, and Phase 19 Broker/Docker work
+stays outside scope.

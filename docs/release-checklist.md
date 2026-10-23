@@ -8821,3 +8821,23 @@ owner-specific checks belong in the manual handoff.
   push or remote CI was run; the four existing user-owned Phase 19 paths remain
   untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-callback-error-identity__20261023T133454Z.rlog`.
+
+## P18-V01 Lite subscription control request-header inheritance — 2026-10-23 (`5acaab89`)
+
+- [x] Mapped the pinned Java `LiteSubscriptionCtlRequestHeader` inherited
+  `RpcRequestHeader` fields, accessors, equality/hash behavior, and string form.
+  Rust now encodes and decodes nullable `ns`, `nsd`, `bname`, and `oway`.
+- [x] Updated the pinned Java identity/API fixture and added Rust checks for
+  accessor inventory, base-field differences, hash/string values, and wire
+  round-trip. Fixture SHA-256:
+  `421e054be509f5f56fb5f1fe0cd5870745c83e956f56831082858e9780b4a10d`.
+- [x] Protocol header inventory/matrix tests, Protocol all-feature tests and
+  doctests, strict all-target/all-feature Protocol Clippy, formatting/diff
+  checks, and offline Maven `verify` passed. Maven verified 37 scenarios,
+  11 message fixtures, 106 typed headers, and 19 typed bodies.
+- [ ] This closes one Protocol inheritance mapping only. Broad P18-V01 remains
+  open; native Windows runtime and current-revision remote Ubuntu CI remain
+  pending. Phase 19 Broker/Docker validation remains outside scope. No push or
+  remote CI was run; the four existing user-owned Phase 19 paths remain
+  untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-lite-rpc-header-inheritance__20261023T143107Z.rlog`.
