@@ -8400,6 +8400,27 @@ mod tests {
         assert_eq!(fixture["serverContacted"], false);
         let cases = fixture["identityCases"].as_object().unwrap();
         assert_eq!(cases.len(), 49);
+        let rpc_semantics_types: std::collections::BTreeSet<_> = include_str!("basic.rs")
+            .split_once("impl_rpc_request_header_semantics!(")
+            .unwrap()
+            .1
+            .split_once(");")
+            .unwrap()
+            .0
+            .split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned)
+            .collect();
+        let fixture_rpc_types: std::collections::BTreeSet<_> = cases
+            .keys()
+            .filter(|name| name.as_str() != "ConsumeMessageDirectlyResultRequestHeader")
+            .cloned()
+            .collect();
+        assert_eq!(
+            fixture_rpc_types, rpc_semantics_types,
+            "Java identity/API inventory must cover every Rust RpcRequestHeader equality mapping"
+        );
         for (rust_name, identity) in cases {
             let java_class = if rust_name == "GetRouteInfoRequestHeader" {
                 "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"
