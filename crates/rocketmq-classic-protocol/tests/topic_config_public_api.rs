@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
     process::Command,
+    sync::Mutex,
 };
 
 use rocketmq_classic_common::{
@@ -19,6 +20,8 @@ use rocketmq_classic_protocol::{
     },
 };
 use serde_json::{Value, json};
+
+static TOPIC_CONFIG_DEFAULTS_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 fn fixture() -> Value {
     let fixture: Value =
@@ -60,6 +63,7 @@ fn nullable_attributes(entries: &[(Option<&str>, Option<&str>)]) -> TopicConfigA
 
 #[test]
 fn topic_config_methods_and_type_helpers_match_invoked_java_551() {
+    let _defaults_lock = TOPIC_CONFIG_DEFAULTS_TEST_LOCK.lock().unwrap();
     let fixture = fixture();
     assert_config(&TopicConfig::default(), &fixture["default"]);
     assert_eq!(
@@ -293,6 +297,7 @@ fn topic_config_methods_and_type_helpers_match_invoked_java_551() {
 
 #[test]
 fn topic_config_nullable_attribute_keys_match_invoked_java_551() {
+    let _defaults_lock = TOPIC_CONFIG_DEFAULTS_TEST_LOCK.lock().unwrap();
     let expected = fixture()["nullableAttributeApi"].clone();
     let shared_attributes = SharedValue::new(nullable_attributes(&[
         (None, Some("null-key")),
@@ -384,6 +389,7 @@ fn topic_config_nullable_attribute_keys_match_invoked_java_551() {
 
 #[test]
 fn topic_config_and_queue_mapping_constructor_and_methods_match_java_551() {
+    let _defaults_lock = TOPIC_CONFIG_DEFAULTS_TEST_LOCK.lock().unwrap();
     let fixture = fixture()["topicConfigAndQueueMappingApi"].clone();
     let api: Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
