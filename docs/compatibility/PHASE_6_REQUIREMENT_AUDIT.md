@@ -4385,3 +4385,24 @@ This closes the public header API inventory gap and the identified
 `NotifyUnsubscribeLiteRequestHeader` inherited-routing mismatch. Broad P18-V01
 remains PARTIAL; native Windows runtime and current-revision remote Ubuntu CI
 remain open. Phase 19 Broker/Docker work remains out of scope.
+
+## P18-V02 current-tree server-free gate — 2026-10-23 (`e7d779af`)
+
+On the current code revision, default and all-feature workspace tests and
+doctests passed when run sequentially. Strict all-target/all-feature workspace
+Clippy, the 37-scenario differential self-test/manifest, workspace metadata,
+all seven package-content listings, 17 deterministic race/leak cases × 3,
+bounded fuzz smoke (163 frame seeds, 11 message seeds, 2,784 mutations),
+release examples, offline benchmark, Java fixture verification, and complete
+workspace Windows GNU check/Clippy passed. Rustdoc public-name counts remain
+Common 439, Consumer 460, Core 747, Producer 361, Protocol 1,524, and Remoting
+337. The benchmark observation is recorded in
+`docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+
+An initial parallel launch of the default and all-feature workspace suites
+reported three Consumer `OffsetStore(AlreadyOpen)` failures; each complete
+suite passed when rerun sequentially, with no code change. Broad P18-V01
+remains PARTIAL. Native Windows runtime and current-revision remote Ubuntu CI
+remain open; Phase 19 Broker/Docker work remains out of scope. No push or
+remote CI was run. Run record:
+`rlogs/2026/10/23-phase-18-current-tree-server-free-gate__20261023T154720Z.rlog`.

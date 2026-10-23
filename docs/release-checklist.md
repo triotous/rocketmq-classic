@@ -8980,3 +8980,27 @@ owner-specific checks belong in the manual handoff.
   was run. The four existing user-owned Phase 19 paths remain untouched and
   unstaged. Run record:
   `rlogs/2026/10/23-phase-18-complete-header-api-inventory__20261023T153747Z.rlog`.
+
+## P18-V02 current-tree server-free gate — 2026-10-23 (`e7d779af`)
+
+- [x] Current-revision sequential default and all-feature workspace tests and
+  doctests passed. Strict all-target/all-feature workspace Clippy, Java
+  fixture verification (37 scenarios, 11 messages, 106 typed headers, and 19
+  typed bodies), differential self-test and 37-scenario manifest, workspace
+  metadata, and all seven product package listings with `LICENSE`/`NOTICE`
+  passed.
+- [x] Deterministic race/leak smoke passed 17 cases × 3; bounded fuzz smoke
+  passed 163 frame seeds, 11 message seeds, and 2,784 mutations. Release
+  examples and the offline benchmark passed. Full-workspace Windows GNU
+  all-target/all-feature check and strict Clippy passed as cross-compile
+  evidence. Rustdoc public-name counts remain Common 439, Consumer 460, Core
+  747, Producer 361, Protocol 1,524, and Remoting 337.
+- [ ] Running default and all-feature workspace suites concurrently produced
+  three Consumer `OffsetStore(AlreadyOpen)` failures. Both complete suites
+  passed when rerun sequentially, with no code change. Retain this as a
+  concurrent-run observation. Broad P18-V01 remains PARTIAL; native Windows
+  runtime and current-revision remote Ubuntu CI remain open. Phase 19
+  Broker/Docker evidence is outside scope. No push or remote CI was run. The
+  four existing user-owned Phase 19 paths remain untouched and unstaged. Run
+  record:
+  `rlogs/2026/10/23-phase-18-current-tree-server-free-gate__20261023T154720Z.rlog`.
