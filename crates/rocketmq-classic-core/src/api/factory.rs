@@ -552,7 +552,9 @@ impl MQClientApiFactory {
     /// factory; the method remains available on the Rust lifecycle surface.
     pub fn pre_shutdown(&self) {}
 
-    /// Shuts down all installed clients concurrently and cancels domain refresh.
+    /// Shuts down all non-null clients concurrently and cancels domain refresh.
+    /// A started empty pool returns `EmptyClientArray`, matching Java's
+    /// null-latch failure in `AsyncShutdownHelper.await`.
     pub async fn shutdown(&self) -> Result<(), MQClientApiFactoryError> {
         self.stop_refresh().await;
         let clients = self
@@ -560,8 +562,11 @@ impl MQClientApiFactory {
             .clients()
             .ok_or(MQClientApiFactoryError::NotStarted)?;
         let mut shutdowns = JoinSet::new();
-        for (index, client) in clients.snapshot().into_iter().enumerate() {
-            let client = client.ok_or(MQClientApiFactoryError::NullClient(index))?;
+        let snapshot = clients.snapshot();
+        if snapshot.is_empty() {
+            return Err(MQClientApiFactoryError::EmptyClientArray);
+        }
+        for client in snapshot.into_iter().flatten() {
             let remoting = client.remoting_client();
             shutdowns.spawn(async move { remoting.shutdown().await });
         }
@@ -787,6 +792,7 @@ mod tests {
             "NullPointerException"
         );
         assert_eq!(java["nullAddressWithNullSlotError"], "NullPointerException");
+        let first = clients.get(0).unwrap().unwrap();
         let second = clients.get(1).unwrap().unwrap();
         clients.set(1, None).unwrap();
         let changed_address = java["addressChangeWithNullSlotInput"].as_str().unwrap();
@@ -806,7 +812,7 @@ mod tests {
             actual_addresses(),
             expected_addresses("clientAddressesAfterNullAddressNullSlotFailure")
         );
-        clients.set(1, Some(second)).unwrap();
+        clients.set(1, Some(second.clone())).unwrap();
         factory
             .on_name_server_address_change(Some(
                 java["clientAddressesAfterChange"][0][0].as_str().unwrap(),
@@ -847,18 +853,22 @@ mod tests {
         );
         assert_eq!(clients.set(0, None), Ok(()));
         assert!(matches!(factory.get_clients().unwrap().get(0), Some(None)));
-        factory
-            .get_clients()
-            .unwrap()
-            .set(0, clients.snapshot()[1].clone())
-            .unwrap();
+        clients.set(0, Some(first)).unwrap();
+        assert_eq!(java["shutdownWithNullSlotError"], "NONE");
+        clients.set(1, None).unwrap();
         factory.shutdown().await.unwrap();
         assert!(factory.get_clients().is_some());
         assert!(java["clientArrayRetainedAfterShutdown"].as_bool().unwrap());
+        assert!(matches!(clients.get(1), Some(None)));
+        second.remoting_client().shutdown().await;
     }
 
     #[tokio::test]
     async fn factory_matches_java_configuration_and_empty_pool_failures() {
+        let java: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/api-factory.json"
+        ))
+        .unwrap();
         assert!(matches!(
             MQClientApiFactory::new(NameserverAccessConfig::default(), "empty-", 1, None, None),
             Err(MQClientApiFactoryError::MissingNameServerAddress)
@@ -870,7 +880,11 @@ mod tests {
             factory.get_client(),
             Err(MQClientApiFactoryError::EmptyClientArray)
         ));
-        factory.shutdown().await.unwrap();
+        assert_eq!(java["zeroClientShutdownError"], "NullPointerException");
+        assert!(matches!(
+            factory.shutdown().await,
+            Err(MQClientApiFactoryError::EmptyClientArray)
+        ));
 
         let negative =
             MQClientApiFactory::new(static_access("ns:9876"), "negative-", -1, None, None).unwrap();
@@ -1081,7 +1095,10 @@ mod tests {
         zero.start().await.unwrap();
         assert!(zero_provider.callbacks.lock().unwrap().is_empty());
         assert_eq!(zero_provider.calls.load(Ordering::SeqCst), 0);
-        zero.shutdown().await.unwrap();
+        assert!(matches!(
+            zero.shutdown().await,
+            Err(MQClientApiFactoryError::EmptyClientArray)
+        ));
     }
 
     #[tokio::test(start_paused = true)]

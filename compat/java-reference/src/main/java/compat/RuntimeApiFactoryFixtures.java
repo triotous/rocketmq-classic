@@ -137,8 +137,22 @@ public final class RuntimeApiFactoryFixtures {
                 factory.onNameServerAddressChange(null);
                 fixture.put("clientAddressesAfterNullChange", Arrays.stream(factory.getClients())
                     .map(client -> sorted(client.getNameServerAddressList())).collect(Collectors.toList()));
+                clients[1] = null;
+                String shutdownWithNullSlotError;
+                try {
+                    factory.shutdown();
+                    shutdownWithNullSlotError = "NONE";
+                } catch (Throwable error) {
+                    shutdownWithNullSlotError = error.getClass().getSimpleName();
+                }
+                fixture.put("shutdownWithNullSlotError", shutdownWithNullSlotError);
                 factory.shutdown();
                 fixture.put("clientArrayRetainedAfterShutdown", factory.getClients() == clients);
+                // The Java factory cannot shut down an object after its public
+                // array slot is replaced with null; close this fixture-owned
+                // client explicitly so its Netty event loops do not outlive
+                // the oracle process.
+                second.shutdown();
             } finally {
                 try {
                     factory.shutdown();
@@ -146,6 +160,24 @@ public final class RuntimeApiFactoryFixtures {
                     // The active path has already shut down; cleanup is best effort.
                 }
                 scheduler.shutdownNow();
+            }
+
+            ScheduledExecutorService emptyScheduler = Executors.newSingleThreadScheduledExecutor();
+            MQClientAPIFactory emptyFactory = new MQClientAPIFactory(
+                new NameserverAccessConfig("127.0.0.1:9876", "", null),
+                "empty-", 0, null, null, emptyScheduler);
+            try {
+                emptyFactory.start();
+                String emptyShutdownError;
+                try {
+                    emptyFactory.shutdown();
+                    emptyShutdownError = "NONE";
+                } catch (Throwable error) {
+                    emptyShutdownError = error.getClass().getSimpleName();
+                }
+                fixture.put("zeroClientShutdownError", emptyShutdownError);
+            } finally {
+                emptyScheduler.shutdownNow();
             }
 
             System.setProperty(domainProperty, "factory-domain.example");
