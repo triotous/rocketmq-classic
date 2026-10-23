@@ -320,6 +320,42 @@ owner mappings unless the disposition says otherwise.
 | `dispatchPullRequest(List, long)`, `dispatchPopPullRequest(List, long)` | Java Pull implementations are no-ops. Push scheduling is owned by the Rust assignment scheduler and POP workers, so mutable internal request lists are not a public Rust input. |
 | `messageQueueChanged(String, Set, Set)` | `message_queue_changed(topic, all, divided)` invokes the owner's configured callback with exception isolation. |
 
+## Pinned `ProcessQueue` method crosswalk
+
+The fixture records all 32 declared public methods. This table maps each
+method to the Rust owner method; nullable adapters and result-type adaptations
+are called out where Java's observable input or return behavior needs an
+explicit representation.
+
+| Java `ProcessQueue` method | Rust owner mapping or disposition |
+| --- | --- |
+| `containsMessage(MessageExt)` | `contains_message` and `contains_message_nullable` preserve the null guard. |
+| `hasTempMessage()` | `has_temp_message()` reports whether ready messages exist. |
+| `isDropped()`, `setDropped(boolean)` | `is_dropped()` and `set_dropped(dropped)` expose the drop flag. |
+| `isLockExpired()`, `isLocked()`, `setLocked(boolean)` | `is_lock_expired()`, `is_locked()`, and `set_locked(locked)` expose lock state and expiry. |
+| `isPullExpired()` | `is_pull_expired()` applies the captured Java idle-time setting. |
+| `putMessage(List)` | `put_message`, `put_message_nullable`, and `put_message_items_nullable` map normal, null-list, and null-element inputs. |
+| `takeMessages(int)` | `take_messages(batch_size)` returns the ready batch or the typed Java-compatible invalid-capacity error. |
+| `getMsgTreeMap()` | `get_msg_tree_map()` returns the lock-backed live tree view. |
+| `getMsgCount()`, `getMsgSize()` | `get_msg_count()` and `get_msg_size()` return mutable AtomicLong-style handles. |
+| `getConsumeLock()` | `get_consume_lock()` returns the owned async read/write consume gate. |
+| `commit()` | `commit()` returns the Java next-offset result through `Result<i64, ProcessQueueError>`. |
+| `getLastConsumeTimestamp()`, `setLastConsumeTimestamp(long)` | `get_last_consume_timestamp()` and `set_last_consume_timestamp(timestamp_millis)`. |
+| `getLastLockTimestamp()`, `setLastLockTimestamp(long)` | `get_last_lock_timestamp()` and `set_last_lock_timestamp(timestamp_millis)`. |
+| `getLastPullTimestamp()`, `setLastPullTimestamp(long)` | `get_last_pull_timestamp()` and `set_last_pull_timestamp(timestamp_millis)`. |
+| `getMaxSpan()` | `get_max_span()` measures the ready-map offset span. |
+| `getMsgAccCnt()`, `setMsgAccCnt(long)` | `get_msg_acc_cnt()` and `set_msg_acc_cnt(count)`. |
+| `getTryUnlockTimes()`, `incTryUnlockTimes()` | `get_try_unlock_times()` and `inc_try_unlock_times()` preserve signed AtomicLong wrapping. |
+| `removeMessage(List)` | `remove_message`, `remove_message_nullable`, and `remove_message_items_nullable` map normal removal and caught null-list/element failures. |
+| `cleanExpiredMsg(DefaultMQPushConsumer)` | `clean_expired_msg` returns the async cleanup result; `clean_expired_msg_nullable` maps Java's null-consumer failure. |
+| `clear()` | `clear()` clears queue state and counters. |
+| `fillProcessQueueInfo(ProcessQueueInfo)` | `fill_process_queue_info` fills the DTO; `fill_process_queue_info_nullable` preserves Java's caught null-info behavior. |
+| `makeMessageToConsumeAgain(List)` | `make_message_to_consume_again`, `make_message_to_consume_again_nullable`, and `make_message_to_consume_again_items_nullable` map normal, null-list, and null-element inputs. |
+| `rollback()` | `rollback()` requeues the owned in-flight batch. |
+
+`every_pinned_java_process_queue_method_has_owner_mapping_or_disposition`
+checks the fixture denominator, each Java method name, and its Rust mapping.
+
 ## Internal implementation adaptation
 
 The Java raw Push/Pull implementation accessors return a `RebalanceImpl`

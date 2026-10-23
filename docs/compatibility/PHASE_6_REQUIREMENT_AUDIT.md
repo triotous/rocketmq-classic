@@ -3562,3 +3562,17 @@ tests with all features, strict Consumer Clippy, formatting, and diff checks
 pass. This closes the null-element removal branch only; broad P18-V01
 source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains PARTIAL.
+
+## P18-V01 ProcessQueue declared-method crosswalk — 2026-10-23
+
+The pinned Java facade fixture's 32 declared public `ProcessQueue` methods now
+have an explicit Rust owner mapping, including nullable-input adapters and
+Rust-specific result wrappers. The focused audit regression verifies the
+fixture denominator, every Java method name, each documented mapping, and the
+corresponding Rust owner method. The facade fixture is unchanged at SHA-256
+`29cc00f7cf9b8194f08007a12c5e75f0499a5601c140a78855b14cb244bef771`.
+
+The focused crosswalk regression and formatting/diff checks pass. This closes
+the `ProcessQueue` method-inventory slice only; broad P18-V01 source/API/
+settings/input/error/control-flow and reverse-export reconciliation remains
+PARTIAL.

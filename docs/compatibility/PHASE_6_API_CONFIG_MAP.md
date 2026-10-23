@@ -1804,6 +1804,18 @@ insertion and dispatch result. Fixture SHA-256:
 `29cc00f7cf9b8194f08007a12c5e75f0499a5601c140a78855b14cb244bef771`.
 This closes the null-element removal branch only; P18-V01 remains open.
 
+## ProcessQueue declared-method crosswalk — 2026-10-23
+
+The pinned Java facade fixture records all 32 declared public `ProcessQueue`
+methods. `PHASE_18_REBALANCE_PROCESS_QUEUE_API.md` now maps each Java method to
+its Rust owner method and records nullable-input and return-type adapters. The
+focused Rust audit regression checks the 32-method denominator, every Java
+method name, each documentation mapping, and the corresponding Rust method in
+the owner source. No Java fixture refresh was needed; the facade fixture SHA-256
+remains `29cc00f7cf9b8194f08007a12c5e75f0499a5601c140a78855b14cb244bef771`.
+This closes the `ProcessQueue` declared-method crosswalk slice only; P18-V01
+remains open.
+
 ## `MQClientAPIImpl.getClusterList` stub — 2026-10-21
 
 The pinned `getClusterList(String,long)` implementation ignores both inputs,
