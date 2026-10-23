@@ -3989,6 +3989,17 @@ passed. This closes the provider-injection reverse-export discrepancy only;
 the Phase 6 runtime row and broad P18-V01 source/API/settings/input/error/flow
 audit remain PARTIAL.
 
+## P18-V01 `MQClientAPIFactory.getClient` empty-pool outcome — 2026-10-23
+
+Pinned Java `getClient()` on a started zero-length client array reaches
+`ThreadLocalRandom.nextInt(0)` and throws `IllegalArgumentException`. The
+invoked fixture now records that exact exception; Rust returns its typed
+`EmptyClientArray` error for the same state. The refreshed factory fixture
+SHA-256 is `fcbb745a4eab18d4fa8e5163fa69deeffa935375b660fde8e915c7dab9e2da38`.
+All seven Core factory tests, direct Java fixture verification, formatting and
+diff checks pass. This closes the zero-pool selection evidence slice only;
+broad P18-V01 remains PARTIAL.
+
 ## P18-V01 `MQClientAPIFactory.shutdown` null and empty-array behavior — 2026-10-23
 
 Pinned `AsyncShutdownHelper` starts one worker per array slot and catches a

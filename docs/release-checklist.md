@@ -8566,3 +8566,17 @@ owner-specific checks belong in the manual handoff.
   remote Ubuntu CI, and Phase 19 Broker/Docker evidence. No push or remote CI
   was run; existing Phase 19 worktree files remain untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T103539Z.rlog`.
+
+## P18-V01 MQClientAPIFactory empty-pool selection — 2026-10-23
+
+- [x] The invoked Java fixture now records `getClient()` on a started empty
+  pool throwing `IllegalArgumentException` from `ThreadLocalRandom.nextInt(0)`;
+  Rust reports the typed `EmptyClientArray` outcome.
+- [x] Seven Core factory tests, direct Java fixture generation and
+  verification, formatting, and diff checks pass. Fixture SHA-256:
+  `fcbb745a4eab18d4fa8e5163fa69deeffa935375b660fde8e915c7dab9e2da38`.
+- [ ] This closes only the zero-pool selection evidence slice. Broad P18-V01,
+  final full-workspace P18-V02, native Windows runtime, remote Ubuntu CI, and
+  Phase 19 Broker/Docker evidence remain open. No push or remote CI was run;
+  the existing Phase 19 worktree files remain untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T103825Z.rlog`.
