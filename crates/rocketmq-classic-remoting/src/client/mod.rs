@@ -5272,31 +5272,35 @@ mod tests {
     #[test]
     fn asynchronous_write_failure_matches_java_request_fail_classification() {
         let remote_addr = "127.0.0.1:10911";
-        assert_eq!(
-            classify_connection_error(remote_addr, TransportError::Connect("refused".into())),
+        let error =
+            classify_connection_error(remote_addr, TransportError::Connect("refused".into()));
+        assert!(matches!(
+            error,
             TransportError::ConnectRequest {
-                remote_addr: remote_addr.into(),
-                cause: Some(crate::error::ErrorSource::message("refused")),
-            }
-        );
-        assert_eq!(
-            classify_connection_error(remote_addr, TransportError::Tls("handshake".into())),
+                remote_addr: address,
+                cause: Some(cause),
+            } if address == remote_addr && cause.to_string() == "refused"
+        ));
+        let error = classify_connection_error(remote_addr, TransportError::Tls("handshake".into()));
+        assert!(matches!(
+            error,
             TransportError::ConnectRequest {
-                remote_addr: remote_addr.into(),
-                cause: Some(crate::error::ErrorSource::message("handshake")),
-            }
-        );
+                remote_addr: address,
+                cause: Some(cause),
+            } if address == remote_addr && cause.to_string() == "handshake"
+        ));
         assert_eq!(
             classify_connection_error(remote_addr, TransportError::Timeout),
             TransportError::Timeout
         );
-        assert_eq!(
-            classify_write_error(remote_addr, TransportError::Send("broken pipe".into())),
+        let error = classify_write_error(remote_addr, TransportError::Send("broken pipe".into()));
+        assert!(matches!(
+            error,
             TransportError::SendRequest {
-                remote_addr: remote_addr.into(),
-                cause: Some(crate::error::ErrorSource::message("broken pipe")),
-            }
-        );
+                remote_addr: address,
+                cause: Some(cause),
+            } if address == remote_addr && cause.to_string() == "broken pipe"
+        ));
         assert_eq!(
             classify_write_error(remote_addr, TransportError::Closed),
             TransportError::SendRequest {

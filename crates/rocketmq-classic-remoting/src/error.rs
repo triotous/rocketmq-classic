@@ -26,8 +26,8 @@ pub enum CodecError {
 
 /// A cloneable, typed error source retained by transport errors and callback results.
 ///
-/// Equality compares the displayed source chain so transport errors retain value-comparison
-/// behavior without requiring arbitrary wrapped error types to implement `Eq`.
+/// Clones preserve the wrapped error identity, and equality compares that identity like Java's
+/// `Throwable.equals` inherited from `Object`.
 #[derive(Clone)]
 pub struct ErrorSource(Arc<dyn Error + Send + Sync + 'static>);
 
@@ -84,16 +84,7 @@ impl Error for ErrorSource {
 
 impl PartialEq for ErrorSource {
     fn eq(&self, other: &Self) -> bool {
-        fn chain(error: &(dyn Error + 'static)) -> Vec<String> {
-            let mut result = Vec::new();
-            let mut current = Some(error);
-            while let Some(error) = current {
-                result.push(error.to_string());
-                current = error.source();
-            }
-            result
-        }
-        chain(self.0.as_ref()) == chain(other.0.as_ref())
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
@@ -339,6 +330,26 @@ mod tests {
                 .map(std::io::Error::kind),
             Some(std::io::ErrorKind::ConnectionRefused)
         );
+    }
+
+    #[test]
+    fn error_source_equality_matches_java_throwable_identity() {
+        let source = ErrorSource::message("same message");
+        let cloned_source = source.clone();
+        let distinct_source = ErrorSource::message("same message");
+
+        assert_eq!(source, cloned_source);
+        assert_ne!(source, distinct_source);
+
+        let cloned_error = TransportError::SendRequest {
+            remote_addr: "127.0.0.1:10911".into(),
+            cause: Some(cloned_source),
+        };
+        let distinct_error = TransportError::SendRequest {
+            remote_addr: "127.0.0.1:10911".into(),
+            cause: Some(distinct_source),
+        };
+        assert_ne!(cloned_error, distinct_error);
     }
 
     #[test]
