@@ -8,6 +8,19 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 
 - [x] Keep the Java client and Broker baselines separate in docs and fixture
   provenance.
+- P18-V01 Fastjson leading-dot and incomplete-exponent follow-up (`9333cbc2`,
+  2026-10-24): the 1,111-case Java heartbeat DTO corpus confirms that unsigned
+  `.5`/`.5F` is accepted for integer `subVersion` but rejected for String
+  `topic`, while `+.5` remains accepted. Incomplete exponent forms `1e+`,
+  `1e+F`, and `1.E` match the Java field conversions. Rust preserves token
+  provenance for typed DTOs and keeps generic `serde_json::Value` numeric.
+  Default/all-feature workspace tests and doctests, strict Clippy, offline
+  Maven `verify` (37 scenarios and Java cross-decodes), differential self-test
+  and manifest, 20 race/leak cases × 3, fuzz smoke, Windows GNU workspace check
+  and Clippy, release examples, offline benchmark, metadata, and all seven
+  package listings pass. P18-V01 remains PARTIAL; native Windows runtime and
+  current-revision remote Ubuntu CI were not run. Phase 19 paths remain
+  untouched.
 - [x] Record the server-free tests, fuzz/race smoke runs, benchmark observations,
   and CI commands in the Phase 18 execution log and compatibility docs.
 - [x] Reconcile the Phase 15–17 local matrices and execution records against

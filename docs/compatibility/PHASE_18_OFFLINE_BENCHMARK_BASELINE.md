@@ -600,6 +600,26 @@ the current release baseline and sets no performance threshold.
 Timing varies between runs and is not evidence of a regression or improvement;
 loopback time includes local TCP and Tokio scheduling.
 
+## Phase 18 committed-tree gate sample — 2026-10-24 (`9333cbc2`)
+
+Captured with `cargo bench --offline --locked -p rocketmq-classic --bench
+offline` on code/test revision `9333cbc2`, after the Fastjson leading-dot and
+incomplete-exponent compatibility correction. Environment: macOS 26.6.1
+AArch64, Apple M5 Max, 18 logical CPUs, release profile, Rust 1.85.0. This
+general benchmark does not isolate the parser change and sets no performance
+threshold.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 3,181.1 ns | 40.00 (1,000 samples) | 4,676.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 2,553.9 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 2,558.8 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 28.1 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 57,067.3 ns | 82.00 (100 samples) | 9,561.0 (100 samples) |
+
+Timing varies between runs and is not evidence of a regression or improvement;
+loopback time includes local TCP and Tokio scheduling.
+
 ## Request-header API inventory current-tree sample — 2026-10-23 (`e7d779af`)
 
 Captured with `cargo bench --offline -p rocketmq-classic --bench offline

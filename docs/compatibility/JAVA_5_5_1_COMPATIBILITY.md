@@ -19,6 +19,19 @@ pass. The fixture SHA-256 is recorded in the heartbeat audit. This closes the
 tested numeric token forms only; broader Fastjson and P18-V01 reconciliation
 remain open.
 
+Phase 18 Fastjson leading-dot and incomplete-exponent continuation (`9333cbc2`,
+2026-10-24): the pinned Java 5.5.1 heartbeat DTO oracle accepts unsigned `.5`
+and `.5F` for the integer `subVersion` field, but rejects those tokens for the
+String `topic` field. An explicit `+.5` remains accepted for `topic`. Fastjson
+also accepts incomplete exponent markers such as `1e+`, `1e+F`, and `1.E`,
+coercing them to the numeric prefix with the observed Java String formatting.
+Rust now preserves leading-dot token provenance through DTO decoding, keeps
+general `serde_json::Value` parsing numeric, and maps the tested incomplete
+exponents. Nine new Java cases expand the heartbeat DTO corpus to 1,111 cases.
+Fixture SHA-256:
+`0e32da4ec9a0c121617bb8f1684e2f9ddc9a568bfe992eb3ce3be6aa8c1b3e76`. This
+closes the tested numeric token branches only; broad P18-V01 remains open.
+
 Phase 18 Fastjson trailing EOF-marker continuation (2026-10-24): the pinned
 Java 5.5.1 heartbeat DTO oracle accepts repeated U+001A document terminators,
 with or without intervening JSON whitespace. Two new invoked cases first
