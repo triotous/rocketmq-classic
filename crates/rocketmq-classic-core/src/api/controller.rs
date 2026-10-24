@@ -432,7 +432,11 @@ impl ReplicasInfo {
             broker_address.map(str::to_owned),
         );
         for replica in replicas {
-            if needle.java_equals(replica.as_ref())? {
+            if needle.java_equals(
+                replica
+                    .as_ref()
+                    .map(|replica| replica as &dyn std::any::Any),
+            )? {
                 return Ok(true);
             }
         }
@@ -475,9 +479,15 @@ impl ReplicaIdentity {
         }
     }
 
-    /// Maps Java `equals`; Java compares only broker name, ID, and address.
-    pub fn java_equals(&self, other: Option<&Self>) -> Result<bool, ControllerDtoError> {
+    /// Maps Java `equals(Object)`; Java compares only broker name, ID, and address.
+    pub fn java_equals(
+        &self,
+        other: Option<&dyn std::any::Any>,
+    ) -> Result<bool, ControllerDtoError> {
         let Some(other) = other else {
+            return Ok(false);
+        };
+        let Some(other) = other.downcast_ref::<Self>() else {
             return Ok(false);
         };
         if std::ptr::eq(self, other) {

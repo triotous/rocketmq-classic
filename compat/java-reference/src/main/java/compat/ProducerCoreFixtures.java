@@ -6309,6 +6309,7 @@ public final class ProducerCoreFixtures {
             new org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicaIdentity(
                 "broker-a", 0L, "broker-a:10911", false);
         result.put("replicaEqualsIgnoresAlive", alive.equals(dead));
+        result.put("replicaEqualsWrongType", alive.equals("not-a-replica"));
         result.put("replicaHashIgnoresAlive", alive.hashCode() == dead.hashCode());
         result.put("replicaHashCode", alive.hashCode());
         result.put("replicaToString", alive.toString());

@@ -235,6 +235,11 @@ fn controller_dto_java_fixture_matches_rust_dto_methods_and_strings() {
         Some(false),
     );
     assert!(alive.java_equals(Some(&dead)).unwrap());
+    assert_eq!(operations["replicaEqualsWrongType"], false);
+    assert_eq!(
+        alive.java_equals(Some(&"not-a-replica" as &dyn std::any::Any)),
+        Ok(operations["replicaEqualsWrongType"].as_bool().unwrap())
+    );
     assert_eq!(alive.java_hash_code(), dead.java_hash_code());
     assert_eq!(
         alive.java_hash_code(),
