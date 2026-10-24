@@ -177,6 +177,7 @@ impl MQClientApi {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn request_with_mode_and_language<H: CommandHeader>(
         &self,
         addr: &str,
@@ -208,6 +209,7 @@ impl MQClientApi {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn request_fields_with_mode_and_language(
         &self,
         addr: &str,
@@ -226,7 +228,7 @@ impl MQClientApi {
         let command = RemotingCommand {
             code,
             // Pinned Java sets clientConfig.language only on heartbeat V1/V2.
-            language: language.or_else(|| {
+            language: language.or({
                 if code == rocketmq_classic_protocol::codes::request::HEART_BEAT {
                     heartbeat_language
                 } else {

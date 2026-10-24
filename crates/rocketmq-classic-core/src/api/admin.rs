@@ -2959,6 +2959,7 @@ impl MQClientApi {
     /// Adapts Java `MQClientAPIImpl.invokeBrokerToResetOffset(addr, topic,
     /// group, timestamp, isForce, timeout, isC)`, including its default
     /// `queueId = -1` and `offset = -1` request-header fields.
+    #[allow(clippy::too_many_arguments)]
     pub async fn invoke_broker_to_reset_offset_for_client(
         &self,
         addr: &str,
@@ -2987,6 +2988,7 @@ impl MQClientApi {
 
     /// Adapts Java `MQClientAPIImpl.invokeBrokerToResetOffset(addr, topic,
     /// group, timestamp, queueId, offset, timeoutMillis)`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn invoke_broker_to_reset_offset_at_offset(
         &self,
         addr: &str,
