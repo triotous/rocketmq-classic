@@ -1,5 +1,25 @@
 # Phase 6 requirement and handoff audit
 
+## Phase 18 `MessageQueueForC` public value API — 2026-10-24 (`a460d966`)
+
+The pinned Java 5.5.1 `MessageQueueForC` public value class maps to
+`rocketmq_classic_common::message::MessageQueueForC`. The invoked Java fixture
+and Rust differential cover its four-argument constructor, four getter/setter
+pairs, value equality (including `offset`), Java's hash that omits `offset`,
+`toString`, and 12 `compareTo` pairs. Comparison preserves Java UTF-16 string
+ordering, wrapping `int` queue-id subtraction, the sign of wrapping `long`
+offset subtraction, and `NullPointerException` outcomes for null arguments or
+fields. The fixture also records the null `compareTo` argument; `route.json`
+SHA-256 is
+`9c068b67324f45510dab1aa4df3c2943b54944a9a56dcf8accc24f89f6612246`.
+Common all-feature tests/doctests, strict Common Clippy, pinned offline Maven
+`verify` (37 scenarios, 11 message fixtures, 106 typed headers and 19 typed
+bodies), formatting, and diff checks pass. This is the value-class method
+surface only. Java's `Serializable` marker/object-stream behavior and its
+Broker2Client / `ResetOffsetBodyForC` C-client request path do not have a Rust
+client counterpart in this slice. Broad P18-V01 source/API/settings/input/error/
+control-flow and reverse-export reconciliation remains `PARTIAL`.
+
 ## Phase 18 `TraceContext.compareTo(null)` input parity — 2026-10-24 (`3427d269`)
 
 Pinned Java 5.5.1 `TraceContext.compareTo(null)` throws

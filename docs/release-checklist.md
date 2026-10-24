@@ -6,6 +6,19 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 
 ## Compatibility and validation
 
+- [x] P18-V01 `MessageQueueForC` public value API (`a460d966`, 2026-10-24):
+  Common exports the Java 5.5.1 four-argument constructor, getter/setter
+  equivalents, value equality, Java hash code and text form, plus comparison
+  results matching UTF-16 strings and Java integer/long subtraction behavior.
+  The invoked route fixture covers API values, setters, equality (including
+  offset-sensitive equality and offset-insensitive hash), 12 comparison pairs,
+  and null failures. Common all-feature tests/doctests, strict Common Clippy,
+  pinned offline Maven `verify` (37 scenarios, 11 message fixtures, 106 typed
+  headers and 19 typed bodies), formatting and diff checks pass. `route.json`
+  SHA-256: `9c068b67324f45510dab1aa4df3c2943b54944a9a56dcf8accc24f89f6612246`.
+  Java object-stream serialization and the C-client `ResetOffsetBodyForC` wire
+  path are outside this value-class slice; broad P18-V01 remains PARTIAL.
+
 - [x] P18-V01 `TraceContext.compareTo(null)` (`3427d269`, 2026-10-24): invoked
   Java records `NullPointerException`; Rust maps it to
   `TraceContextCompareError::NullOther` through `java_compare_to_nullable`.

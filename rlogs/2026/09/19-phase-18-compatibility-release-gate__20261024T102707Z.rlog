@@ -363,3 +363,21 @@ Detailed run records for the focused code and current-tree gate runs are in
   This closes the null argument branch only. Broad P18-V01 remains PARTIAL;
   native Windows runtime and current-revision remote Ubuntu CI are unverified.
   No push or remote CI ran; Phase 19-owned worktree files remain untouched.
+
+## P18-V01 MessageQueueForC public value API — 2026-10-24 13:05 UTC
+
+- Code commit `a460d966` adds the Common `MessageQueueForC` value type and
+  exports its constructor, accessors, Java hash/text/comparison behavior and
+  typed null failure mapping. Invoked Java fixtures cover API values, setters,
+  equality, offset-insensitive hash, and 12 comparison pairs. Current
+  `fixtures/runtime/route.json` SHA-256:
+  `9c068b67324f45510dab1aa4df3c2943b54944a9a56dcf8accc24f89f6612246`.
+- PASS: Common all-feature package tests/doctests, strict all-target/all-feature
+  Common Clippy, pinned offline Maven `verify` (37 scenarios, 11 message
+  fixtures, 106 typed headers and 19 typed bodies), `cargo fmt --all -- --check`,
+  and `git diff --check`.
+- Java `Serializable` object-stream behavior and the Broker2Client /
+  `ResetOffsetBodyForC` C-client wire path are outside this value-class slice.
+  Broad P18-V01 remains PARTIAL. Native Windows runtime and current-revision
+  remote Ubuntu CI remain unverified. No push or remote CI ran; Phase 19-owned
+  worktree paths remain untouched.
