@@ -113,6 +113,38 @@ nullable consumer selector. Code commit `f5ecf2ca` closes the direct
 value/API gap; broad P18-V01 source/settings/input/error/control-flow and
 reverse-export reconciliation remains `PARTIAL`.
 
+## P18-V01 direct `MQClientAPIImpl` overload evidence — 2026-10-24 (`091eba55`)
+
+The overload scan is anchored to pinned Java source commit
+`efa1be59d6fc747ad220f036c86030f05f0419f9` (RocketMQ 5.5.1), whose
+`MQClientAPIImpl.java` SHA-256 is
+`bfb0ebf8e4b4c0fd4ad5a4db46d64a7c8897250fb411487793a23f29aa094737`. The
+separate Java checkout's current worktree revision is 5.3.3, so the review
+read the pinned commit object and left that checkout, including its untracked
+test file, unchanged.
+
+Ten new direct invocations cover the previously under-evidenced overload
+members: full `sendMessage`; `getTopicRouteInfoFromNameServer` with
+`allowTopicNotExist = false`; deprecated and default-boundary `searchOffset`;
+the default, topic-only, and list-only `getConsumeStats`; topic-only and
+cluster-qualified `deleteTopicInNameServer`; and the default
+`invokeBrokerToResetOffset`. The two `batchAckMessageAsync` members and the
+other `searchOffset`, `getConsumeStats`, and reset-offset members already had
+direct fixtures. The complete crosswalk, exact method/declaration counts,
+per-member Rust mapping, and fixture IDs are in
+[`PHASE_6_API_CONFIG_MAP.md`](PHASE_6_API_CONFIG_MAP.md).
+
+`cargo test --locked -p rocketmq-classic-core --test rpc_invoked_java_fixtures`
+passes all 29 invoked RPC cases. `mvn -f compat/java-reference/pom.xml verify`
+passes fixture-drift checks, all 37 manifest scenarios, Java/Rust cross-decodes,
+and the 11 message, 106 typed-header and 19 typed-body fixture suites.
+`cargo fmt --check` and `git diff --check` pass. Code commit: `091eba55`.
+
+This closes the seven-group `MQClientAPIImpl` overload evidence slice only.
+Broad P18-V01 source/API/settings/input/error/control-flow and reverse-export
+reconciliation remains `PARTIAL`; native Windows runtime and current-revision
+remote CI are still unverified at this revision.
+
 ## Phase 18 current-code full-feature and server-free refresh — 2026-10-24 (`a460d966`)
 
 On code revision `a460d966`, locked all-feature workspace tests and doctests

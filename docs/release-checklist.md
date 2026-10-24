@@ -10324,3 +10324,26 @@ owner-specific checks belong in the manual handoff.
   user-owned worktree paths and Java checkout `aaaa.java` remain untouched.
   Run record:
   `rlogs/2026/10/24-phase-18-shared-accumulator-client-id__20261024T183639Z.rlog`.
+
+## P18-V01 direct `MQClientAPIImpl` overload evidence — 2026-10-24 (`091eba55`)
+
+- [x] The pinned 5.5.1 source scan's seven overloaded groups are crosswalked
+  member by member in `PHASE_6_API_CONFIG_MAP.md`. Ten direct invocation
+  fixtures cover the remaining overload members; all 29 `rpc-invoked` cases
+  pass against the Rust request/outcome harness. Existing POP ACK fixtures
+  cover both `batchAckMessageAsync` members.
+- [x] Java provenance is pinned to source commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9` and the 5.5.1 Maven artifact;
+  the external checkout's 5.3.3 worktree and pre-existing untracked file remain
+  untouched. Pinned `MQClientAPIImpl.java` SHA-256:
+  `bfb0ebf8e4b4c0fd4ad5a4db46d64a7c8897250fb411487793a23f29aa094737`.
+- [x] `cargo test --locked -p rocketmq-classic-core --test
+  rpc_invoked_java_fixtures`, Maven `verify` (37 manifest scenarios, fixture
+  drift, Java/Rust cross-decodes, 11 message fixtures, 106 typed headers and 19
+  typed bodies), `cargo fmt --check`, and `git diff --check` pass. Code commit:
+  `091eba55`.
+- [ ] This closes the seven overload groups only. Broad P18-V01
+  source/settings/input/error/control-flow/reverse-export reconciliation and
+  P18-V04 current-revision remote CI/native Windows runtime remain open.
+  Phase 19 user-owned files and the Java checkout's untracked `aaaa.java` are
+  unchanged. Execution record will be added after the current-tree gates.

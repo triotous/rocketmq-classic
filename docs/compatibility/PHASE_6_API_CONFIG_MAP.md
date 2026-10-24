@@ -3461,3 +3461,32 @@ closes this nested value API row only; broad P18-V01 source/API/settings/input/
 error/control-flow and reverse-export reconciliation remains open.
 Code commit: `62f67cbb`. Execution record:
 `../../rlogs/2026/10/24-phase-18-fault-item-public-api__20261024T153809Z.rlog`.
+
+## P18-V01 pinned `MQClientAPIImpl` overload crosswalk — 2026-10-24 (`091eba55`)
+
+The Java reference is source commit
+`efa1be59d6fc747ad220f036c86030f05f0419f9` (RocketMQ 5.5.1 release), not the
+current worktree revision of the separate Java checkout. The pinned
+`MQClientAPIImpl.java` SHA-256 is
+`bfb0ebf8e4b4c0fd4ad5a4db46d64a7c8897250fb411487793a23f29aa094737`.
+The exact source scan contains 132 public method declarations, 121 distinct
+method names, and seven overloaded groups. This table accounts for every
+member of those seven groups and links each member to a Rust adapter and
+invocation evidence.
+
+| Java 5.5.1 overload group and member | Rust mapping | Invoked evidence |
+| --- | --- | --- |
+| `sendMessage` short overload with context/producer; full overload with callback, publish info, client instance and retry count | `MQClientApi::send_message` expresses request kind/mode and one Broker attempt; Producer owns routing, retries and async callback completion. | `send-success.json` invokes the short overload; `send-full-overload.json` invokes the full synchronous overload. Existing invoked Producer/RPC callback fixtures cover async success/error callbacks and retry ownership. `java_invoked_cases_match_rust_requests_and_outcomes` compares request and outcome. |
+| `batchAckMessageAsync` with `BatchAckMessageRequestBody`; overload with topic, group and `List<String>` receipt metadata | Core `MQClientApi::batch_ack_message` sends the body overload. Consumer `batch_ack_message_from_extra_info` groups the list overload into the Java body, including Java `HashMap` iteration, `BitSet` indexing and `BatchAckMessageRequestBody.encode()`. | `fixtures/rpc-invoked-pop-ack/batch-ack-0-normal.json` covers the body overload; `batch-ack-extra-info.json` covers receipt parsing and list grouping. `rpc_invoked_pop_ack_fixtures.rs` and `pop_batch_ack_invoked.rs` compare both paths. |
+| `searchOffset(addr, topic, queueId, timestamp, timeout)`; `searchOffset(addr, MessageQueue, timestamp, timeout)`; `searchOffset(addr, MessageQueue, timestamp, boundaryType, timeout)` | `MQClientApi::search_offset` takes `SearchOffsetRequestHeader`; the caller supplies exactly the fields each overload populates. The no-boundary overload sets `LOWER`; the deprecated overload omits broker/boundary fields. | `search-offset-deprecated.json` and `search-offset-default-boundary.json` are direct invocations. The lower/upper explicit-boundary cases are in `fixtures/rpc-invoked-offset-boundaries/`; Core compares requests and signed results. |
+| `getConsumeStats` with no topic filters; `List<String>`; topic; topic plus list | `MQClientApi::get_consume_stats_sync` takes `GetConsumeStatsRequestHeader`; absent, nullable and populated topic fields/list values stay distinct. The separate `MqClientAdmin` path remains future-based. | `consume-stats-default.json`, `consume-stats-list.json`, `consume-stats-topic.json`, and `consume-stats-topic-list.json` invoke all four Java methods. The direct RPC fixture test compares fields, sync mode and decoded result; `admin_rpc.rs` covers the separate admin future. |
+| `getTopicRouteInfoFromNameServer(topic, timeout)` and overload with `allowTopicNotExist` | `MQClientApi::get_topic_route` maps the same request and response. The boolean affects only the Java warning emitted for `TOPIC_NOT_EXIST`; both overloads return the same client error. | `route-not-found.json` invokes the default overload and `route-not-found-explicit-false.json` invokes the explicit overload; route success/error cases also compare request and outcome. |
+| `deleteTopicInNameServer(addr, topic, timeout)` and overload with `clusterName` | `MQClientApi::delete_topic_in_nameserver` takes `DeleteTopicFromNamesrvRequestHeader`, carrying the optional cluster field explicitly. | `delete-topic-nameserver.json` and `delete-topic-nameserver-cluster.json` invoke both overloads and compare request fields and success. |
+| `invokeBrokerToResetOffset` default overload; overload with explicit `queueId`/`offset`; overload with `isC` | `invoke_broker_to_reset_offset_for_client` maps the default `queueId = -1`, `offset = -1` and optional CPP language; `invoke_broker_to_reset_offset_at_offset` maps the explicit fields. The lower-level header API remains available for `MqClientAdmin`. | `reset-offset-default.json`, `reset-offset-explicit.json`, and `reset-offset-cpp.json` invoke all three members and compare language, header, response body and outcome. |
+
+Code commit: `091eba55`. The direct Rust invocation test passes all 29
+`fixtures/rpc-invoked` cases. Pinned Maven `verify` passes fixture-drift
+validation, all 37 manifest scenarios and Java/Rust cross-decodes. This closes
+the `MQClientAPIImpl` overload inventory/evidence slice; it does not by itself
+close the broader P18-V01 source, settings, input, error, control-flow and
+reverse-export reconciliation.
