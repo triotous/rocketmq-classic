@@ -10179,3 +10179,23 @@ owner-specific checks belong in the manual handoff.
   current-revision remote Ubuntu CI remain unverified; no push or remote CI
   was run. Phase 19 user-owned paths remain unchanged and unstaged. Run record:
   `rlogs/2026/10/24-phase-18-fault-item-public-api__20261024T153809Z.rlog`.
+
+## P18-V01 `ResponseFuture.waitResponse` external interruption — 2026-10-24 (`ba2fb950`)
+
+- [x] Rust exposes `ResponseWaitInterrupt` and `ResponseWaitError` and adds
+  `ResponseFuture::wait_response_interruptible`. Signaling a blocked wait
+  wakes it and returns `Interrupted`; the signal is consumed, matching Java's
+  `InterruptedException` and cleared thread flag. The existing
+  `wait_response` remains a noninterruptible convenience.
+- [x] Focused Java-fixture and public-export tests, default/all-feature locked
+  workspace tests/doctests, strict workspace Clippy, pinned offline Maven
+  verification, Windows GNU check/Clippy/test compile-link, 20-case × 3 stress
+  smoke, fuzz smoke, release examples, comparator/manifest validation,
+  Rustdoc JSON, workspace/package metadata, seven package listings,
+  formatting, and diff checks pass on `ba2fb950`.
+- [ ] This closes the external-wait interruption row only. The JVM-specific
+  `ResponseFuture.toString()` identity/rendering, broad P18-V01
+  method/overload/input/error/control-flow and reverse-export audit, native
+  Windows runtime, and current-revision remote Ubuntu CI remain open. Phase 19
+  user-owned paths remain unchanged and unstaged. Run record:
+  `rlogs/2026/10/24-phase-18-response-wait-interruption__20261024T155648Z.rlog`.

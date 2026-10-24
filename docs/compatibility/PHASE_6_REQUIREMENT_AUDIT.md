@@ -5386,3 +5386,31 @@ PARTIAL. Different-mode `MessageQueueAssignment` equal-hash outcomes remain
 JVM-process-local; native Windows runtime and current-revision remote Ubuntu CI
 remain unverified. Phase 19 paths are unchanged and unstaged. Run record:
 `../../rlogs/2026/10/24-phase-18-fault-item-public-api__20261024T153809Z.rlog`.
+
+## P18-V01 `ResponseFuture.waitResponse` external interruption — 2026-10-24 (`ba2fb950`)
+
+The Java `ResponseFuture.waitResponse(long)` fixture externally interrupts a
+waiting JVM thread and records `InterruptedException`, a null response, and the
+cleared interrupt flag. Rust now exports `ResponseWaitInterrupt` as an explicit
+per-wait signal and `ResponseWaitError::Interrupted`; calling
+`wait_response_interruptible` wakes the blocked Condvar wait, consumes the
+signal, and returns the typed error. The existing `wait_response` remains a
+noninterruptible Rust convenience. Unit coverage compares the Java exception
+class and tests wakeup, signal consumption, and an interrupt already pending
+before the response. An external ambient thread-interrupt primitive is not
+fabricated in Rust.
+
+Code commit: `ba2fb950`. Default and all-feature locked workspace tests and
+doctests, strict all-target/all-feature Clippy, Windows GNU all-target check,
+strict Clippy and test compile/link, pinned offline Maven `verify` (37
+scenarios, 11 message fixtures, 106 typed headers and 19 typed bodies),
+20-case × 3 offline race/leak smoke, bounded fuzz smoke, release examples,
+differential self-test, 37-scenario manifest validation, Rustdoc JSON, package
+metadata/license/dependency checks, all seven product package listings,
+formatting, and diff checks pass. Rustdoc reports 405 public item records and
+341 distinct Remoting identifiers. This closes the external wait-interruption
+behavior row only. The `ResponseFuture.toString()` JVM identity/rendering gap,
+broad P18-V01 API/overload/input/error/control-flow and reverse-export audit,
+native Windows runtime, and current-revision remote Ubuntu CI remain open.
+Phase 19 paths are unchanged and unstaged. Run record:
+`../../rlogs/2026/10/24-phase-18-response-wait-interruption__20261024T155648Z.rlog`.
