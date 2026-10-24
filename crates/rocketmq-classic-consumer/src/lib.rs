@@ -23,6 +23,7 @@ pub mod pop;
 pub mod pop_request;
 pub mod process_queue;
 pub mod pull;
+pub mod pull_request;
 pub mod push;
 pub mod rebalance;
 mod service_state;
@@ -42,6 +43,7 @@ pub use pop::{
 };
 pub use pop_request::PopRequest;
 pub use process_queue::{ExpiredMessageCleanupError, ProcessQueue};
+pub use pull_request::PullRequest;
 pub use push::{
     ConcurrentListenerFuture, ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus,
     ConsumeOrderlyContext, ConsumeOrderlyStatus, MessageListenerConcurrently,

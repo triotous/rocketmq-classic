@@ -160,6 +160,55 @@ public final class ConsumerFacadeApiFixtures {
         return result;
     }
 
+    private static Map<String, Object> pullRequestBehavior() {
+        PullRequest empty = new PullRequest();
+        Map<String, Object> defaults = new TreeMap<>();
+        defaults.put("consumerGroup", empty.getConsumerGroup());
+        defaults.put("messageQueue", empty.getMessageQueue());
+        defaults.put("processQueue", empty.getProcessQueue());
+        defaults.put("nextOffset", empty.getNextOffset());
+        defaults.put("previouslyLocked", empty.isPreviouslyLocked());
+        defaults.put("mode", empty.getMessageRequestMode().name());
+        defaults.put("hashCode", empty.hashCode());
+        defaults.put("toString", empty.toString());
+
+        PullRequest request = new PullRequest();
+        MessageQueue queue = new MessageQueue("orders-😀", "broker-雪", 17);
+        ProcessQueue processQueue = new ProcessQueue();
+        request.setConsumerGroup("group-雪");
+        request.setMessageQueue(queue);
+        request.setProcessQueue(processQueue);
+        request.setNextOffset(-42L);
+        request.setPreviouslyLocked(true);
+
+        PullRequest equalByValue = new PullRequest();
+        equalByValue.setConsumerGroup("group-雪");
+        equalByValue.setMessageQueue(new MessageQueue("orders-😀", "broker-雪", 17));
+        equalByValue.setProcessQueue(new ProcessQueue());
+
+        Map<String, Object> populated = new TreeMap<>();
+        populated.put("consumerGroup", request.getConsumerGroup());
+        populated.put("messageQueue", request.getMessageQueue().toString());
+        populated.put("messageQueuePreservesIdentity", request.getMessageQueue() == queue);
+        populated.put("processQueuePreservesIdentity", request.getProcessQueue() == processQueue);
+        populated.put("nextOffset", request.getNextOffset());
+        populated.put("previouslyLocked", request.isPreviouslyLocked());
+        populated.put("mode", request.getMessageRequestMode().name());
+        populated.put("hashCode", request.hashCode());
+        populated.put("toString", request.toString());
+        populated.put("equalsIgnoresProcessQueueAndFlags", request.equals(equalByValue));
+        populated.put("equalHashCode", equalByValue.hashCode());
+
+        queue.setTopic("orders-mutated");
+        populated.put("topicAfterMessageQueueMutation", request.getMessageQueue().getTopic());
+        populated.put("toStringAfterMessageQueueMutation", request.toString());
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("defaults", defaults);
+        result.put("populated", populated);
+        return result;
+    }
+
     private static Map<String, Object> rebalancePullBehavior() {
         RebalancePullImpl rebalance = new RebalancePullImpl("pull-group",
             MessageModel.CLUSTERING, null, null, null);
@@ -730,10 +779,12 @@ public final class ConsumerFacadeApiFixtures {
         implementationApis.put("RebalancePullImpl", publicApiSurface(RebalancePullImpl.class));
         implementationApis.put("ProcessQueue", publicApiSurface(ProcessQueue.class));
         implementationApis.put("PopProcessQueue", publicApiSurface(PopProcessQueue.class));
+        implementationApis.put("PullRequest", publicApiSurface(PullRequest.class));
         implementationApis.put("PopRequest", publicApiSurface(PopRequest.class));
         fixture.put("implementationApis", implementationApis);
         Map<String, Object> implementationBehaviors = new TreeMap<>();
         implementationBehaviors.put("popProcessQueue", popProcessQueueBehavior());
+        implementationBehaviors.put("pullRequest", pullRequestBehavior());
         implementationBehaviors.put("popRequest", popRequestBehavior());
         implementationBehaviors.put("processQueue", processQueueBehavior());
         implementationBehaviors.put("processQueueTryUnlockOverflow", processQueueTryUnlockOverflow());

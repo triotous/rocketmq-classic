@@ -4,8 +4,8 @@ use rocketmq_classic_common::message::{MessageExt, MessageQueue};
 use rocketmq_classic_consumer::process_queue::ProcessQueueError;
 use rocketmq_classic_consumer::{
     ConsumeMessageService, ConsumeMessageServiceFuture, ConsumerStatsManager, MqHelper,
-    PopProcessQueue, ProcessQueue, PullConsumerConfig, PushConsumer, PushConsumerConfig,
-    pull::PullConsumer, rebalance::AllocateMessageQueueAveragely,
+    PopProcessQueue, PopRequest, ProcessQueue, PullConsumerConfig, PullRequest, PushConsumer,
+    PushConsumerConfig, pull::PullConsumer, rebalance::AllocateMessageQueueAveragely,
 };
 use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager};
 use rocketmq_classic_protocol::body::{
@@ -316,6 +316,8 @@ fn pinned_java_nested_rebalance_and_process_queue_api_denominator_is_recorded() 
         ("RebalancePullImpl", 2, 11, 32),
         ("ProcessQueue", 1, 32, 32),
         ("PopProcessQueue", 1, 11, 11),
+        ("PullRequest", 1, 14, 14),
+        ("PopRequest", 1, 16, 16),
     ] {
         let api = &fixture["implementationApis"][name];
         assert_eq!(
@@ -356,6 +358,33 @@ fn pinned_java_nested_rebalance_and_process_queue_api_denominator_is_recorded() 
             "pinned Java {owner}.{method} is inventoried"
         );
     }
+}
+
+#[test]
+fn pull_and_pop_request_public_types_match_pinned_java_modes() {
+    let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
+    let crosswalk = include_str!("../../../docs/compatibility/PHASE_6_API_CONFIG_MAP.md");
+
+    assert_eq!(
+        PullRequest::default().message_request_mode(),
+        rocketmq_classic_protocol::body::MessageRequestMode::Pull
+    );
+    assert_eq!(
+        PopRequest::default().message_request_mode(),
+        rocketmq_classic_protocol::body::MessageRequestMode::Pop
+    );
+    for (java_name, rust_name) in [("PullRequest", "PullRequest"), ("PopRequest", "PopRequest")] {
+        assert_eq!(
+            fixture["implementationApis"][java_name]["declaredPublicMethodCount"],
+            if java_name == "PullRequest" { 14 } else { 16 }
+        );
+        assert!(
+            crosswalk.contains(rust_name),
+            "{rust_name} Java method crosswalk"
+        );
+    }
+    assert!(fixture["implementationBehaviors"]["pullRequest"].is_object());
+    assert!(fixture["implementationBehaviors"]["popRequest"].is_object());
 }
 
 #[test]

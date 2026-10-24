@@ -5,7 +5,7 @@ use rocketmq_classic::{
     NullablePublishInfoQueueFilters, OrderlyListenerFuture, PermName, PermissionParseError,
     PopProcessQueue, PopRequest, PopResult, PopStatus, Producer, ProducerConfig,
     ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState, ProducerTopicList,
-    PublishInfoQueueFilter, QueryResult, SharedMessageBody, SharedMessageProperties,
+    PublishInfoQueueFilter, PullRequest, QueryResult, SharedMessageBody, SharedMessageProperties,
     TopicPublishInfo, TopicPublishInfoEntryHandle, TopicPublishInfoEntrySetView,
     TopicPublishInfoKeySetView, TopicPublishInfoTable, TopicPublishInfoTableError,
     TopicPublishInfoValuesView, TopicRouteData, TopicRouteDataHandle,
@@ -23,9 +23,14 @@ async fn phase_owned_public_types_are_available_from_the_facade_crate() {
     assert_public_type::<PermissionParseError>();
     assert_public_type::<PopProcessQueue>();
     assert_public_type::<PopRequest>();
+    assert_public_type::<PullRequest>();
     assert_eq!(
         PopRequest::default().message_request_mode(),
         rocketmq_classic_protocol::body::MessageRequestMode::Pop
+    );
+    assert_eq!(
+        PullRequest::default().message_request_mode(),
+        rocketmq_classic_protocol::body::MessageRequestMode::Pull
     );
 
     let producer = Producer::new(ProducerConfig::new("facade-api-probe").unwrap());
