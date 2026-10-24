@@ -9782,6 +9782,112 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn assigned_pull_queue_expiry_matches_java_replacement_and_retention() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/consumer-operations.json"
+        ))
+        .unwrap();
+        let pull_rebalance = fixture["pullRebalance"].as_array().unwrap();
+        assert_eq!(pull_rebalance.len(), 4);
+
+        let mut config = PushConsumerConfig::new("pull-assignment-expiry").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+        config.set_consume_from_where(ConsumeFromWhere::ConsumeFromFirstOffset);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        write_lock(&consumer.subscriptions).insert(
+            "orders".to_owned(),
+            SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned())),
+        );
+        write_lock(&consumer.topic_queues)
+            .insert("orders".to_owned(), BTreeSet::from([queue.clone()]));
+        let _runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store,
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+
+        let expired = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 91));
+        expired.set_last_pull_timestamp(epoch_millis() - 120_001);
+        write_lock(&consumer.process_queues).insert(queue.clone(), expired.clone());
+        consumer
+            .pull_max_idle_time_millis
+            .store(-1, Ordering::Release);
+        consumer.rebalance_service.rebalance(&consumer).await;
+        let replacement = read_lock(&consumer.process_queues)
+            .get(&queue)
+            .cloned()
+            .expect("assigned PULL queue must replace an expired process queue");
+        assert_eq!(
+            expired.is_dropped(),
+            pull_rebalance[0]["oldDropped"].as_bool().unwrap()
+        );
+        assert_eq!(
+            read_lock(&consumer.process_queues).contains_key(&queue),
+            pull_rebalance[0]["present"].as_bool().unwrap()
+        );
+        assert_eq!(
+            !Arc::ptr_eq(&expired, &replacement),
+            pull_rebalance[0]["replaced"].as_bool().unwrap()
+        );
+
+        consumer
+            .pull_max_idle_time_millis
+            .store(i64::MAX, Ordering::Release);
+        replacement.set_last_pull_timestamp(epoch_millis());
+        consumer.rebalance_service.rebalance(&consumer).await;
+        assert_eq!(
+            replacement.is_dropped(),
+            pull_rebalance[1]["dropped"].as_bool().unwrap()
+        );
+        assert_eq!(
+            read_lock(&consumer.process_queues).contains_key(&queue),
+            pull_rebalance[1]["present"].as_bool().unwrap()
+        );
+        assert_eq!(
+            Arc::ptr_eq(&replacement, &read_lock(&consumer.process_queues)[&queue]),
+            pull_rebalance[1]["same"].as_bool().unwrap()
+        );
+
+        replacement
+            .drop_assignment(replacement.generation())
+            .unwrap();
+        consumer.rebalance_service.rebalance(&consumer).await;
+        assert_eq!(
+            replacement.is_dropped(),
+            pull_rebalance[2]["dropped"].as_bool().unwrap()
+        );
+        assert_eq!(
+            read_lock(&consumer.process_queues).contains_key(&queue),
+            pull_rebalance[2]["present"].as_bool().unwrap()
+        );
+        assert_eq!(
+            Arc::ptr_eq(&replacement, &read_lock(&consumer.process_queues)[&queue]),
+            pull_rebalance[2]["same"].as_bool().unwrap()
+        );
+
+        write_lock(&consumer.topic_queues).insert("orders".to_owned(), BTreeSet::new());
+        consumer.rebalance_service.rebalance(&consumer).await;
+        assert_eq!(
+            replacement.is_dropped(),
+            pull_rebalance[3]["dropped"].as_bool().unwrap()
+        );
+        assert_eq!(
+            read_lock(&consumer.process_queues).contains_key(&queue),
+            pull_rebalance[3]["present"].as_bool().unwrap()
+        );
+
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn removed_pop_queue_finishes_inflight_found_callback_before_retiring() {
         let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let nameserver_address = nameserver.local_addr().unwrap().to_string();

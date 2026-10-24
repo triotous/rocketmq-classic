@@ -66,6 +66,7 @@ public final class RuntimeConsumerOperationsFixtures {
         fixture.put("resetStoreHandoff", reset("store-handoff"));
         fixture.put("unsubscribedTruncation", reset("rebalance-unsubscribed"));
         fixture.put("resume", resume());
+        fixture.put("pullRebalance", pullRebalance());
         fixture.put("popRebalance", popRebalance());
         fixture.put("popUnsubscribedTruncation", popUnsubscribedTruncation());
         fixture.put("popToPullTransition", popToPullTransition());
@@ -161,6 +162,72 @@ public final class RuntimeConsumerOperationsFixtures {
             runtime.getMQClientAPIImpl().shutdown();
             Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure", MQClientAPIImpl.class, Throwable.class);
             cleanup.setAccessible(true); cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("POP rebalance fixture teardown"));
+        }
+    }
+
+    private static List<Object> pullRebalance() throws Exception {
+        ClientConfig config = new ClientConfig(); config.setClientIP("pull-rebalance-runtime"); config.setNamesrvAddr(null);
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        try {
+            var facade = new org.apache.rocketmq.client.consumer.DefaultMQPushConsumer("pull-rebalance");
+            facade.setMessageModel(org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel.BROADCASTING);
+            facade.setConsumeFromWhere(org.apache.rocketmq.common.consumer.ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
+            var consumer = new org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl(facade, null);
+            var rebalance = consumer.getRebalanceImpl();
+            consumer.setmQClientFactory(runtime);
+            rebalance.setmQClientFactory(runtime);
+            consumer.setOffsetStore((org.apache.rocketmq.client.consumer.store.OffsetStore) Proxy.newProxyInstance(
+                RuntimeConsumerOperationsFixtures.class.getClassLoader(),
+                new Class<?>[] {org.apache.rocketmq.client.consumer.store.OffsetStore.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("readOffset")) return -1L;
+                    if (method.getName().equals("cloneOffsetTable")) return Map.of();
+                    return null;
+                }));
+
+            var queue = new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 0);
+            var table = rebalance.getProcessQueueTable();
+            var expired = new org.apache.rocketmq.client.impl.consumer.ProcessQueue();
+            expired.setLastPullTimestamp(System.currentTimeMillis() - 120_001L);
+            table.put(queue, expired);
+
+            var assignment = new org.apache.rocketmq.common.message.MessageQueueAssignment();
+            assignment.setMessageQueue(queue);
+            assignment.setMode(org.apache.rocketmq.common.message.MessageRequestMode.PULL);
+            var update = org.apache.rocketmq.client.impl.consumer.RebalanceImpl.class
+                .getDeclaredMethod("updateMessageQueueAssignment", String.class, java.util.Set.class, boolean.class);
+            update.setAccessible(true);
+            update.invoke(rebalance, "orders", java.util.Set.of(assignment), false);
+            var replacement = table.get(queue);
+            Map<String, Object> expiredRow = new TreeMap<>();
+            expiredRow.put("case", "expired-assigned"); expiredRow.put("oldDropped", expired.isDropped());
+            expiredRow.put("present", replacement != null); expiredRow.put("replaced", replacement != expired);
+
+            replacement.setLastPullTimestamp(System.currentTimeMillis());
+            update.invoke(rebalance, "orders", java.util.Set.of(assignment), false);
+            Map<String, Object> retainedRow = new TreeMap<>();
+            retainedRow.put("case", "active-assigned");
+            retainedRow.put("dropped", replacement.isDropped());
+            retainedRow.put("present", table.containsKey(queue));
+            retainedRow.put("same", table.get(queue) == replacement);
+
+            replacement.setDropped(true);
+            update.invoke(rebalance, "orders", java.util.Set.of(assignment), false);
+            Map<String, Object> droppedRow = new TreeMap<>();
+            droppedRow.put("case", "dropped-assigned"); droppedRow.put("dropped", replacement.isDropped());
+            droppedRow.put("present", table.containsKey(queue)); droppedRow.put("same", table.get(queue) == replacement);
+
+            update.invoke(rebalance, "orders", java.util.Set.of(), false);
+            Map<String, Object> emptyRow = new TreeMap<>();
+            emptyRow.put("case", "empty-assignment"); emptyRow.put("dropped", replacement.isDropped());
+            emptyRow.put("present", table.containsKey(queue));
+            return List.of(expiredRow, retainedRow, droppedRow, emptyRow);
+        } finally {
+            runtime.getPullMessageService().shutdown(true);
+            runtime.getScheduledExecutorService().shutdownNow();
+            runtime.getMQClientAPIImpl().shutdown();
+            Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure", MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true); cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("PULL rebalance fixture teardown"));
         }
     }
 
