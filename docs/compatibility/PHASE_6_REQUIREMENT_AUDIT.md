@@ -5527,3 +5527,25 @@ broad P18-V01 API/overload/input/error/control-flow and reverse-export audit,
 native Windows runtime, and current-revision remote Ubuntu CI remain open.
 Phase 19 paths are unchanged and unstaged. Run record:
 `../../rlogs/2026/10/24-phase-18-response-wait-interruption__20261024T155648Z.rlog`.
+
+## P18-V01 public `ProduceAccumulator(String)` constructor — 2026-10-24 (`c497f376`)
+
+Rust now exports `rocketmq_classic_producer::ProduceAccumulator::new` and
+re-exports the constructor-only type from the top-level facade. It accepts
+`Option<String>` so Java null remains representable. The public Rust type has
+no batching methods; Producer startup and sends continue to use the private
+Rust-owned auto-batch engine. The invoked fixture inventories Java's one
+public `ProduceAccumulator(String)` constructor and zero declared public
+methods. Its SHA-256 is
+`e7756ff8a7da4bac09de942e5eebf3e4886f933fb5f8483e4c7c7a8f61e228ff`, and the
+pinned Java source SHA-256 is
+`89f2fcb62e9654aed52a190aa040ce4fd80eb62779e607910fdccb328d08df1b`.
+`pinned_java_produce_accumulator_declared_surface_is_constructor_only`
+constructs both non-null and null Rust values; the facade API test verifies
+both constructor cases through `rocketmq_classic`.
+
+This closes the directly constructible helper type's public constructor row.
+The separate `MQClientManager.getOrCreateProduceAccumulator` cache is keyed by
+Java client ID and is used during producer startup; cross-Producer accumulator
+sharing and its observable batching ownership remain part of the broad
+P18-V01 flow audit. Broad P18-V01 remains `PARTIAL`.

@@ -6,6 +6,17 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 
 ## Compatibility and validation
 
+- [x] P18-V02 full current-code server-free refresh (`c497f376`, 2026-10-24):
+  default/all-feature workspace tests and doctests, strict host Clippy, Windows
+  GNU check/strict Clippy/test-harness compile-link, pinned offline Maven
+  verification, Rustdoc JSON, comparator/37-scenario manifest, 20-case × 3
+  race/leak smoke, bounded fuzz, release examples, offline benchmark and strict
+  benchmark Clippy, metadata, seven product package listings, formatting and
+  diff checks pass. The Producer constructor-only `ProduceAccumulator` API is
+  also available from the facade. Native Windows runtime and current-revision
+  remote Ubuntu CI remain open; broad P18-V01 remains PARTIAL. Run record:
+  `rlogs/2026/10/24-phase-18-produce-accumulator-constructor-api__20261024T175426Z.rlog`.
+
 - [x] P18-V02 current-tree server-free refresh (`38a7bd83`, 2026-10-24):
   locked default and all-feature workspace tests/doctests, strict all-target/
   all-feature host Clippy, focused `ResponseFuture` display test, Windows GNU
@@ -10244,3 +10255,37 @@ owner-specific checks belong in the manual handoff.
   runtime and current-revision remote Ubuntu CI remain unverified; no push or
   remote CI ran. Phase 19 user-owned paths remain unchanged and unstaged. Run
   record: `rlogs/2026/10/24-phase-18-current-tree-full-server-free-gate__20261024T174002Z.rlog`.
+
+## P18-V01 `ProduceAccumulator(String)` public constructor and P18-V02 refresh — 2026-10-24 (`c497f376`)
+
+- [x] Producer exports `ProduceAccumulator::new(Option<String>)`, and the
+  facade re-exports the constructor-only helper. Java's public constructor
+  accepts nullable `String` and declares no batching methods. The Java fixture
+  SHA-256 is
+  `e7756ff8a7da4bac09de942e5eebf3e4886f933fb5f8483e4c7c7a8f61e228ff`; the
+  pinned Java class SHA-256 is
+  `89f2fcb62e9654aed52a190aa040ce4fd80eb62779e607910fdccb328d08df1b`.
+  Producer API and facade tests construct both a name and null. Code commit:
+  `c497f376`.
+- [x] Default/all-feature locked workspace tests and doctests, strict host
+  all-target/all-feature Clippy, Windows GNU all-feature workspace check and
+  strict Clippy, and Windows GNU all-feature test-harness compile/link pass.
+  The Windows binaries were not run.
+- [x] Pinned Maven `verify` passes fixture drift, 37 scenarios, 11 message
+  fixtures, 106 typed headers, 19 typed bodies, and Java/Rust cross-decodes.
+  Rustdoc JSON generation, differential self-test and 37-scenario manifest
+  validation pass.
+- [x] Deterministic race/leak smoke passes 20 cases × 3. Fixed-seed fuzz passes
+  163 frame, 11 message, and 11 property seeds with 2,960 mutations and
+  564/192/176 frame/message/property decoder calls. Release examples, benchmark,
+  strict benchmark Clippy, workspace metadata, all seven product package
+  listings with `LICENSE`/`NOTICE`, formatting and diff checks pass. Benchmark
+  observations are in
+  `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+- [ ] This closes the directly constructible helper's constructor row only.
+  `MQClientManager.getOrCreateProduceAccumulator` shares accumulators by Java
+  client ID; cross-Producer batching ownership remains in broad P18-V01 flow
+  reconciliation. Different-mode assignment hash collisions still depend on
+  JVM identity hashes. Native Windows runtime and current-revision remote
+  Ubuntu CI remain unverified; Phase 19 paths remain untouched. Run record:
+  `rlogs/2026/10/24-phase-18-produce-accumulator-constructor-api__20261024T175426Z.rlog`.
