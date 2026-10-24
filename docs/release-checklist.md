@@ -6,6 +6,19 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 
 ## Compatibility and validation
 
+- [x] P18-V02 current-tree server-free refresh (`38a7bd83`, 2026-10-24):
+  locked default and all-feature workspace tests/doctests, strict all-target/
+  all-feature host Clippy, focused `ResponseFuture` display test, Windows GNU
+  workspace check/strict Clippy/test-harness compile-link, pinned offline Maven
+  verification, differential comparator and 37-scenario manifest, deterministic
+  race/leak smoke, bounded fuzz, release examples, offline benchmark, metadata,
+  seven product package listings, formatting and diff checks all pass. The
+  `ResponseFuture` test verifies nested Java-compatible command rendering.
+  Native Windows execution and current-revision remote Ubuntu CI remain open;
+  broad P18-V01 remains PARTIAL. Phase 19-owned worktree files remain untouched.
+  Full command evidence is in
+  `rlogs/2026/10/24-phase-18-current-tree-full-server-free-gate__20261024T174002Z.rlog`.
+
 - [x] P18-V02 full current-code refresh (`a460d966`, 2026-10-24): locked
   default and all-feature workspace tests/doctests and strict all-target/
   all-feature workspace Clippy pass. Windows GNU workspace check, strict
@@ -10199,3 +10212,35 @@ owner-specific checks belong in the manual handoff.
   Windows runtime, and current-revision remote Ubuntu CI remain open. Phase 19
   user-owned paths remain unchanged and unstaged. Run record:
   `rlogs/2026/10/24-phase-18-response-wait-interruption__20261024T155648Z.rlog`.
+
+## P18-V02 full current-tree server-free gate after ResponseFuture rendering — 2026-10-24 (`38a7bd83`)
+
+- [x] Locked default and all-feature workspace tests/doctests pass using the
+  fresh Cargo target `/tmp/rocketmq-phase18-current-gates-20261024T172656Z`.
+  Strict workspace all-target/all-feature Clippy and the focused
+  `response_future_display_preserves_java_to_string_state_fields` test pass.
+  The original workspace-target test launch stalled before its Remoting codec
+  harness entered `main`; the clean-target full rerun completed without test
+  failures.
+- [x] Windows GNU all-feature workspace check and strict all-target/all-feature
+  Clippy pass. Windows GNU all-feature `cargo test --no-run` compiles and links
+  every workspace test harness; no Windows binary was executed.
+- [x] Pinned offline Maven `verify` passes fixture-drift checks, 37 scenarios,
+  11 message fixtures, 106 typed headers, 19 typed bodies, and Java/Rust
+  cross-decodes. Differential comparator self-test and 37-scenario manifest
+  validation pass.
+- [x] Deterministic race/leak smoke passes 20 cases × 3. Fixed-seed fuzz passes
+  163 frame seeds, 11 message seeds, 11 property seeds, 2,960 mutations, and
+  564/192/176 frame/message/property decoder calls. Release facade examples,
+  offline benchmark, and strict benchmark Clippy pass. Benchmark observations
+  are appended in
+  `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+- [x] Workspace metadata, package licenses/dependency direction, and offline
+  package listings for all seven product crates pass; each listing contains
+  `LICENSE` and `NOTICE`. Formatting and `git diff --check` pass.
+- [ ] Broad P18-V01 method/overload/input/error/control-flow and reverse-export
+  reconciliation remains PARTIAL. The cross-process Java enum identity-hash
+  behavior for assignment HashSet collisions remains JVM-local. Native Windows
+  runtime and current-revision remote Ubuntu CI remain unverified; no push or
+  remote CI ran. Phase 19 user-owned paths remain unchanged and unstaged. Run
+  record: `rlogs/2026/10/24-phase-18-current-tree-full-server-free-gate__20261024T174002Z.rlog`.
