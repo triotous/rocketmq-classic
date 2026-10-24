@@ -11,7 +11,7 @@ use rocketmq_classic_core::{
 use rocketmq_classic_protocol::{
     codes::LanguageCode,
     header::{
-        QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1,
+        GetConsumeStatsRequestHeader, QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1,
         UpdateConsumerOffsetRequestHeader,
     },
 };
@@ -122,7 +122,7 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
     let entries: Vec<_> = fs::read_dir(&dir).unwrap().collect();
     assert_eq!(
         entries.len(),
-        18,
+        19,
         "all pinned Java invoked cases must be compared"
     );
     for name in [
@@ -140,6 +140,7 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
         "offset-no-header",
         "reset-offset-cpp",
         "reset-offset-explicit",
+        "consume-stats-topic-list",
         "update-success",
         "update-error",
         "update-unknown",
@@ -298,6 +299,24 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
                         "offset=27".to_owned()
                     }
                     other => panic!("unexpected explicit reset offset result: {other:?}"),
+                }
+            }
+            "consume-stats-topic-list" => {
+                let mut header = GetConsumeStatsRequestHeader::default();
+                header.set_consumer_group(Some("workers".into()));
+                header.set_topic(Some("orders".into()));
+                header.update_topic_list(Some(&[Some("orders".into()), None]));
+                match api.get_consume_stats_sync(&addr, &header, deadline).await {
+                    Ok(Some(stats)) => {
+                        assert!(
+                            stats
+                                .get_offset_table()
+                                .unwrap()
+                                .with(|offsets| offsets.is_empty())
+                        );
+                        "ok".to_owned()
+                    }
+                    other => panic!("unexpected consume stats result: {other:?}"),
                 }
             }
             _ => panic!("unexpected case {name}"),

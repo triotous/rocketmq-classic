@@ -1142,6 +1142,27 @@ impl MQClientApi {
         })
     }
 
+    /// Performs Java `MQClientAPIImpl.getConsumeStats` through synchronous
+    /// remoting. `MqClientAdmin::getConsumeStats` remains future-based and uses
+    /// [`Self::get_consume_stats`].
+    pub async fn get_consume_stats_sync(
+        &self,
+        addr: &str,
+        header: &GetConsumeStatsRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<ConsumeStats>, RpcError> {
+        let code = request::GET_CONSUME_STATS;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = classify(reply, code, addr)?;
+        ConsumeStats::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
+    }
+
     /// Queries a Broker's correction offsets through Java
     /// `MQClientAPIImpl.queryCorrectionOffset`. The filter set is serialized
     /// as Java's comma-separated `filterGroups` header value; its iteration

@@ -24,6 +24,7 @@ import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
 import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
 import org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody;
+import org.apache.rocketmq.remoting.protocol.admin.ConsumeStats;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
@@ -271,6 +272,16 @@ public final class InvokedRpcFixtures {
             "explicit reset offset outcome");
         cases.add(new String[] {"reset-offset-explicit.json", fixture("reset-offset-explicit",
             capture, RequestCode.INVOKE_BROKER_TO_RESET_OFFSET, "offset=27")});
+
+        ConsumeStats emptyConsumeStats = new ConsumeStats();
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        capture.response.setBody(RemotingSerializable.encode(emptyConsumeStats));
+        ConsumeStats stats = api.getConsumeStats("broker:10911", "workers", "orders",
+            java.util.Arrays.asList("orders", null), 10000);
+        check(stats.getOffsetTable().isEmpty() && stats.getConsumeTps() == 0.0,
+            "synchronous consume stats outcome");
+        cases.add(new String[] {"consume-stats-topic-list.json", fixture("consume-stats-topic-list",
+            capture, RequestCode.GET_CONSUME_STATS, "ok")});
 
         capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "no header");
         try {
