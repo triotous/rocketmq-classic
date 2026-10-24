@@ -5084,3 +5084,17 @@ source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains PARTIAL. Native Windows runtime and current-revision remote Ubuntu CI
 remain unverified; Phase 19 Broker/Docker evidence remains separate. Run
 record: `../../rlogs/2026/10/24-phase-18-malformed-inner-count-parity__20261024T093158Z.rlog`.
+
+## P18-V01 caller-defined message body-array alias follow-up — 2026-10-24 (`950cf356`)
+
+The Phase 10 `MessageExtSubtype` adapter now preserves shared Java body-array
+identity through virtual `getBody()`/`setBody()` using explicit Rust shared
+handles. The invoked direct-consume fixture compares caller-to-subtype,
+getter-to-subtype and subtype-to-later-getter mutations. The Common message
+suite passes 28 cases, the consumer direct-consume suite passes six, and the
+runtime fixture SHA-256 is
+`4ba7bf76f4ef8ebb1ecc116f253d5b8e64100cf83096e65ff86958425f403b5c`.
+This closes that subtype alias slice only. P18-V01 remains PARTIAL for the
+remaining source/API/settings/input/error/control-flow and reverse-export
+reconciliation; P18-V04 remains open for native Windows runtime and current
+revision remote Ubuntu CI evidence.

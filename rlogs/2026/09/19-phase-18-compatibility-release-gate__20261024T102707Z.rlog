@@ -80,3 +80,37 @@
 Detailed run records for the focused code and current-tree gate runs are in
 `rlogs/2026/10/24-phase-18-remoting-error-identity__20261024T100726Z.rlog` and
 `rlogs/2026/10/24-phase-18-current-tree-error-identity-gates__20261024T102143Z.rlog`.
+
+## P18-V01 `MessageExt` body-array alias continuation — 2026-10-24
+
+- Code commit: `950cf356 fix(common): preserve subtype message body aliases`.
+- Added `MessageExtSubtype::{shared_body,set_shared_body}` and
+  `MessageExt::{shared_body,set_body_shared}`. Snapshot-only body overrides
+  still work; custom subtype adapters can now retain and expose the shared
+  mutable byte-array handle used by Java.
+- Extended the pinned Java direct-consume fixture and Rust callback check to
+  compare `setBody` input identity, caller mutation visibility, `getBody()`
+  alias identity, getter-to-subtype mutation, and subtype-to-later-getter
+  mutation. Fixture SHA-256:
+  `4ba7bf76f4ef8ebb1ecc116f253d5b8e64100cf83096e65ff86958425f403b5c`.
+- Focused gates passed: Common `message_decode` (28 tests), consumer
+  `runtime_direct_consume` (6 tests), and Java fixture `--verify` (29 direct
+  cases).
+- On `950cf356`, default and all-feature locked workspace test/doctest runs
+  each passed 93 suites and 2,019 tests. Strict all-target/all-feature
+  workspace Clippy passed. Release workspace examples built. Windows GNU
+  all-target/all-feature workspace check and strict Clippy passed as
+  compile-only gates. Offline Maven `verify` passed: 37 scenarios, 11 message
+  fixtures, 106 typed headers, 19 typed bodies, including the updated direct
+  consumer fixture.
+- The first default workspace test launch in the repository target stalled
+  before Rust test code in the macOS dynamic loader for the Remoting `codec`
+  binary. A process sample showed only `_dyld_start`; the run was stopped and
+  the full default workspace suite passed with
+  `CARGO_TARGET_DIR=/tmp/rocketmq-phase18-target`. The all-feature run used
+  the same target and passed.
+- Matrix and runtime crosswalks were updated. Broad P18-V01 source/API/input/
+  flow/reverse-export reconciliation remains PARTIAL. Native Windows runtime
+  and current-revision remote Ubuntu CI remain unverified; no push or remote
+  CI was run. The four pre-existing Phase 19 worktree paths remain unstaged
+  and untouched.

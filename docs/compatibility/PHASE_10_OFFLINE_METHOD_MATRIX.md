@@ -385,3 +385,21 @@ overridden setter handles both a value and null without changing the offset
 ID. Rust matches through the existing `MessageExtSubtype` hooks. The Common
 message API test file passes all 26 cases. Fixture SHA-256:
 `d0cdfbf2599adb0242a1df0dfa8523818a018c35cb34dac2b8418f8ce4bc972d`.
+
+P18-V01 caller-defined `MessageExt` body-array alias follow-up (code revision
+`950cf356`, 2026-10-24):
+`MessageExtSubtype::{shared_body,set_shared_body}` and
+`MessageExt::{shared_body,set_body_shared}` preserve a custom subtype's live
+Java byte-array alias. The invoked direct-consume fixture retains the array
+passed to `setBody`, mutates it before consumption, then checks mutations
+through `getBody()` and the subtype field in both directions. Rust compares
+the shared handle identity and each mutation's visibility through a later body
+getter. Snapshot-only body hooks remain supported. Fixture SHA-256:
+`4ba7bf76f4ef8ebb1ecc116f253d5b8e64100cf83096e65ff86958425f403b5c`.
+Common message tests pass all 28 cases and the runtime direct-consume suite
+passes all six. Other inherited methods and broad P18-V01 reconciliation
+remain open. On revision `950cf356`, default and all-feature workspace
+test/doctest runs each passed 93 suites and 2,019 tests; strict workspace
+Clippy, release examples, Windows GNU all-target/all-feature check and Clippy
+(compile-only), and offline Maven `verify` also passed. Native Windows runtime
+and current-revision remote Ubuntu CI remain unverified.

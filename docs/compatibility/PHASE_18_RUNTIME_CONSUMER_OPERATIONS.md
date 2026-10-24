@@ -471,3 +471,23 @@ The direct-consume fixture includes 29 Java cases. This closes the declared
 message-family inventory and these selected subtype dispatch paths; the broad
 P18-V01 settings/API/flow/input/error/reverse-export audit and P18-V04 platform
 evidence remain open.
+
+## Caller-defined `MessageExt` body-array aliases — 2026-10-24 (`950cf356`)
+
+`MessageExtSubtype::{shared_body,set_shared_body}` and the corresponding
+`MessageExt` shared-handle methods preserve the byte-array aliases that Java
+subclasses expose through `getBody()` and `setBody()`. The direct-consume Java
+fixture mutates the setter's input array before the callback, then mutates the
+getter result and subtype field in turn. The Rust callback checks shared
+identity and visibility in both directions. The regenerated
+`consumer-operations.json` fixture SHA-256 is
+`4ba7bf76f4ef8ebb1ecc116f253d5b8e64100cf83096e65ff86958425f403b5c`.
+`cargo test --offline --locked -p rocketmq-classic-common --test
+message_decode` passes 28 cases; the matching `runtime_direct_consume` suite
+passes six. The broad P18-V01 source/API/input/error/flow/reverse-export audit
+and P18-V04 platform evidence remain open. On code revision `950cf356`, both
+default and all-feature workspace test/doctest runs pass 93 suites and 2,019
+tests. Strict workspace Clippy, release examples, Windows GNU check/Clippy
+(compile-only), and offline Maven `verify` pass as well. Maven verified 37
+scenarios, 11 message fixtures, 106 typed headers, and 19 typed bodies. Native
+Windows runtime and current-revision remote Ubuntu CI remain unverified.

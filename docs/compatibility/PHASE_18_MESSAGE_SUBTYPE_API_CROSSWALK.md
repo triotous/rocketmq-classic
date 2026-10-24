@@ -17,7 +17,7 @@ declare 82 public methods (79 instance and 3 static), excluding constructors.
 | Pinned Java methods | Rust API and behavior |
 | --- | --- |
 | Constructors `Message()`, `(String, byte[])`, `(String, String, byte[])`, `(String, String, String, byte[])`, and `(String, String, String, int, byte[], boolean)` | `Message::default`, `Message::new`, `with_tags`, `with_tags_and_keys`, and `with_fields`, respectively; nullable/shared variants retain Java null and byte-array aliasing where Rust callers need them. |
-| `getTopic`, `setTopic`, `getBody`, `setBody`, `getFlag`, `setFlag` | `topic[_nullable]`, `set_topic[_nullable]`, `body[_nullable]`, `set_body[_nullable]`, `flag`, and `set_flag`. `MessageExtSubtype` supplies virtual getter/setter hooks when the value crosses a base-typed consumer API. |
+| `getTopic`, `setTopic`, `getBody`, `setBody`, `getFlag`, `setFlag` | `topic[_nullable]`, `set_topic[_nullable]`, `body[_nullable]`, `set_body[_nullable]`, `flag`, and `set_flag`. `MessageExtSubtype` supplies virtual getter/setter hooks when the value crosses a base-typed consumer API; `shared_body` and `set_body_shared` preserve caller/subtype array aliases. |
 | `putUserProperty`, `getUserProperty`, `getProperty`, `hasProperty`, `getProperties` | `put_user_property[_nullable]`, `get_user_property`/`get_nullable_user_property`, `get_property`/`get_nullable_property`, `has_property`/`has_nullable_property`, and the nullable properties views. Subtypes can override `property`, `user_property`, `has_property`, and `properties` or provide a live map with `live_properties`. |
 | `getTags`, `setTags`, `getKeys`, `setKeys(String)`, `setKeys(Collection<String>)` | `tags`, `set_tags[_nullable]`, `keys`, `set_keys[_nullable]`, and `set_keys_from[_nullable]`; direct getter overrides map through `MessageExtSubtype::{tags,keys}`. The collection setter funnels through the String setter, preserving Java virtual dispatch. |
 | `getDelayTimeLevel`, `setDelayTimeLevel`, `setPriority`, `getPriority`, `isWaitStoreMsgOK`, `setWaitStoreMsgOK`, `setInstanceId`, `setDelayTimeSec`, `getDelayTimeSec`, `setDelayTimeMs`, `getDelayTimeMs`, `setDeliverTimeMs`, `getDeliverTimeMs` | Matching `Message`/`MessageExt` methods preserve property names, defaults and Java parse/validation behavior; malformed numeric properties return typed Rust parse errors at the Rust API boundary. Direct getter overrides map through `MessageExtSubtype::{delay_time_level,delay_time_sec,delay_time_ms,deliver_time_ms,wait_store_msg_ok}`; the inherited implementation uses the virtual property path. |
@@ -38,7 +38,9 @@ declare 82 public methods (79 instance and 3 static), excluding constructors.
 `MessageExt` carries its `Message` fields and exposes the same property, body,
 topic, keys/tags, priority and delay behavior. Property-derived Java getters
 therefore use the subtype's virtual `getProperty` hook rather than reading a
-detached property snapshot.
+detached property snapshot. For caller-defined subtypes, `shared_body()` and
+`set_body_shared()` retain the live byte-array identity exposed by virtual
+`getBody()`/`setBody()`; the snapshot-returning hooks remain available.
 
 ## `MessageClientExt`
 
@@ -104,3 +106,18 @@ The Rust fixture confirms explicit null wins over the property path and avoids
 parsing malformed transient sysflags. It also compares the five override-call
 count. The updated runtime fixture SHA-256 is
 `8640635c5eb044d1485c182be377a308f909885477d01916ba234fb34ef70b7b`.
+
+## P18-V01 caller-defined body-array aliases — 2026-10-24 (`950cf356`)
+
+The `MessageExtSubtype` adapter now has shared setter/getter hooks for custom
+`Message.getBody()` arrays. `MessageExt::set_body_shared` forwards the caller's
+handle through the subtype setter; `shared_body` returns the live subtype
+handle. The invoked Java direct-consume case verifies the original array is
+retained by `setBody`, caller mutation reaches the subtype getter, mutation
+through `getBody` reaches the subtype field, and subtype mutation is visible
+through a later getter. The Rust differential checks the same identity and
+mutation directions. Fixture SHA-256:
+`4ba7bf76f4ef8ebb1ecc116f253d5b8e64100cf83096e65ff86958425f403b5c`.
+`message_decode` passes 28 cases and `runtime_direct_consume` passes six.
+This closes body-array aliasing for the mapped custom subtype adapter only;
+the broader P18-V01 source/input/control-flow/reverse-export audit stays open.
