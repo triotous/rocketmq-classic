@@ -37,6 +37,7 @@ import org.apache.rocketmq.common.message.MessageType;
 /** Invoked Java 5.5.1 trace record encoder oracle. */
 public final class TraceFixtures {
     private static final String SOURCE_COMMIT = "efa1be59d6fc747ad220f036c86030f05f0419f9";
+    private static final String FIXTURE_CLIENT_HOST = "192.0.2.18";
 
     private TraceFixtures() {
     }
@@ -44,7 +45,8 @@ public final class TraceFixtures {
     public static void main(String[] args) throws Exception {
         if (args.length == 0) throw new IllegalArgumentException("expected fixture path");
         Path path = Path.of(args[0]);
-        boolean verify = args.length > 1 && "--verify".equals(args[1]);
+        boolean verify = args.length > 1
+            && (Boolean.parseBoolean(args[1]) || "--verify".equals(args[1]));
         String json = JSON.toJSONString(render()) + "\n";
         if (verify) {
             if (!Files.exists(path) || !json.equals(Files.readString(path))) {
@@ -232,6 +234,7 @@ public final class TraceFixtures {
         bean.setTransactionId(transactionId);
         bean.setTransactionState(transactionState);
         bean.setFromTransactionCheck(fromTransactionCheck);
+        bean.setClientHost(FIXTURE_CLIENT_HOST);
         return bean;
     }
 

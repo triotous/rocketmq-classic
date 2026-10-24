@@ -15,6 +15,8 @@
     <query.result.fixture.verify>true</query.result.fixture.verify>
     <!-- Set false only when regenerating the producer core fixture. -->
     <producer.core.fixture.verify>true</producer.core.fixture.verify>
+    <!-- Set false only when regenerating the trace records fixture. -->
+    <trace.fixture.verify>true</trace.fixture.verify>
   </properties>
   <dependencies>
     <dependency>
@@ -860,7 +862,7 @@
               <mainClass>compat.TraceFixtures</mainClass>
               <arguments>
                 <argument>${project.basedir}/../../fixtures/tracing/trace-records.json</argument>
-                <argument>--verify</argument>
+                <argument>${trace.fixture.verify}</argument>
               </arguments>
             </configuration>
           </execution>
