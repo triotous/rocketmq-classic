@@ -1,5 +1,43 @@
 # Phase 6 requirement and handoff audit
 
+## P18-V01 Java common thread-pool diagnostics source disposition — 2026-10-24
+
+The pinned 5.5.1 common module has a public `ThreadPoolMonitor` with its
+implicit public constructor, `config`, three `createAndMonitor` overloads,
+`logThreadPoolStatus`, `init` and `shutdown`; `ThreadPoolWrapper` exposes a
+builder, getters/setters and value methods, and `ThreadPoolStatusMonitor`
+declares three methods. Source hashes are `91a953b534d3a753d2b1085cb08705cfd212ebd5e5fd7a7c5a254608fd155df9`
+(`ThreadPoolMonitor.java`),
+`244773886ec16a908ab031b447951070d74a2cae9abe20e49b982f9741ec4f76`
+(`ThreadPoolWrapper.java`), and
+`d8d9983890425406e26665e357a45186b7ec8ca9cb194135dfb6a7c7b0e86c2a`
+(`ThreadPoolStatusMonitor.java`).
+
+A pinned production-source search found no call sites in the Java client or
+remoting modules; references are confined to the common monitor/wrapper
+implementation. Rust has no equivalent monitoring utility. This records an
+unmapped common diagnostic API outside the client/remoting execution flows,
+not a mapped client feature. Direct callers of that Java common utility do not
+have Rust API parity; broad P18-V01 remains `PARTIAL`.
+
+## P18-V01 Java `ProduceAccumulator` constructor-only surface — 2026-10-24 (`945812b4`)
+
+The pinned client class declares one public constructor,
+`ProduceAccumulator(String)`, and zero public methods. Its batching operations
+are package-private/private and are reached through `DefaultMQProducer`; Rust
+keeps the corresponding accumulator private inside `Producer` and exposes the
+mapped batching settings and send operations there. The invoked Producer core
+fixture records the constructor and empty public-method list in
+`produceAccumulatorApi`; fixture SHA-256 is
+`e7756ff8a7da4bac09de942e5eebf3e4886f933fb5f8483e4c7c7a8f61e228ff`.
+The updated fixture generator source SHA-256 is
+`3cbfb2c20ac7cc799331c24a5e1c9c9f999e908c899d009fe4cd9c3c7f1b3102`.
+`pinned_java_produce_accumulator_declared_surface_is_constructor_only` checks
+the inventory. The implementation source SHA-256 is
+`89f2fcb62e9654aed52a190aa040ce4fd80eb62779e607910fdccb328d08df1b`.
+This records the constructor-only internal type without exporting a Rust
+wrapper; broad P18-V01 remains `PARTIAL`.
+
 ## P18-V01 `ConsumeMessagePopOrderlyService` public surface disposition — 2026-10-24 (`43ab1572`)
 
 The pinned Java 5.5.1 class has one public constructor and 15 declared public
