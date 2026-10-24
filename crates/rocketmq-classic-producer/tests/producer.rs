@@ -2505,12 +2505,23 @@ fn producer_auto_batch_getter_and_setter_follow_accumulator_lifecycle() {
     );
 }
 
+fn accumulator_fixture_config(group: &str, instance_name: &str) -> ProducerConfig {
+    let mut config = ProducerConfig::new(group).unwrap();
+    config
+        .client_config_mut()
+        .set_instance_name(Some(instance_name.to_owned()));
+    config
+}
+
 #[test]
 fn producer_runtime_accumulator_settings_match_java_fixture() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
     let expected = &fixture["runtimeAccumulatorSettings"];
-    let producer = Producer::new(ProducerConfig::new("runtime-accumulator-fixture").unwrap());
+    let producer = Producer::new(accumulator_fixture_config(
+        "runtime-accumulator-fixture",
+        "runtime-accumulator-fixture",
+    ));
 
     assert_eq!(producer.batch_max_delay_millis(), 0);
     assert_eq!(producer.batch_max_bytes(), 0);
@@ -2580,7 +2591,10 @@ fn producer_runtime_accumulator_settings_match_java_fixture() {
             .unwrap() as i32
     );
 
-    let configured = Producer::new(ProducerConfig::new("configured-before-accumulator").unwrap());
+    let configured = Producer::new(accumulator_fixture_config(
+        "configured-before-accumulator",
+        "configured-before-accumulator",
+    ));
     configured.set_batch_max_delay_millis(25).unwrap();
     configured.set_batch_max_bytes(65_536).unwrap();
     configured.set_total_batch_max_bytes(1_048_576).unwrap();
@@ -2607,7 +2621,10 @@ fn producer_runtime_accumulator_settings_match_java_fixture() {
             .unwrap()
     );
 
-    let invalid = Producer::new(ProducerConfig::new("invalid-before-accumulator").unwrap());
+    let invalid = Producer::new(accumulator_fixture_config(
+        "invalid-before-accumulator",
+        "invalid-before-accumulator",
+    ));
     assert!(invalid.set_batch_max_delay_millis(0).is_ok());
     assert!(matches!(
         invalid.init_produce_accumulator(),

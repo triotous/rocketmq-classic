@@ -27,6 +27,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ConcurrentMap;
+import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.Validators;
 import org.apache.rocketmq.client.MQAdmin;
@@ -36,6 +37,7 @@ import org.apache.rocketmq.client.hook.SendMessageContext;
 import org.apache.rocketmq.client.hook.SendMessageHook;
 import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl;
+import org.apache.rocketmq.client.impl.MQClientManager;
 import org.apache.rocketmq.client.impl.producer.TopicPublishInfo;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.client.impl.MQClientAPIImpl;
@@ -741,6 +743,7 @@ public final class ProducerCoreFixtures {
         result.put("mqFaultStrategyApi", publicApiSurface(MQFaultStrategy.class));
         result.put("mqFaultStrategyBrokerFilterApi", publicApiSurface(MQFaultStrategy.BrokerFilter.class));
         result.put("produceAccumulatorApi", publicApiSurface(ProduceAccumulator.class));
+        result.put("produceAccumulatorClientIdCache", produceAccumulatorClientIdCache());
 
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("producerGroup", producer.getProducerGroup());
@@ -1391,6 +1394,27 @@ public final class ProducerCoreFixtures {
         } catch (ReflectiveOperationException error) {
             throw new IllegalStateException("Could not inspect producer implementation field " + fieldName, error);
         }
+    }
+
+    private static Map<String, Object> produceAccumulatorClientIdCache() {
+        ClientConfig firstConfig = new ClientConfig();
+        firstConfig.setClientIP("192.0.2.18");
+        firstConfig.setInstanceName("phase18-accumulator-cache");
+        ClientConfig sameIdConfig = firstConfig.cloneClientConfig();
+        ClientConfig otherIdConfig = firstConfig.cloneClientConfig();
+        otherIdConfig.setInstanceName("phase18-accumulator-cache-other");
+
+        MQClientManager manager = MQClientManager.getInstance();
+        ProduceAccumulator first = manager.getOrCreateProduceAccumulator(firstConfig);
+        ProduceAccumulator sameId = manager.getOrCreateProduceAccumulator(sameIdConfig);
+        ProduceAccumulator otherId = manager.getOrCreateProduceAccumulator(otherIdConfig);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("clientId", firstConfig.buildMQClientId());
+        result.put("sameClientId", sameIdConfig.buildMQClientId());
+        result.put("otherClientId", otherIdConfig.buildMQClientId());
+        result.put("sameClientIdReusesAccumulator", first == sameId);
+        result.put("differentClientIdUsesDifferentAccumulator", first != otherId);
+        return result;
     }
 
     private static Map<String, Object> runtimeAccumulatorSettings() {

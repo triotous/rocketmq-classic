@@ -1,7 +1,7 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     sync::{
-        Arc, OnceLock, RwLock, Weak,
+        Arc, Mutex as StdMutex, OnceLock, RwLock, Weak,
         atomic::{AtomicBool, AtomicI32, AtomicI64, Ordering},
     },
     time::{Duration, Instant as StdInstant},
@@ -69,6 +69,58 @@ enum State {
     Shutdown,
 }
 
+pub(crate) struct SharedAutoBatchAccumulator {
+    pub(crate) engine: AutoBatchAccumulator,
+    pub(crate) settings: RwLock<AccumulatorSettings>,
+    pub(crate) settings_changed: tokio::sync::watch::Sender<u64>,
+}
+
+type AccumulatorRegistryKey = (usize, String);
+type AccumulatorRegistry = StdMutex<HashMap<AccumulatorRegistryKey, AccumulatorRegistryEntry>>;
+
+struct AccumulatorRegistryEntry {
+    _manager_token: Arc<()>,
+    accumulator: Arc<SharedAutoBatchAccumulator>,
+}
+
+impl SharedAutoBatchAccumulator {
+    fn new() -> Self {
+        let (settings_changed, _) = tokio::sync::watch::channel(0);
+        Self {
+            engine: AutoBatchAccumulator::default(),
+            settings: RwLock::new(AccumulatorSettings::default()),
+            settings_changed,
+        }
+    }
+
+    fn for_client(manager: &ClientRuntimeManager, client_id: String) -> Arc<Self> {
+        static ACCUMULATORS: OnceLock<AccumulatorRegistry> = OnceLock::new();
+        let mut accumulators = ACCUMULATORS
+            .get_or_init(|| StdMutex::new(HashMap::new()))
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let manager_token = manager.cache_identity_token();
+        let key = (Arc::as_ptr(&manager_token) as usize, client_id);
+        if let Some(entry) = accumulators.get(&key) {
+            return entry.accumulator.clone();
+        }
+        let accumulator = Arc::new(Self::new());
+        accumulators.insert(
+            key,
+            AccumulatorRegistryEntry {
+                _manager_token: manager_token,
+                accumulator: accumulator.clone(),
+            },
+        );
+        accumulator
+    }
+
+    fn notify_settings_changed(&self) {
+        self.settings_changed
+            .send_modify(|revision| *revision = revision.wrapping_add(1));
+    }
+}
+
 /// Java-compatible producer lifecycle and send surface.
 pub struct Producer {
     pub(crate) config: ProducerConfig,
@@ -81,13 +133,11 @@ pub struct Producer {
     state: tokio::sync::Mutex<State>,
     service_state: RwLock<Option<ProducerServiceState>>,
     detector_task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
-    pub(crate) auto_batch_accumulator: AutoBatchAccumulator,
+    pub(crate) auto_batch_accumulator: OnceLock<Arc<SharedAutoBatchAccumulator>>,
     accumulator_initialized: AtomicBool,
     batch_max_delay_millis: AtomicI32,
     batch_max_bytes: AtomicI64,
     total_batch_max_bytes: AtomicI64,
-    live_accumulator_settings: RwLock<AccumulatorSettings>,
-    accumulator_settings_changed: tokio::sync::watch::Sender<u64>,
     pub(crate) auto_batch_tasks: tokio::sync::Mutex<Vec<JoinHandle<()>>>,
     pub(crate) self_weak: OnceLock<Weak<Producer>>,
     pub(crate) request_future_scheduler_id: Arc<()>,
@@ -307,8 +357,6 @@ impl Producer {
         let batch_max_delay_millis = config.batch_max_delay_millis().unwrap_or(-1);
         let batch_max_bytes = config.batch_max_bytes().unwrap_or(-1);
         let total_batch_max_bytes = config.total_batch_max_bytes_input().unwrap_or(-1);
-        let accumulator_settings = config.accumulator_settings().unwrap_or_default();
-        let (accumulator_settings_changed, _) = tokio::sync::watch::channel(0);
         let backpressure_send_num = Arc::new(AdjustableSemaphore::new(
             config.backpressure_async_send_num(),
         ));
@@ -333,13 +381,11 @@ impl Producer {
             state: tokio::sync::Mutex::new(State::Created),
             service_state: RwLock::new(Some(ProducerServiceState::CreateJust)),
             detector_task: tokio::sync::Mutex::new(None),
-            auto_batch_accumulator: AutoBatchAccumulator::default(),
+            auto_batch_accumulator: OnceLock::new(),
             accumulator_initialized: AtomicBool::new(false),
             batch_max_delay_millis: AtomicI32::new(batch_max_delay_millis),
             batch_max_bytes: AtomicI64::new(batch_max_bytes),
             total_batch_max_bytes: AtomicI64::new(total_batch_max_bytes),
-            live_accumulator_settings: RwLock::new(accumulator_settings),
-            accumulator_settings_changed,
             auto_batch_tasks: tokio::sync::Mutex::new(Vec::new()),
             self_weak: OnceLock::new(),
             request_future_scheduler_id: Arc::new(()),
@@ -547,7 +593,8 @@ impl Producer {
         if !self.accumulator_initialized.load(Ordering::SeqCst) {
             return 0;
         }
-        self.live_accumulator_settings
+        self.shared_auto_batch_accumulator()
+            .settings
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .max_delay_millis
@@ -564,11 +611,13 @@ impl Producer {
         if !(1..=30_000).contains(&value) {
             return Err(ProducerError::InvalidBatchMaxDelay(value));
         }
-        self.live_accumulator_settings
+        let accumulator = self.shared_auto_batch_accumulator();
+        accumulator
+            .settings
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .max_delay_millis = value;
-        self.notify_accumulator_settings_changed();
+        accumulator.notify_settings_changed();
         Ok(())
     }
 
@@ -578,7 +627,8 @@ impl Producer {
         if !self.accumulator_initialized.load(Ordering::SeqCst) {
             return 0;
         }
-        self.live_accumulator_settings
+        self.shared_auto_batch_accumulator()
+            .settings
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .max_bytes as i64
@@ -594,11 +644,13 @@ impl Producer {
         if !(1..=2 * 1024 * 1024).contains(&value) {
             return Err(ProducerError::InvalidBatchMaxBytes(value));
         }
-        self.live_accumulator_settings
+        let accumulator = self.shared_auto_batch_accumulator();
+        accumulator
+            .settings
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .max_bytes = value as usize;
-        self.notify_accumulator_settings_changed();
+        accumulator.notify_settings_changed();
         Ok(())
     }
 
@@ -620,11 +672,13 @@ impl Producer {
             return Err(ProducerError::InvalidTotalBatchMaxBytes(value));
         }
         let value = usize::try_from(value).unwrap_or(usize::MAX);
-        self.live_accumulator_settings
+        let accumulator = self.shared_auto_batch_accumulator();
+        accumulator
+            .settings
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .total_max_bytes = value;
-        self.notify_accumulator_settings_changed();
+        accumulator.notify_settings_changed();
         Ok(())
     }
 
@@ -638,41 +692,53 @@ impl Producer {
 
     pub(crate) fn effective_accumulator_settings(&self) -> AccumulatorSettings {
         *self
-            .live_accumulator_settings
+            .shared_auto_batch_accumulator()
+            .settings
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     pub(crate) fn subscribe_accumulator_settings(&self) -> tokio::sync::watch::Receiver<u64> {
-        self.accumulator_settings_changed.subscribe()
+        self.shared_auto_batch_accumulator()
+            .settings_changed
+            .subscribe()
     }
 
-    fn notify_accumulator_settings_changed(&self) {
-        self.accumulator_settings_changed
-            .send_modify(|revision| *revision = revision.wrapping_add(1));
+    fn shared_auto_batch_accumulator(&self) -> &Arc<SharedAutoBatchAccumulator> {
+        self.auto_batch_accumulator
+            .get()
+            .expect("auto-batch accumulator must be initialized")
     }
 
-    /// Initializes the producer-owned accumulator. This is idempotent and is
-    /// called by [`Self::start`] at the same point that Java creates its
-    /// `ProduceAccumulator`.
+    pub(crate) fn auto_batch_engine(&self) -> &AutoBatchAccumulator {
+        &self.shared_auto_batch_accumulator().engine
+    }
+
+    /// Initializes the client-ID-owned accumulator. Java caches this helper
+    /// by `buildMQClientId`, so Producers sharing a client identity also share
+    /// pending batches and their live thresholds.
     pub fn init_produce_accumulator(&self) -> Result<(), ProducerError> {
-        let was_initialized = self.accumulator_initialized.swap(true, Ordering::SeqCst);
-        let mut settings = self
-            .live_accumulator_settings
+        let accumulator = self.auto_batch_accumulator.get_or_init(|| {
+            SharedAutoBatchAccumulator::for_client(
+                &self.manager,
+                self.config.client_config().build_client_id(),
+            )
+        });
+        self.accumulator_initialized.store(true, Ordering::SeqCst);
+        let mut settings = accumulator
+            .settings
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !was_initialized {
-            *settings = AccumulatorSettings::default();
-        }
+        let mut changed = false;
 
         let delay = self.batch_max_delay_millis.load(Ordering::SeqCst);
         if delay > -1 {
             if !(1..=30_000).contains(&delay) {
                 return Err(ProducerError::InvalidBatchMaxDelay(delay));
             }
-            settings.max_delay_millis = delay;
-            if was_initialized {
-                self.notify_accumulator_settings_changed();
+            if settings.max_delay_millis != delay {
+                settings.max_delay_millis = delay;
+                changed = true;
             }
         }
         let max_bytes = self.batch_max_bytes.load(Ordering::SeqCst);
@@ -680,9 +746,9 @@ impl Producer {
             if !(1..=2 * 1024 * 1024).contains(&max_bytes) {
                 return Err(ProducerError::InvalidBatchMaxBytes(max_bytes));
             }
-            settings.max_bytes = max_bytes as usize;
-            if was_initialized {
-                self.notify_accumulator_settings_changed();
+            if settings.max_bytes != max_bytes as usize {
+                settings.max_bytes = max_bytes as usize;
+                changed = true;
             }
         }
         let total_max_bytes = self.total_batch_max_bytes.load(Ordering::SeqCst);
@@ -690,10 +756,15 @@ impl Producer {
             if total_max_bytes <= 0 {
                 return Err(ProducerError::InvalidTotalBatchMaxBytes(total_max_bytes));
             }
-            settings.total_max_bytes = usize::try_from(total_max_bytes).unwrap_or(usize::MAX);
-            if was_initialized {
-                self.notify_accumulator_settings_changed();
+            let total_max_bytes = usize::try_from(total_max_bytes).unwrap_or(usize::MAX);
+            if settings.total_max_bytes != total_max_bytes {
+                settings.total_max_bytes = total_max_bytes;
+                changed = true;
             }
+        }
+        drop(settings);
+        if changed {
+            accumulator.notify_settings_changed();
         }
         Ok(())
     }
@@ -1068,6 +1139,7 @@ impl Producer {
                 return Err(error.into());
             }
         }
+        self.resume_auto_batch_tasks().await?;
         self.initialize_configured_topic_routes(&runtime).await?;
         *state = State::Started {
             runtime: Arc::downgrade(&runtime),
@@ -1367,7 +1439,11 @@ impl Producer {
     }
 
     async fn stop_auto_batch(&self) {
-        self.auto_batch_accumulator.close().await;
+        if let Some(accumulator) = self.auto_batch_accumulator.get() {
+            if accumulator.engine.stop().await {
+                accumulator.notify_settings_changed();
+            }
+        }
         let mut tasks = self.auto_batch_tasks.lock().await;
         for task in tasks.drain(..) {
             task.abort();

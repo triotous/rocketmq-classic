@@ -273,6 +273,7 @@ impl ProducerConfig {
         ))
     }
 
+    #[cfg(test)]
     pub(crate) fn accumulator_settings(&self) -> Result<AccumulatorSettings, ProducerError> {
         Self::accumulator_settings_from_raw(
             self.batch_max_delay_millis.unwrap_or(-1),

@@ -1,6 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
@@ -11,7 +14,7 @@ use tokio::{
     time::Instant,
 };
 
-use crate::ProducerError;
+use crate::{Producer, ProducerError};
 
 /// Constructor-only public counterpart of Java `ProduceAccumulator`.
 ///
@@ -46,6 +49,13 @@ pub(crate) struct BatchKey {
     pub(crate) mode: SendMode,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct BatchLimits {
+    pub(crate) max_delay: Duration,
+    pub(crate) max_bytes: usize,
+    pub(crate) total_max_bytes: usize,
+}
+
 impl BatchKey {
     pub(crate) fn new(message: &Message, queue: Option<MessageQueue>, mode: SendMode) -> Self {
         Self {
@@ -64,6 +74,7 @@ struct PendingBatch {
     body_bytes: usize,
     messages: Vec<Message>,
     waiters: Vec<oneshot::Sender<BatchResponse>>,
+    owner: Option<Arc<Producer>>,
 }
 
 pub(crate) struct ReadyBatch {
@@ -71,6 +82,7 @@ pub(crate) struct ReadyBatch {
     pub(crate) messages: Vec<Message>,
     pub(crate) waiters: Vec<oneshot::Sender<BatchResponse>>,
     pub(crate) body_bytes: usize,
+    pub(crate) owner: Option<Arc<Producer>>,
 }
 
 pub(crate) enum EnqueueResult {
@@ -99,6 +111,7 @@ struct AccumulatorState {
     entries: HashMap<BatchKey, PendingBatch>,
     current_hold_size: usize,
     next_generation: u64,
+    running: bool,
     closed: bool,
 }
 
@@ -108,9 +121,11 @@ struct AccumulatorState {
 pub(crate) struct AutoBatchAccumulator {
     state: Mutex<AccumulatorState>,
     closed: AtomicBool,
+    running: AtomicBool,
 }
 
 impl AutoBatchAccumulator {
+    #[cfg(test)]
     pub(crate) async fn enqueue(
         &self,
         message: Message,
@@ -119,6 +134,40 @@ impl AutoBatchAccumulator {
         max_delay: Duration,
         max_bytes: usize,
         total_max_bytes: usize,
+    ) -> Result<EnqueueResult, ProducerError> {
+        self.enqueue_with_owner(
+            message,
+            queue,
+            mode,
+            BatchLimits {
+                max_delay,
+                max_bytes,
+                total_max_bytes,
+            },
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn enqueue_owned(
+        &self,
+        message: Message,
+        queue: Option<MessageQueue>,
+        mode: SendMode,
+        limits: BatchLimits,
+        owner: Arc<Producer>,
+    ) -> Result<EnqueueResult, ProducerError> {
+        self.enqueue_with_owner(message, queue, mode, limits, Some(owner))
+            .await
+    }
+
+    async fn enqueue_with_owner(
+        &self,
+        message: Message,
+        queue: Option<MessageQueue>,
+        mode: SendMode,
+        limits: BatchLimits,
+        owner: Option<Arc<Producer>>,
     ) -> Result<EnqueueResult, ProducerError> {
         let (sender, receiver) = oneshot::channel();
         let key = BatchKey::new(&message, queue, mode);
@@ -130,7 +179,7 @@ impl AutoBatchAccumulator {
         }
 
         // Java checks the current hold size before adding the next message.
-        if state.current_hold_size >= total_max_bytes {
+        if state.current_hold_size >= limits.total_max_bytes {
             return Ok(EnqueueResult::Bypass);
         }
         state.current_hold_size = state.current_hold_size.saturating_add(message_size);
@@ -149,13 +198,14 @@ impl AutoBatchAccumulator {
                 body_bytes: 0,
                 messages: Vec::new(),
                 waiters: Vec::new(),
+                owner,
             });
         pending.body_bytes = pending.body_bytes.saturating_add(message_size);
         pending.messages.push(message);
         pending.waiters.push(sender);
         let generation = pending.generation;
-        let flush_at = pending.created_at + max_delay;
-        let should_flush = pending.body_bytes > max_bytes;
+        let flush_at = pending.created_at + limits.max_delay;
+        let should_flush = pending.body_bytes > limits.max_bytes || Instant::now() >= flush_at;
 
         if should_flush {
             let Some(pending) = state.entries.remove(&key) else {
@@ -171,6 +221,7 @@ impl AutoBatchAccumulator {
                     messages: pending.messages,
                     waiters: pending.waiters,
                     body_bytes: pending.body_bytes,
+                    owner: pending.owner,
                 },
             })
         } else {
@@ -179,7 +230,7 @@ impl AutoBatchAccumulator {
                 key,
                 generation,
                 flush_at,
-                schedule_timer: is_new,
+                schedule_timer: is_new && state.running,
             })
         }
     }
@@ -209,6 +260,7 @@ impl AutoBatchAccumulator {
                 messages: batch.messages,
                 waiters: batch.waiters,
                 body_bytes: batch.body_bytes,
+                owner: batch.owner,
             });
         }
         PendingBatchStatus::WaitUntil(deadline)
@@ -219,12 +271,51 @@ impl AutoBatchAccumulator {
         state.current_hold_size = state.current_hold_size.saturating_sub(body_bytes);
     }
 
+    #[cfg(test)]
     pub(crate) async fn close(&self) {
         self.closed.store(true, Ordering::Release);
         let mut state = self.state.lock().await;
         state.closed = true;
+        state.running = false;
+        self.running.store(false, Ordering::Release);
         state.current_hold_size = 0;
         state.entries.clear();
+    }
+
+    pub(crate) async fn start(&self) -> bool {
+        let mut state = self.state.lock().await;
+        if state.closed || state.running {
+            return false;
+        }
+        state.running = true;
+        self.running.store(true, Ordering::Release);
+        true
+    }
+
+    pub(crate) async fn stop(&self) -> bool {
+        let mut state = self.state.lock().await;
+        if state.closed || !state.running {
+            return false;
+        }
+        state.running = false;
+        self.running.store(false, Ordering::Release);
+        true
+    }
+
+    pub(crate) fn is_running(&self) -> bool {
+        self.running.load(Ordering::Acquire)
+    }
+
+    pub(crate) async fn pending_timers(
+        &self,
+        max_delay: Duration,
+    ) -> Vec<(BatchKey, u64, Instant)> {
+        let state = self.state.lock().await;
+        state
+            .entries
+            .iter()
+            .map(|(key, batch)| (key.clone(), batch.generation, batch.created_at + max_delay))
+            .collect()
     }
 
     pub(crate) fn is_closed(&self) -> bool {
@@ -368,7 +459,7 @@ mod tests {
                 Message::new("orders", vec![1; 8]),
                 None,
                 SendMode::Sync,
-                Duration::from_millis(1),
+                Duration::from_millis(100),
                 1_000,
                 10_000,
             )
@@ -380,13 +471,73 @@ mod tests {
 
         tokio::time::sleep_until(flush_at).await;
         let PendingBatchStatus::Ready(ready) = accumulator
-            .recheck(&key, generation, Duration::from_millis(1), 1_000)
+            .recheck(&key, generation, Duration::from_millis(100), 1_000)
             .await
         else {
             panic!("the batch should be ready at its hold deadline");
         };
         assert_eq!(ready.messages.len(), 1);
         assert_eq!(ready.body_bytes, 8);
+    }
+
+    #[tokio::test]
+    async fn stopped_accumulator_retains_pending_batches_for_restart() {
+        let accumulator = AutoBatchAccumulator::default();
+        assert!(accumulator.start().await);
+        let limits = Duration::from_millis(100);
+        let EnqueueResult::Queued {
+            key,
+            generation,
+            schedule_timer,
+            ..
+        } = accumulator
+            .enqueue(
+                Message::new("orders", vec![1]),
+                None,
+                SendMode::Sync,
+                limits,
+                100,
+                100,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("first message should remain queued");
+        };
+        assert!(schedule_timer);
+
+        assert!(accumulator.stop().await);
+        let EnqueueResult::Queued { schedule_timer, .. } = accumulator
+            .enqueue(
+                Message::new("orders", vec![2]),
+                None,
+                SendMode::Sync,
+                limits,
+                100,
+                100,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("second message should join the stopped batch");
+        };
+        assert!(!schedule_timer);
+
+        tokio::time::sleep(Duration::from_millis(110)).await;
+        assert!(accumulator.start().await);
+        let pending = accumulator.pending_timers(limits).await;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].0, key);
+        assert_eq!(pending[0].1, generation);
+
+        let PendingBatchStatus::Ready(ready) =
+            accumulator.recheck(&key, generation, limits, 100).await
+        else {
+            panic!("the retained batch should be ready after its hold deadline");
+        };
+        assert_eq!(ready.messages.len(), 2);
+        accumulator.release(ready.body_bytes).await;
+        accumulator.close().await;
     }
 
     #[tokio::test]

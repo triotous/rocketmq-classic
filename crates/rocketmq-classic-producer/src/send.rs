@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,
-    sync::Arc,
+    sync::{Arc, Weak},
     time::{Duration, Instant as StdInstant, SystemTime, UNIX_EPOCH},
 };
 
@@ -20,7 +20,7 @@ use tokio::time::Instant;
 
 use crate::{
     AsyncSenderTask, Producer, ProducerError,
-    accumulator::{BatchKey, EnqueueResult, PendingBatchStatus, ReadyBatch},
+    accumulator::{BatchKey, BatchLimits, EnqueueResult, PendingBatchStatus, ReadyBatch},
     backpressure::AdjustablePermit,
     batch::encode_prepared_batch,
     hooks::{CheckForbiddenContext, SendMessageContext, SendMessageType},
@@ -634,15 +634,23 @@ impl Producer {
         self.started_runtime().await?;
         let accumulator_settings_changed = self.subscribe_accumulator_settings();
         let settings = self.effective_accumulator_settings();
+        let producer_owner = self
+            .self_weak
+            .get()
+            .and_then(Weak::upgrade)
+            .ok_or(ProducerError::NotStarted)?;
         let queued = self
-            .auto_batch_accumulator
-            .enqueue(
+            .auto_batch_engine()
+            .enqueue_owned(
                 accumulated_message,
                 queue.clone(),
                 mode,
-                Duration::from_millis(settings.max_delay_millis as u64),
-                settings.max_bytes,
-                settings.total_max_bytes,
+                BatchLimits {
+                    max_delay: Duration::from_millis(settings.max_delay_millis as u64),
+                    max_bytes: settings.max_bytes,
+                    total_max_bytes: settings.total_max_bytes,
+                },
+                producer_owner,
             )
             .await?;
 
@@ -692,6 +700,23 @@ impl Producer {
         result.ok_or(ProducerError::Timeout)
     }
 
+    pub(crate) async fn resume_auto_batch_tasks(&self) -> Result<(), ProducerError> {
+        if !self.auto_batch_engine().start().await {
+            return Ok(());
+        }
+        let settings = self.effective_accumulator_settings();
+        let pending = self
+            .auto_batch_engine()
+            .pending_timers(Duration::from_millis(settings.max_delay_millis as u64))
+            .await;
+        let settings_changed = self.subscribe_accumulator_settings();
+        for (key, generation, flush_at) in pending {
+            self.schedule_auto_batch_timer(key, generation, flush_at, settings_changed.clone())
+                .await?;
+        }
+        Ok(())
+    }
+
     async fn schedule_auto_batch_timer(
         &self,
         key: BatchKey,
@@ -718,9 +743,12 @@ impl Producer {
                 let Some(producer) = producer.upgrade() else {
                     return;
                 };
+                if !producer.auto_batch_engine().is_running() {
+                    return;
+                }
                 let settings = producer.effective_accumulator_settings();
                 match producer
-                    .auto_batch_accumulator
+                    .auto_batch_engine()
                     .recheck(
                         &key,
                         generation,
@@ -731,7 +759,7 @@ impl Producer {
                 {
                     PendingBatchStatus::Missing => return,
                     PendingBatchStatus::Ready(batch) => {
-                        producer.flush_auto_batch(batch).await;
+                        let _ = producer.schedule_auto_batch_flush(batch).await;
                         return;
                     }
                     PendingBatchStatus::WaitUntil(deadline) => next_flush = deadline,
@@ -743,15 +771,14 @@ impl Producer {
     }
 
     async fn schedule_auto_batch_flush(&self, batch: ReadyBatch) -> Result<(), ProducerError> {
-        let producer = self
-            .self_weak
-            .get()
+        let producer = batch
+            .owner
+            .as_ref()
             .cloned()
+            .or_else(|| self.self_weak.get().and_then(Weak::upgrade))
             .ok_or(ProducerError::NotStarted)?;
         self.track_auto_batch_task(async move {
-            if let Some(producer) = producer.upgrade() {
-                producer.flush_auto_batch(batch).await;
-            }
+            producer.flush_auto_batch(batch).await;
         })
         .await;
         Ok(())
@@ -759,7 +786,7 @@ impl Producer {
 
     async fn track_auto_batch_task(&self, task: impl Future<Output = ()> + Send + 'static) {
         let mut tasks = self.auto_batch_tasks.lock().await;
-        if self.auto_batch_accumulator.is_closed() {
+        if self.auto_batch_engine().is_closed() {
             return;
         }
         let handle = tokio::spawn(task);
@@ -773,7 +800,7 @@ impl Producer {
             .send_accumulated_batch(&accumulated)
             .await
             .and_then(|result| split_auto_batch_result(result, count));
-        self.auto_batch_accumulator
+        self.auto_batch_engine()
             .release(accumulated.body_bytes)
             .await;
 
@@ -2231,12 +2258,22 @@ mod tests {
     async fn scripted_producer(
         config: crate::ProducerConfig,
     ) -> (Arc<Producer>, [MessageQueue; 2]) {
+        scripted_producer_with_manager(
+            config,
+            rocketmq_classic_core::runtime::ClientRuntimeManager::new(),
+        )
+        .await
+    }
+
+    async fn scripted_producer_with_manager(
+        config: crate::ProducerConfig,
+        manager: rocketmq_classic_core::runtime::ClientRuntimeManager,
+    ) -> (Arc<Producer>, [MessageQueue; 2]) {
         let mut client_config = config.client_config().clone();
         let topic = client_config
             .with_namespace(Some("orders"))
             .unwrap()
             .unwrap_or_else(|| "orders".into());
-        let manager = rocketmq_classic_core::runtime::ClientRuntimeManager::new();
         let producer = Arc::new(Producer::with_runtime_manager(config, manager));
         producer.start().await.unwrap();
         let queues = [
@@ -4309,6 +4346,122 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn auto_batch_is_shared_by_client_id_and_keeps_first_producer_owner() {
+        let mut first_config = crate::ProducerConfig::new("shared-accumulator-owner").unwrap();
+        first_config
+            .client_config_mut()
+            .set_client_ip(Some("192.0.2.18".into()));
+        first_config
+            .client_config_mut()
+            .set_instance_name(Some("phase18-accumulator-cache".into()));
+        first_config.set_batch_max_delay_millis(75);
+        let mut second_config = first_config.clone();
+        second_config.set_producer_group(Some("shared-accumulator-caller".into()));
+        let manager = rocketmq_classic_core::runtime::ClientRuntimeManager::new();
+        let (first, _) = scripted_producer_with_manager(first_config, manager.clone()).await;
+        let (second, _) = scripted_producer_with_manager(second_config, manager.clone()).await;
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let cache = &fixture["produceAccumulatorClientIdCache"];
+
+        assert_eq!(
+            first.config.client_config().build_client_id(),
+            second.config.client_config().build_client_id()
+        );
+        assert_eq!(cache["sameClientIdReusesAccumulator"], true);
+        assert!(Arc::ptr_eq(
+            first.auto_batch_accumulator.get().unwrap(),
+            second.auto_batch_accumulator.get().unwrap()
+        ));
+        assert_eq!(
+            cache["clientId"],
+            first.config.client_config().build_client_id()
+        );
+        assert_eq!(
+            cache["sameClientId"],
+            second.config.client_config().build_client_id()
+        );
+        let mut other_id_config = first.config.clone();
+        other_id_config
+            .client_config_mut()
+            .set_instance_name(Some("phase18-accumulator-cache-other".into()));
+        let other_id = Producer::with_runtime_manager(other_id_config, manager.clone());
+        other_id.init_produce_accumulator().unwrap();
+        assert_eq!(cache["differentClientIdUsesDifferentAccumulator"], true);
+        assert_eq!(
+            cache["otherClientId"],
+            other_id.config.client_config().build_client_id()
+        );
+        assert!(!Arc::ptr_eq(
+            first.auto_batch_accumulator.get().unwrap(),
+            other_id.auto_batch_accumulator.get().unwrap()
+        ));
+        first.set_auto_batch(true);
+        second.set_auto_batch(true);
+        second.set_batch_max_bytes(8_192).unwrap();
+        assert_eq!(first.batch_max_bytes(), 8_192);
+
+        first
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result(
+                "shared-a,shared-b",
+                "shared-offset-a,shared-offset-b",
+                30,
+            ))));
+
+        let mut first_message = Message::new("orders", b"first".to_vec());
+        let first_send = {
+            let producer = first.clone();
+            tokio::spawn(async move { producer.send(&mut first_message).await })
+        };
+        wait_for_scheduled_auto_batch_timer(&first).await;
+        let mut second_message = Message::new("orders", b"second".to_vec());
+        let second_send = {
+            let producer = second.clone();
+            tokio::spawn(async move { producer.send(&mut second_message).await })
+        };
+
+        assert_eq!(first_send.await.unwrap().unwrap().msg_id, "shared-a");
+        assert_eq!(second_send.await.unwrap().unwrap().msg_id, "shared-b");
+        let first_attempts = std::mem::take(&mut first.scripted_transport.lock().unwrap().attempts);
+        let second_attempts =
+            std::mem::take(&mut second.scripted_transport.lock().unwrap().attempts);
+        assert_eq!(first_attempts.len(), 1);
+        assert!(first_attempts[0].batch);
+        assert!(second_attempts.is_empty());
+
+        first.shutdown().await.unwrap();
+        second.shutdown().await.unwrap();
+
+        let mut restart_config = crate::ProducerConfig::new("shared-accumulator-restart").unwrap();
+        *restart_config.client_config_mut() = first.config.client_config().clone();
+        let (restart, _) = scripted_producer_with_manager(restart_config, manager).await;
+        assert_eq!(restart.batch_max_delay_millis(), 75);
+        assert_eq!(restart.batch_max_bytes(), 8_192);
+        restart.set_auto_batch(true);
+        restart
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result(
+                "restarted",
+                "restarted-offset",
+                32,
+            ))));
+        let mut restarted_message = Message::new("orders", b"restart".to_vec());
+        assert_eq!(
+            restart.send(&mut restarted_message).await.unwrap().msg_id,
+            "restarted"
+        );
+        restart.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn auto_batch_aggregate_size_is_validated_after_batch_encoding() {
         let mut config = crate::ProducerConfig::new("auto-batch-aggregate-size").unwrap();
         config.set_max_message_size(64);
@@ -4322,6 +4475,7 @@ mod tests {
             messages,
             waiters: Vec::new(),
             body_bytes: 2,
+            owner: None,
         };
 
         assert!(matches!(

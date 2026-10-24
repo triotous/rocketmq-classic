@@ -167,6 +167,7 @@ impl KeyMutationLocks {
 pub struct ClientRuntimeManager {
     entries: Arc<Mutex<Entries>>,
     mutation_locks: Arc<KeyMutationLocks>,
+    cache_token: Arc<()>,
     top_addressing: Option<Arc<dyn crate::namesrv::TopAddressing>>,
 }
 
@@ -190,6 +191,7 @@ impl ManagerLink {
         ClientRuntimeManager {
             entries,
             mutation_locks,
+            cache_token: Arc::new(()),
             top_addressing: None,
         }
         .remove_client_factory(runtime.client_id(), runtime)
@@ -211,6 +213,7 @@ impl ClientRuntimeManager {
             manager: Self {
                 entries: self.entries.clone(),
                 mutation_locks: self.mutation_locks.clone(),
+                cache_token: self.cache_token.clone(),
                 top_addressing: None,
             },
         }
@@ -219,10 +222,17 @@ impl ClientRuntimeManager {
         Self::default()
     }
 
+    /// Returns the retained identity token for internal manager-scoped caches.
+    #[doc(hidden)]
+    pub fn cache_identity_token(&self) -> Arc<()> {
+        self.cache_token.clone()
+    }
+
     pub fn with_top_addressing(provider: Arc<dyn crate::namesrv::TopAddressing>) -> Self {
         Self {
             entries: Arc::default(),
             mutation_locks: Arc::default(),
+            cache_token: Arc::new(()),
             top_addressing: Some(provider),
         }
     }
