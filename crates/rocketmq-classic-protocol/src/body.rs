@@ -615,15 +615,46 @@ where
     // attachment can likewise leave the Java entry in its original bucket.
     #[allow(clippy::mutable_key_type)]
     let mut assignments = QueryAssignmentSet::with_capacity(values.len());
+    let mut inserted: HashMap<(i32, Option<MessageRequestMode>, i32), Vec<SharedQueryAssignment>> =
+        HashMap::with_capacity(values.len());
+    let mut inserted_null = false;
     for value in values {
-        let assignment = if value.get().trim() == "null" {
+        let assignment: Option<SharedQueryAssignment> = if value.get().trim() == "null" {
             None
         } else {
             Some(SharedValue::new(
                 serde_json::from_str(value.get()).map_err(de::Error::custom)?,
             ))
         };
-        assignments.insert(assignment);
+        let Some(assignment) = assignment else {
+            if !inserted_null {
+                assignments.insert(None);
+                inserted_null = true;
+            }
+            continue;
+        };
+        let bucket_key = assignment.with(MessageQueueAssignment::stable_java_hash_bucket_key);
+        let bucket = inserted.entry(bucket_key).or_default();
+        let duplicate = bucket.iter().try_fold(false, |duplicate, existing| {
+            if duplicate {
+                return Ok(true);
+            }
+            assignment.with(|assignment| {
+                existing.with(|existing| {
+                    assignment
+                        .java_equals(Some(existing as &dyn std::any::Any))
+                        .map_err(|error| match error {
+                            MessageQueueAssignmentEqualsError::NullMessageQueue => {
+                                de::Error::custom("NullPointerException")
+                            }
+                        })
+                })
+            })
+        })?;
+        if !duplicate {
+            assignments.insert(Some(assignment.clone()));
+            bucket.push(assignment);
+        }
     }
     Ok(Some(SharedValue::new(assignments)))
 }
@@ -1791,9 +1822,48 @@ impl MessageQueueAssignment {
         }))
     }
 
+    fn stable_java_hash_bucket_key(&self) -> (i32, Option<MessageRequestMode>, i32) {
+        // The enum identity hash is process-local. Keeping the mode value as a
+        // separate key component preserves exact bucket equivalence for equal
+        // modes without inventing hashes for distinct Java enum objects.
+        (
+            self.java_queue_hash_code(),
+            self.mode,
+            self.java_attachments_hash_code(),
+        )
+    }
+
+    fn java_queue_hash_code(&self) -> i32 {
+        self.message_queue
+            .as_ref()
+            .map(|queue| queue.with(MessageQueue::java_hash_code))
+            .unwrap_or(0)
+    }
+
+    fn java_attachments_hash_code(&self) -> i32 {
+        self.attachments
+            .as_ref()
+            .map(|attachments| {
+                attachments.with(|attachments| {
+                    attachments.iter().fold(0_i32, |hash, (key, value)| {
+                        let key_hash = key.as_deref().map_or(0, java_assignment_string_hash);
+                        let value_hash = value.as_deref().map_or(0, java_assignment_string_hash);
+                        hash.wrapping_add(key_hash ^ value_hash)
+                    })
+                })
+            })
+            .unwrap_or(0)
+    }
+
     pub fn java_to_string(&self) -> String {
         self.to_string()
     }
+}
+
+fn java_assignment_string_hash(value: &str) -> i32 {
+    value.encode_utf16().fold(0_i32, |hash, unit| {
+        hash.wrapping_mul(31).wrapping_add(i32::from(unit))
+    })
 }
 
 impl std::fmt::Display for MessageQueueAssignment {
@@ -14173,6 +14243,16 @@ mod tests {
                 "{}: {decoded:?}",
                 case["name"]
             );
+            if case["name"] == "duplicate-null-queue-assignments" {
+                assert_eq!(case["error"], "NullPointerException");
+                assert!(
+                    decoded
+                        .as_ref()
+                        .unwrap_err()
+                        .to_string()
+                        .contains("NullPointerException")
+                );
+            }
             if let Ok(decoded) = decoded {
                 assert_eq!(
                     serde_json::to_value(decoded).unwrap(),
@@ -17716,7 +17796,7 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let cases = fixture["assignmentBodyCases"].as_array().unwrap();
-        assert_eq!(cases.len(), 30);
+        assert_eq!(cases.len(), 33);
         for required in [
             "fraction-field",
             "string-element",
@@ -17733,6 +17813,9 @@ mod tests {
             "message-queue-array",
             "message-queue-empty-object",
             "message-queue-object",
+            "same-mode-attachment-hash-collision",
+            "same-mode-different-attachment-hash",
+            "duplicate-null-queue-assignments",
         ] {
             assert!(
                 cases.iter().any(|case| case["name"] == required),
@@ -18818,11 +18901,11 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
         let collision = &fixture["assignmentHashCollisionCases"];
 
-        // MessageQueueAssignment.equals ignores mode and attachments, while its Java
-        // hash includes both. The fixture constructs an equal-hash pair using each
-        // JVM's enum identity hash; that process-local collision is not portable to
-        // a Rust HashSet with the lawful all-fields Eq/Hash contract.
+        // This cross-mode oracle cancels the JVM-local enum identity-hash delta.
+        // Stable same-mode collisions are covered by assignmentBodyCases and the
+        // response decoder, which leaves the DTO's lawful Rust Eq/Hash unchanged.
         assert_eq!(collision["sameQueueEquals"], true);
+        assert_eq!(collision["sameMode"], false);
         assert_eq!(collision["equalHash"], true);
         assert_eq!(collision["setSize"], 1);
         assert_eq!(collision["collisionDeduplicates"], true);

@@ -274,6 +274,19 @@ public final class RuntimeLookupFixtures {
         String pop = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},"
             + "\"mode\":\"POP\"}";
         cases.add(assignmentBodyCase("same-queue-different-mode", "[" + pull + "," + pop + "]", true));
+        String attachmentHashCollisionLeft = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},"
+            + "\"mode\":\"PULL\",\"attachments\":{\"Aa\":\"value\"}}";
+        String attachmentHashCollisionRight = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},"
+            + "\"mode\":\"PULL\",\"attachments\":{\"BB\":\"value\"}}";
+        cases.add(assignmentBodyCase("same-mode-attachment-hash-collision",
+            "[" + attachmentHashCollisionLeft + "," + attachmentHashCollisionRight + "]", true));
+        String attachmentDifferentHashLeft = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},"
+            + "\"mode\":\"PULL\",\"attachments\":{\"A\":\"value\"}}";
+        String attachmentDifferentHashRight = "{\"messageQueue\":{\"topic\":\"topic\",\"brokerName\":\"broker\",\"queueId\":2},"
+            + "\"mode\":\"PULL\",\"attachments\":{\"B\":\"value\"}}";
+        cases.add(assignmentBodyCase("same-mode-different-attachment-hash",
+            "[" + attachmentDifferentHashLeft + "," + attachmentDifferentHashRight + "]", true));
+        cases.add(assignmentBodyCase("duplicate-null-queue-assignments", "[{},{}]", true));
         cases.add(assignmentBodyRawCase("duplicate-root-field-last-wins",
             "{\"messageQueueAssignments\":[{}],\"messageQueueAssignments\":[]}"));
         cases.add(assignmentBodyCase("duplicate-nested-mode-last-wins",
@@ -2548,6 +2561,7 @@ public final class RuntimeLookupFixtures {
         assignments.add(pop);
         Map<String, Object> result = new TreeMap<>();
         result.put("sameQueueEquals", pull.equals(pop));
+        result.put("sameMode", pull.getMode() == pop.getMode());
         result.put("equalHash", pull.hashCode() == pop.hashCode());
         result.put("setSize", assignments.size());
         result.put("collisionDeduplicates", assignments.size() == 1);
