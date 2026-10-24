@@ -26,13 +26,14 @@ The pinned Java `client/MqClientAdmin.java` declares 19 public asynchronous
 operations and `MQClientAPIExt.getMqClientAdmin()` exposes its public
 `MqClientAdminImpl`. The interface includes query, topic/subscription-group
 updates and deletion, offset reset, cluster/consumer inspection, statistics,
-and direct-consume operations. The existing matrix covers `MQAdmin` and the
-Producer/Push/Pull facades but does not crosswalk this separate interface.
-Rust has related operations in `MQClientApi` and the facades. All 19 methods
-now have source-backed typed RPC slices, but the full method-by-method audit
-of defaults, input/error branches, response DTO APIs and reverse exports is
-still open. Public status and proxy call sites do not establish an exclusion
-from the client parity contract.
+and direct-consume operations. The earlier `MQAdmin` and Producer/Push/Pull
+facade rows did not crosswalk this separate interface. The matrix now records
+source-backed typed RPC slices and invoked Java fixtures for all 19 methods,
+and the Rust wrapper surface exposes all 19 through
+`MQClientApi::mq_client_admin()`. The full method-by-method audit of defaults,
+input/error branches, response DTO APIs and reverse exports remains open.
+Public status and proxy call sites do not establish an exclusion from the
+client parity contract.
 
 The Java method inventory is `queryMessage`, `getTopicStatsInfo`,
 `queryConsumeTimeSpan`, `updateOrCreateTopic`,

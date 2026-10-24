@@ -417,3 +417,15 @@ Detailed run records for the focused code and current-tree gate runs are in
   remote Ubuntu CI remain unverified. Phase 19 Broker/Docker validation remains
   separate. No push or remote CI ran; Phase 19-owned worktree paths remain
   untouched.
+
+## P18-V01 MqClientAdmin inventory checkbox reconciliation — 2026-10-24 13:25 UTC
+
+- Corrected the stale 2026-10-18 unchecked `MqClientAdmin` discovery item.
+  Code commits `f05833a7` and `4ddd9266` now provide source-backed typed RPC
+  slices and invoked Java fixtures for all 19 methods, and the Rust wrapper
+  surface test compile-calls all 19 methods.
+- The Phase 17 matrix and release checklist now distinguish that closed
+  method-inventory/wrapper slice from the still-open defaults, input/error,
+  response DTO API, and reverse-export audit. Broad P18-V01 remains PARTIAL.
+- Documentation-only correction; current Phase 19-owned worktree paths remain
+  untouched.
