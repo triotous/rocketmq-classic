@@ -166,3 +166,12 @@ Detailed run records for the focused code and current-tree gate runs are in
   the closed scoped name inventory from still-open method behavior,
   overload/input/error/control-flow and Java-side omission reconciliation.
 - Docs-only; no source or tests changed. `git diff --check` passed.
+
+## P18-V01 historical status reconciliation — 2026-10-24
+
+- Corrected two release-checklist entries whose later follow-ups had already
+  closed their listed current gaps: controller DTO behavior and GO_AWAY
+  wrapper-lock contention. The historical scan evidence and broad P18-V01
+  PARTIAL status remain explicit.
+- Documentation-only; no code or tests changed. `git diff --check` passed.
+- Phase 19-owned paths were not staged or modified.
