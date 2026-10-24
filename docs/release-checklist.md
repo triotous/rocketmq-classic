@@ -9828,3 +9828,21 @@ owner-specific checks belong in the manual handoff.
   separate. No push or remote CI was run. The four protected Phase 19 worktree
   paths remain untouched and unstaged. Run record:
   `rlogs/2026/10/24-phase-18-go-away-explicit-close-parity__20261024T093914Z.rlog`.
+
+## P18-V01 Remoting `ErrorSource` identity equality — 2026-10-24 (`1e928372`)
+
+- [x] `ErrorSource` now compares wrapped error identity, matching Java
+  `Throwable.equals`; cloning an `ErrorSource` preserves that identity, while
+  separate causes with the same message compare unequal. The transport error
+  classification test now checks variant, address, and cause text without
+  accidentally comparing distinct cause identities.
+- [x] Remoting package tests passed: 146 unit, 9 codec, 1 fuzz-regression, 7
+  security, 109 transport tests, and 20 doctests. Strict all-target/all-feature
+  Remoting Clippy, formatting, and `git diff --check` passed. Code commit:
+  `1e928372`; run record:
+  `rlogs/2026/10/24-phase-18-remoting-error-identity__20261024T100726Z.rlog`.
+- [ ] This closes the `ErrorSource` equality mismatch only. Broad P18-V01
+  remains PARTIAL. The workspace-wide P18-V02 gates must be refreshed for this
+  code revision; native Windows runtime and current-revision remote Ubuntu CI
+  remain unverified, and Phase 19 Broker/Docker evidence remains separate. No
+  push or remote CI was run.
