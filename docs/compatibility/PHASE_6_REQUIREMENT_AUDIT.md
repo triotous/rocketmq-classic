@@ -1,5 +1,22 @@
 # Phase 6 requirement and handoff audit
 
+## Phase 18 current-code full-feature and server-free refresh — 2026-10-24 (`a460d966`)
+
+On code revision `a460d966`, locked all-feature workspace tests and doctests
+pass, as does strict all-target/all-feature workspace Clippy. Windows GNU
+workspace `cargo check`, strict Clippy, and `cargo test --no-run` pass on the
+macOS host; harnesses compile and link but were not executed. Offline
+deterministic race/leak smoke passes 20 cases × 3 repetitions. Fixed-seed fuzz
+passes 163 frame seeds, 11 message seeds, 11 property seeds, 2,960 mutations,
+and 564/192/176 frame/message/property decodes. Differential comparator
+self-test and validation of all 37 manifest scenarios pass. Pinned offline
+Maven `verify` on this revision passes 37 scenarios, 11 message fixtures, 106
+typed headers, and 19 typed bodies. Formatting and diff checks pass. This
+refreshes local P18-V02 evidence only: broad P18-V01 remains `PARTIAL`, native
+Windows execution and current-revision remote Ubuntu CI remain unverified, and
+Phase 19 Broker/Docker evidence remains separate. No push or remote CI ran;
+Phase 19-owned worktree paths were left untouched.
+
 ## Phase 18 nested producer `FaultItem` reverse-surface audit — 2026-10-24
 
 The pinned client source declares `LatencyFaultToleranceImpl.FaultItem` as a

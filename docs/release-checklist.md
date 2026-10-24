@@ -6,6 +6,20 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 
 ## Compatibility and validation
 
+- [x] P18-V02 full current-code refresh (`a460d966`, 2026-10-24): locked
+  all-feature workspace tests/doctests and strict all-target/all-feature
+  workspace Clippy pass. Windows GNU workspace check, strict Clippy, and
+  `cargo test --no-run` pass; test harnesses compile/link but were not run.
+  Offline deterministic race/leak smoke passes 20 cases × 3; fixed-seed fuzz
+  passes 163 frame, 11 message, and 11 property seeds with 2,960 mutations and
+  564/192/176 decoder calls; comparator self-test and 37-scenario manifest
+  validation pass. Pinned offline Maven `verify` passes 37 scenarios, 11
+  message fixtures, 106 typed headers, and 19 typed bodies. Formatting and diff
+  checks pass. Broad P18-V01 remains PARTIAL, including the nested `FaultItem`
+  reverse-surface disposition; native Windows runtime and current-revision
+  remote Ubuntu CI remain unverified. Phase 19-owned worktree paths remain
+  untouched.
+
 - [ ] P18-V01 direct `LatencyFaultToleranceImpl.FaultItem` nested-type API
   disposition: Java exposes a public constructor and methods, while Rust keeps
   producer fault records private and does not return raw items. Source confirms
