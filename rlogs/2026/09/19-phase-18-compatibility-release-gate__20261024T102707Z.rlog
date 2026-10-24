@@ -441,3 +441,23 @@ Detailed run records for the focused code and current-tree gate runs are in
   Producer fault-selection/settings flow through its owner without exposing a
   standalone internal record handle. This closes the helper disposition only;
   broad P18-V01 remains PARTIAL. No code changed.
+
+## P18-V02 default/configuration and P18-05 benchmark refresh — 2026-10-24 13:32 UTC
+
+- PASS: default-feature locked workspace tests/doctests; release facade example
+  build; offline benchmark compile and fixed-input run; locked Cargo metadata
+  (8 workspace members, 216 packages); workspace package listing and
+  `scripts/check-workspace-metadata.py` (seven product packages, LICENSE/NOTICE,
+  license metadata and dependency direction).
+- Benchmark environment: macOS ARM64, Apple M5 Max, 18 logical CPUs, Rust
+  1.85.0, release profile. Observations (iterations, input bytes, ns/op,
+  allocation calls/op, allocated bytes/op): frame encode/decode (20,000, 427,
+  6,775.3, 62, 6,787); Zstd message decode (10,000, 146, 2,240.9, 17,
+  197,493); Producer request construction (20,000, 512, 2,898.3, 54, 3,665);
+  route lookup at 128 entries (100,000, 10, 28.4, 0, 0); loopback pending
+  completion (500, 128, 77,655.6, 125, 12,873). Measurements are observations,
+  not thresholds.
+- Together with the full-feature gate above, these close the default-config,
+  examples, metadata and local P18-05 checks for code revision `a460d966`.
+  Native Windows runtime, current-revision remote Ubuntu CI, broad P18-V01,
+  remote registry availability and Phase 19 Broker/Docker gates remain open.

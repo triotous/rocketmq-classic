@@ -17,6 +17,32 @@ Windows execution and current-revision remote Ubuntu CI remain unverified, and
 Phase 19 Broker/Docker evidence remains separate. No push or remote CI ran;
 Phase 19-owned worktree paths were left untouched.
 
+## Phase 18 default config, packaging metadata, and P18-05 benchmark — 2026-10-24 (`a460d966`)
+
+On current code revision `a460d966`, default-feature locked workspace tests
+and doctests pass. The release facade examples compile with the release
+profile; the offline benchmark compiles and completes. Locked Cargo metadata
+contains 8 workspace members and 216 packages. `cargo package --workspace
+--list --allow-dirty --no-verify --locked --offline` and
+`scripts/check-workspace-metadata.py` pass; the latter verifies all 7 product
+packages' `LICENSE`/`NOTICE`, package license metadata, and dependency direction.
+
+The fixed-input microbenchmark ran on macOS ARM64, Apple M5 Max, 18 logical
+CPUs, `rustc 1.85.0 (4d91de4e4 2025-02-17)`, release profile. These bounded
+observations have no acceptance thresholds:
+
+| Operation | Input | Iterations | ns/iteration | Allocation calls/iteration | Bytes/iteration |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 B | 20,000 | 6,775.3 | 62 | 6,787 |
+| Zstd message-record decode | 146 B | 10,000 | 2,240.9 | 17 | 197,493 |
+| Producer send-request construction | 512 B | 20,000 | 2,898.3 | 54 | 3,665 |
+| Route publish-address lookup (128 entries) | 10 B | 100,000 | 28.4 | 0 | 0 |
+| Loopback pending-request completion | 128 B | 500 | 77,655.6 | 125 | 12,873 |
+
+These checks supplement the full current-code P18-V02 suite recorded above.
+Broad P18-V01 remains `PARTIAL`; the packaging checks do not establish
+registry dependency availability or publication readiness.
+
 ## Phase 18 nested producer `FaultItem` reverse-surface audit — 2026-10-24
 
 The pinned client source declares `LatencyFaultToleranceImpl.FaultItem` as a
