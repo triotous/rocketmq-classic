@@ -5003,11 +5003,11 @@ put overflow, and offset put overflow. `count_inner_messages` now accepts a
 mutable cursor and reaches the limit on success; fixture cases cover a
 nonzero start, a truncated size prefix, an incomplete positive size, and a
 sub-four size followed by Java's next read/position failure. Negative sizes at
-position zero compare the Java exception boundary and cursor position. A zero
-size is guarded in Rust because Java rewinds to the same position and loops;
-negative sizes that Java can use to rewind from a nonzero position are also
-rejected to prevent malformed backtracking. These safety cases remain recorded
-in `KNOWN_DIFFERENCES.md`.
+position zero compare the Java exception boundary and cursor position. At code
+revision `b2326a3a`, negative sizes that Java could use to rewind from a
+nonzero position were also rejected. The following 2026-10-24 follow-up closes
+the finite rewind path and adds a cycle guard for malformed loops. Zero-size
+and cyclic behavior remain recorded in `KNOWN_DIFFERENCES.md`.
 
 Code commit: `b2326a3a`. `fixtures/messages/records.json` SHA-256:
 `8447099d7fa609a9898cffb6045432d7a0252a94785aa118ed08ca7ecbf7ed2f`;
@@ -5024,3 +5024,29 @@ API matrix and older cursor dispositions have been updated. This closes these
 two cursor review items only; broad P18-V01 remains PARTIAL. Native Windows runtime and
 current-revision remote Ubuntu CI remain unverified; Phase 19 Broker/Docker
 evidence remains separate.
+
+## P18-V01 finite `countInnerMsgNum` rewind parity — 2026-10-24 (`924466d6`)
+
+Rust now follows finite negative-size cursor rewinds when Java's target position
+is in range. The invoked fixture starts with size 8, rewinds from position 8 to
+5 with size -3, reads the overlapping 255 size, and compares the resulting
+out-of-range position failure at cursor 9. Rust returns its typed incomplete
+record error at the same cursor position. A negative-size cycle fixture checks
+the Rust guard returns `InvalidInnerSize` at the repeated cursor rather than
+looping forever; Java's cyclic call is intentionally not invoked. Zero-size
+handling remains guarded for the same no-progress reason.
+
+Code commit: `924466d6`. `fixtures/messages/records.json` SHA-256:
+`e96844dffe42973d3ea77255b197f2d8f5ccb1c43fd3674eacd500687afa8ea7`;
+Java fixture source SHA-256:
+`31018415889b798bf558ae3e8e5e13ab513aaaed9af26b082609dcc1b00b7a82`.
+The focused Common message fixture and Common default/all-feature tests and
+doctests pass, as do all-feature workspace tests/doctests, strict workspace
+Clippy, release facade examples, Windows GNU all-target/all-feature check and
+strict Clippy as compile-only evidence, Maven `verify` (37 scenarios, 11
+message fixtures, 106 typed headers, 19 typed bodies), comparator self-test
+and manifest validation, format and diff checks. This closes the finite
+negative-rewind slice only; zero/cycle safe guards and broad P18-V01 remain
+documented/open. Native Windows runtime and current-revision remote Ubuntu CI
+remain unverified; Phase 19 Broker/Docker evidence remains separate. Execution
+record: `../../rlogs/2026/10/24-phase-18-count-inner-negative-rewind__20261024T085047Z.rlog`.

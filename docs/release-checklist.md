@@ -9731,3 +9731,18 @@ owner-specific checks belong in the manual handoff.
   current-revision remote Ubuntu CI, and Phase 19 Broker/Docker evidence remain
   unverified or separate. Code commit: `b2326a3a`; run record:
   `rlogs/2026/10/24-phase-18-message-decoder-buffer-cursors__20261024T083406Z.rlog`.
+
+## P18-V01 finite inner-message rewind — 2026-10-24 (`924466d6`)
+
+- [x] `count_inner_messages` now follows Java's finite in-range negative-size
+  rewind. Its invoked fixture compares the 8 → 5 rewind and later failure at
+  cursor 9. Rust also detects repeated offsets and returns a typed error
+  instead of looping indefinitely; zero-size input remains guarded. Common
+  tests/doctests in default and all-feature modes, full workspace all-feature
+  tests/doctests, strict workspace Clippy, release examples, Windows GNU
+  compile-only check/Clippy, Maven verify, comparator/manifest, format and diff
+  checks pass. Code commit: `924466d6`; run record:
+  `rlogs/2026/10/24-phase-18-count-inner-negative-rewind__20261024T085047Z.rlog`.
+- [ ] Zero-size and cyclic count inputs remain intentional bounded Rust
+  outcomes; broad P18-V01, native Windows runtime, current-revision remote CI,
+  and Phase 19 Broker/Docker evidence remain open or separate.
