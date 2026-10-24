@@ -23,6 +23,15 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   remains PARTIAL; native Windows runtime and current-revision remote Ubuntu CI
   remain unverified. Phase 19-owned worktree paths remain untouched.
 
+- [x] P18-V01 Java `Comparable` declaration inventory (`2026-10-24`): the
+  pinned client/common/remoting source scan found `MessageQueue`,
+  `MessageQueueForC`, `TraceContext`, `SubscriptionData`, `BrokerData`,
+  `QueueData`, and nested `LatencyFaultToleranceImpl.FaultItem`. The six value
+  types have Rust Java-compatible comparison methods and invoked fixture
+  coverage; `FaultItem` follows the recorded private strategy-owner
+  disposition. This closes the declared-comparator scan only; broad P18-V01
+  remains PARTIAL.
+
 - [x] P18-V01 `LatencyFaultToleranceImpl.FaultItem` scope disposition
   (2026-10-24): Java exposes a public nested helper, but instances stay in the
   enclosing implementation's private table, public fault-tolerance methods do

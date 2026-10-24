@@ -17,6 +17,21 @@ Windows execution and current-revision remote Ubuntu CI remain unverified, and
 Phase 19 Broker/Docker evidence remains separate. No push or remote CI ran;
 Phase 19-owned worktree paths were left untouched.
 
+## Phase 18 Java `Comparable` declaration inventory — 2026-10-24
+
+A source scan of the pinned Java 5.5.1 client/common/remoting modules found
+seven declared `Comparable` implementations: `MessageQueue`,
+`MessageQueueForC`, `TraceContext`, `SubscriptionData`, `BrokerData`,
+`QueueData`, and nested `LatencyFaultToleranceImpl.FaultItem`. The six value
+types map to Rust Java-compatible comparison methods with invoked fixture
+coverage, including null argument/field failures, UTF-16 ordering, and numeric
+boundaries where applicable. `FaultItem` remains private producer state and
+uses the internal strategy-owner disposition documented below. This closes
+the declaration-level comparator inventory for those modules only; inherited
+enum comparison, other public API surfaces, and broad P18-V01
+source/settings/input/error/control-flow/reverse-export reconciliation remain
+separate.
+
 ## Phase 18 default config, packaging metadata, and P18-05 benchmark — 2026-10-24 (`a460d966`)
 
 On current code revision `a460d966`, default-feature locked workspace tests

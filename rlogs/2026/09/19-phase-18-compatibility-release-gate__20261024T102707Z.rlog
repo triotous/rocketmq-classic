@@ -461,3 +461,15 @@ Detailed run records for the focused code and current-tree gate runs are in
   examples, metadata and local P18-05 checks for code revision `a460d966`.
   Native Windows runtime, current-revision remote Ubuntu CI, broad P18-V01,
   remote registry availability and Phase 19 Broker/Docker gates remain open.
+
+## P18-V01 Java Comparable declaration source scan — 2026-10-24 13:34 UTC
+
+- Pinned Java 5.5.1 client/common/remoting source contains seven declared
+  Comparable implementations: `MessageQueue`, `MessageQueueForC`,
+  `TraceContext`, `SubscriptionData`, `BrokerData`, `QueueData`, and nested
+  `LatencyFaultToleranceImpl.FaultItem`.
+- Six value types map to Rust Java-compatible comparison methods with invoked
+  fixtures. `FaultItem` remains private producer state and follows the scoped
+  raw strategy-owner disposition. This closes the declared-comparator scan for
+  these modules only; inherited enum comparison and the broad P18-V01 audit
+  remain separate.
