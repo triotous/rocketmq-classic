@@ -453,15 +453,18 @@ Pull's model and strategy are shared with its active registration, so these
 settings remain callable through the started owner and request an immediate
 rebalance when changed.
 
-Rust exposes `rocketmq_classic_consumer::PopRequest` for Java's directly
-constructible `impl.consumer.PopRequest` value API. Its fixture pins the public
-constructor and 16 declared public methods, including nullable fields,
-`MessageRequestMode.POP`, equality/hash fields, UTF-16 string hashing, mutable
-`MessageQueue` reference retention, and `toString`. `MessageRequest` preserves a
-nullable consumer group with `Option<&str>`; the runtime routes that through its
-nullable owner selector. The Rust `PullRequest` remains an internal scheduling
-type. Assignment activation still builds queue work directly rather than
-exposing the Java dispatch hooks' mutable `PullRequest`/`PopRequest` lists.
+Rust exports `rocketmq_classic_consumer::{PullRequest, PopRequest}` for the
+directly constructible Java `impl.consumer` value APIs. The invoked fixture
+records 14 public `PullRequest` methods and 16 public `PopRequest` methods.
+`PullRequest` matches Java's null defaults, `PULL` mode, group/queue-only
+equality and hash, UTF-16 String hashing, shared queue/process-queue references,
+mutable offset/lock state, and `toString`. `PopRequest` matches its defaults,
+`POP` mode, equality/hash fields, shared references, mutable flags, and text.
+`MessageRequest` preserves nullable consumer groups with `Option<&str>`; the
+runtime routes them through its nullable owner selector. Rust assignment
+activation still builds queue work through its separate crate-private
+scheduler request rather than exposing the Java dispatch hooks' mutable
+`PullRequest`/`PopRequest` lists.
 
 Java exposes the Push implementation and its nested `RebalancePushImpl` as
 separate objects. Rust's stable owner handle aliases both APIs, so it keeps

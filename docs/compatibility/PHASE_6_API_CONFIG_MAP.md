@@ -2370,6 +2370,7 @@ adapters. The table groups the names by the Java owner whose API they expose.
 | `ProcessPullError` | Typed Rust failures for the Java `PullAPIWrapper.processPullResult` FOUND-message decode and inner-batch paths; accepted data and failure order are covered by the Phase 14 pull-result fixtures. |
 | `PopProcessError`, `PopReceiptError` | Typed Rust error carriers for Java POP response decoding and `ExtraInfoUtil` receipt parsing. `PopReceiptError` keeps malformed numeric and missing-field outcomes distinct while the original receipt remains available for forward-compatible fields. |
 | `PopRequest` | Java `impl.consumer.PopRequest`, including its no-argument constructor, nullable group/topic/queue/process-queue fields, lock-first and init-mode state, `MessageRequestMode.POP`, equality/hash selection, UTF-16 String hashing, and `toString`. `SharedValue<MessageQueue>` and `Arc<PopProcessQueue>` retain the Java setter/getter reference semantics; the nullable `MessageRequest.consumer_group` routes through `select_consumer_nullable`. `fixtures/consumer/facade-api.json` pins all 16 public methods and direct behavior. |
+| `PullRequest` | Java `impl.consumer.PullRequest`, including its no-argument constructor, nullable group/queue/process-queue fields, next-offset and previously-locked state, `MessageRequestMode.PULL`, equality/hash selection, UTF-16 String hashing, and `toString`. `SharedValue<MessageQueue>` and `Arc<ProcessQueue>` preserve mutable reference identity. The direct value adapter is separate from the crate-private assignment scheduler request; its 14 public methods and state behavior are pinned in `fixtures/consumer/facade-api.json`. |
 | `ProcessQueueAtomicLong` | Rust operation view for Java `ProcessQueue.getMsgCount()` / `getMsgSize()` `AtomicLong` values, including `get_and_add`, `add_and_get`, `get_and_set`, increment/decrement, and `compare_and_set` operations with Java wrapping arithmetic. |
 | `ProcessQueueMessageTreeMap`, `ProcessQueueMessageTreeReadGuard`, `ProcessQueueMessageTreeWriteGuard` | Lock-backed Rust views for Java `ProcessQueue.getMsgTreeMap()`'s live `TreeMap`. Read/write guards preserve direct map edits while keeping independent count and byte counters unchanged, matching Java's separate fields. |
 | `get_msg_tree_map`, `get_msg_count`, `get_msg_size`, `get_max_span`, `contains_message`, `contains_message_nullable`, `has_temp_message`, `put_message`, `put_message_nullable`, `put_message_items_nullable`, `take_messages`, `remove_message`, `remove_message_nullable`, `make_message_to_consume_again`, `make_message_to_consume_again_nullable`, `make_message_to_consume_again_items_nullable`, `clean_expired_msg`, `clean_expired_msg_nullable`, `fill_process_queue_info`, `fill_process_queue_info_nullable` | Java `ProcessQueue.getMsgTreeMap`, `getMsgCount`, `getMsgSize`, `getMaxSpan`, `containsMessage`, `hasTempMessage`, `putMessage`, `takeMessages`, `removeMessage`, `makeMessageToConsumeAgain`, `cleanExpiredMsg`, and `fillProcessQueueInfo`. The nullable adapters map Java's null-message `false`, null-list put/removal/requeue and null-consumer `NullPointerException` paths, null-element partial put/requeue mutation before `NullPointerException`, and null-info swallowed exception; Rust's queue owner adds generation-safe in-flight bookkeeping behind these same queue operations. |
@@ -2379,12 +2380,23 @@ adapters. The table groups the names by the Java owner whose API they expose.
 | `trace_context` | `ConsumeMessageContext.trace_context` maps Java `ConsumeMessageContext.traceContext` and carries hook-owned trace state between before/after callbacks. |
 | `LiteTraceKind`, `trace_kind`, `LiteTraceDispatcher`, `LiteTraceError` | Consumer trace kinds map Java `TraceType.SubBefore` / `SubAfter`; `LiteTraceDispatcher` is the Rust async owner for Java `AsyncTraceDispatcher` consume-trace records, and `LiteTraceError` carries Rust producer/worker lifecycle failures. The encoded control-character format is covered by the Phase 16 trace fixtures. |
 
-The root façade source scan covered all 127 direct re-exports with zero
+The root façade source scan covered all 128 direct re-exports with zero
 exact-name omissions after these crosswalks. Together, these Rustdoc/source
 reverse scans account for the exact-name omissions from the Core, Producer,
 Consumer, and façade exports. They do not replace P18-V01's complete
 Java source, settings, inherited API, validation, error, and control-flow
 reconciliation; that broader audit remains open.
+
+## P18-V01 Rustdoc export refresh after `PullRequest` — 2026-10-24
+
+Regenerated all-feature Rustdoc JSON after adding the public consumer
+`PullRequest` value. Excluding each crate root, current product-crate totals
+are Common 442, Consumer 479, Core 800, Producer 379, Protocol 1,528, and
+Remoting 341 distinct public names. The Consumer crate has 701 public item
+records; Remoting has 404. The root facade direct re-export scan now includes
+128 names. Rustdoc JSON completed with the workspace's existing `publish` and
+Consumer `AtomicU64::fetch_update` warnings. Counts track exported names only;
+broad P18-V01 behavior and reverse-export reconciliation remains `PARTIAL`.
 
 ## P18-V01 Rustdoc export refresh after `PopRequest` — 2026-10-24
 

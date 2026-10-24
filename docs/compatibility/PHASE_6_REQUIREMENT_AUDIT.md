@@ -1,5 +1,19 @@
 # Phase 6 requirement and handoff audit
 
+## P18-V01 Java `PullRequest` public value API — 2026-10-24
+
+The pinned Java `client.impl.consumer.PullRequest` declares one public
+no-argument constructor and 14 public methods. Rust now exports
+`rocketmq_classic_consumer::PullRequest`; the invoked consumer facade fixture
+pins null/zero/false defaults, nullable group/queue/process-queue state, `PULL`
+mode, equality/hash selection, UTF-16 String hashing, shared mutable queue and
+process-queue references, and Java-style `toString`. Equality and hashing use
+only consumer group and message queue, matching Java's exclusion of the offset,
+lock flag, and process queue. The direct value adapter is separate from Rust's
+crate-private scheduler request. Implementation commit: `25b1a8e2`. Broad
+P18-V01 source/settings/input/error/control-flow and reverse-export
+reconciliation remains `PARTIAL`.
+
 ## P18-V01 Java `PopRequest` public value API — 2026-10-24
 
 The pinned Java `client.impl.consumer.PopRequest` declares one public
