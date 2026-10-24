@@ -8,8 +8,12 @@ use rocketmq_classic_core::{
     },
     error::RpcError,
 };
-use rocketmq_classic_protocol::header::{
-    QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1, UpdateConsumerOffsetRequestHeader,
+use rocketmq_classic_protocol::{
+    codes::LanguageCode,
+    header::{
+        QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1,
+        UpdateConsumerOffsetRequestHeader,
+    },
 };
 use rocketmq_classic_remoting::{
     RemotingCommand,
@@ -80,6 +84,9 @@ async fn scripted(
             incoming.body.as_ref(),
             bytes(&expected["bodyBase64"]).as_ref()
         );
+        if fixture.get("requestLanguage").is_some() {
+            assert_eq!(incoming.language, Some(LanguageCode::Cpp));
+        }
         let oneway = fixture["mode"] == "ONEWAY";
         assert_eq!(incoming.is_oneway(), oneway);
         if oneway {
@@ -115,7 +122,7 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
     let entries: Vec<_> = fs::read_dir(&dir).unwrap().collect();
     assert_eq!(
         entries.len(),
-        16,
+        17,
         "all pinned Java invoked cases must be compared"
     );
     for name in [
@@ -131,6 +138,7 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
         "offset-not-found",
         "offset-unknown",
         "offset-no-header",
+        "reset-offset-cpp",
         "update-success",
         "update-error",
         "update-unknown",
@@ -247,6 +255,26 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
                         "NullPointerException;malformed".into()
                     }
                     other => panic!("unexpected offset result: {other:?}"),
+                }
+            }
+            "reset-offset-cpp" => {
+                match api
+                    .invoke_broker_to_reset_offset_for_client(
+                        &addr,
+                        "oracle-topic",
+                        "workers",
+                        1_712_345_678_901,
+                        true,
+                        true,
+                        deadline,
+                    )
+                    .await
+                {
+                    Ok(Some(offsets)) => {
+                        assert!(offsets.snapshot().is_empty());
+                        "ok".to_owned()
+                    }
+                    other => panic!("unexpected reset offset result: {other:?}"),
                 }
             }
             _ => panic!("unexpected case {name}"),

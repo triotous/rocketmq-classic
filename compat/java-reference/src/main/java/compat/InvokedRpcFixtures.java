@@ -22,6 +22,8 @@ import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
+import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
+import org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
@@ -97,6 +99,15 @@ public final class InvokedRpcFixtures {
             + ",\"request\":" + command(capture.request)
             + ",\"response\":" + (capture.response == null ? "null" : command(capture.response))
             + ",\"outcome\":" + quote(outcome) + "}\n";
+    }
+
+    private static String fixtureWithRequestLanguage(String name, Capture capture, int code,
+        String outcome) {
+        String fixture = fixture(name, capture, code, outcome);
+        int outcomeIndex = fixture.lastIndexOf(",\"outcome\":");
+        check(outcomeIndex >= 0, name + " outcome field");
+        return fixture.substring(0, outcomeIndex) + ",\"requestLanguage\":"
+            + quote(capture.request.getLanguage().name()) + fixture.substring(outcomeIndex);
     }
 
     public static void run(Path output, boolean verify) throws Exception {
@@ -239,6 +250,14 @@ public final class InvokedRpcFixtures {
         }
         cases.add(new String[] {"offset-unknown.json", fixture("offset-unknown", capture,
             RequestCode.QUERY_CONSUMER_OFFSET, "MQBrokerException;code=987654")});
+
+        ResetOffsetBody resetBody = new ResetOffsetBody();
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        capture.response.setBody(RemotingSerializable.encode(resetBody));
+        check(api.invokeBrokerToResetOffset("broker:10911", "oracle-topic", "workers",
+            1712345678901L, true, 10000, true).isEmpty(), "C++ reset offset outcome");
+        cases.add(new String[] {"reset-offset-cpp.json", fixtureWithRequestLanguage(
+            "reset-offset-cpp", capture, RequestCode.INVOKE_BROKER_TO_RESET_OFFSET, "ok")});
 
         capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "no header");
         try {

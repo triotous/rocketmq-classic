@@ -2880,8 +2880,37 @@ impl MQClientApi {
         header: &ResetOffsetRequestHeader,
         deadline: Instant,
     ) -> Result<Option<SharedQueueOffsetEntries>, RpcError> {
+        self.invoke_broker_to_reset_offset_with_language(
+            addr,
+            header,
+            rocketmq_classic_protocol::codes::LanguageCode::Java,
+            deadline,
+        )
+        .await
+    }
+
+    /// Invokes Java `MQClientAPIImpl.invokeBrokerToResetOffset(..., isC)` with
+    /// the request language selected by the caller. `LanguageCode::Cpp` maps
+    /// the Java overload's `isC = true` branch.
+    pub async fn invoke_broker_to_reset_offset_with_language(
+        &self,
+        addr: &str,
+        header: &ResetOffsetRequestHeader,
+        language: rocketmq_classic_protocol::codes::LanguageCode,
+        deadline: Instant,
+    ) -> Result<Option<SharedQueueOffsetEntries>, RpcError> {
         let code = request::INVOKE_BROKER_TO_RESET_OFFSET;
-        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = self
+            .request_with_mode_and_language(
+                addr,
+                code,
+                header,
+                None,
+                deadline,
+                true,
+                Some(language),
+            )
+            .await?;
         let reply = classify(reply, code, addr)?;
         let body_bytes = reply.body.as_deref().ok_or_else(|| RpcError::Response {
             request_code: code,
@@ -2904,6 +2933,35 @@ impl MQClientApi {
                 }
             })?;
         Ok(body.get_offset_table())
+    }
+
+    /// Adapts Java `MQClientAPIImpl.invokeBrokerToResetOffset(addr, topic,
+    /// group, timestamp, isForce, timeout, isC)`, including its default
+    /// `queueId = -1` and `offset = -1` request-header fields.
+    pub async fn invoke_broker_to_reset_offset_for_client(
+        &self,
+        addr: &str,
+        topic: &str,
+        group: &str,
+        timestamp: i64,
+        is_force: bool,
+        is_cpp: bool,
+        deadline: Instant,
+    ) -> Result<Option<SharedQueueOffsetEntries>, RpcError> {
+        let mut header = ResetOffsetRequestHeader::default();
+        header.set_topic(topic.to_owned());
+        header.set_group(group.to_owned());
+        header.set_queue_id(-1);
+        header.set_timestamp(timestamp);
+        header.set_force(is_force);
+        header.set_offset(Some(-1));
+        let language = if is_cpp {
+            rocketmq_classic_protocol::codes::LanguageCode::Cpp
+        } else {
+            rocketmq_classic_protocol::codes::LanguageCode::Java
+        };
+        self.invoke_broker_to_reset_offset_with_language(addr, &header, language, deadline)
+            .await
     }
 
     /// Queries one Broker using Java's `_UNIQUE_KEY_QUERY` extension field.

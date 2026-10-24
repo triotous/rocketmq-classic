@@ -173,10 +173,26 @@ impl MQClientApi {
         deadline: Instant,
         sync: bool,
     ) -> Result<RemotingCommand, RpcError> {
+        self.request_with_mode_and_language(addr, code, header, body, deadline, sync, None)
+            .await
+    }
+
+    async fn request_with_mode_and_language<H: CommandHeader>(
+        &self,
+        addr: &str,
+        code: i32,
+        header: &H,
+        body: Option<Vec<u8>>,
+        deadline: Instant,
+        sync: bool,
+        language: Option<rocketmq_classic_protocol::codes::LanguageCode>,
+    ) -> Result<RemotingCommand, RpcError> {
         let mut fields = HeaderMap::new();
         header.encode_fields(&mut fields);
-        self.request_fields_with_mode(addr, code, fields, body, deadline, sync)
-            .await
+        self.request_fields_with_mode_and_language(
+            addr, code, fields, body, deadline, sync, language,
+        )
+        .await
     }
 
     async fn request_fields_with_mode(
@@ -188,6 +204,20 @@ impl MQClientApi {
         deadline: Instant,
         sync: bool,
     ) -> Result<RemotingCommand, RpcError> {
+        self.request_fields_with_mode_and_language(addr, code, fields, body, deadline, sync, None)
+            .await
+    }
+
+    async fn request_fields_with_mode_and_language(
+        &self,
+        addr: &str,
+        code: i32,
+        fields: HeaderMap,
+        body: Option<Vec<u8>>,
+        deadline: Instant,
+        sync: bool,
+        language: Option<rocketmq_classic_protocol::codes::LanguageCode>,
+    ) -> Result<RemotingCommand, RpcError> {
         let heartbeat_language = self
             .config
             .as_ref()
@@ -196,11 +226,13 @@ impl MQClientApi {
         let command = RemotingCommand {
             code,
             // Pinned Java sets clientConfig.language only on heartbeat V1/V2.
-            language: if code == rocketmq_classic_protocol::codes::request::HEART_BEAT {
-                heartbeat_language
-            } else {
-                Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
-            },
+            language: language.or_else(|| {
+                if code == rocketmq_classic_protocol::codes::request::HEART_BEAT {
+                    heartbeat_language
+                } else {
+                    Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+                }
+            }),
             ext_fields: Some(fields.into()),
             body,
             ..java_client_request_command(code)?
