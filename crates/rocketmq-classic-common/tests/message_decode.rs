@@ -2454,12 +2454,36 @@ fn compact_message_codec_and_inner_batch_match_java_551() {
         negative_count_cursor.position(),
         expected["negativeCountPositionAfter"]
     );
+    let mut rewinding_count_cursor = Cursor::new(&[0, 0, 0, 8, 0, 0, 0, 0, 255, 255, 255, 253][..]);
+    assert_eq!(
+        count_inner_messages(&mut rewinding_count_cursor),
+        Err(CompactMessageError::IncompleteInnerMessage {
+            offset: 5,
+            size: 255,
+            available: 7
+        })
+    );
+    assert_eq!(expected["rewindingCountThrowsIllegalArgument"], true);
+    assert_eq!(
+        rewinding_count_cursor.position(),
+        expected["rewindingCountPositionAfter"]
+    );
     let mut zero_count_cursor = Cursor::new(&[0, 0, 0, 0][..]);
     assert_eq!(
         count_inner_messages(&mut zero_count_cursor),
         Err(CompactMessageError::InvalidInnerSize { size: 0 })
     );
     assert_eq!(zero_count_cursor.position(), 0);
+    let mut negative_cycle_bytes = vec![0; 16];
+    negative_cycle_bytes[..4].copy_from_slice(&4_i32.to_be_bytes());
+    negative_cycle_bytes[4..8].copy_from_slice(&8_i32.to_be_bytes());
+    negative_cycle_bytes[12..16].copy_from_slice(&(-8_i32).to_be_bytes());
+    let mut negative_cycle_cursor = Cursor::new(negative_cycle_bytes.as_slice());
+    assert_eq!(
+        count_inner_messages(&mut negative_cycle_cursor),
+        Err(CompactMessageError::InvalidInnerSize { size: -8 })
+    );
+    assert_eq!(negative_cycle_cursor.position(), 4);
 }
 
 #[test]

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::Cursor;
 use thiserror::Error;
 
@@ -134,8 +135,17 @@ pub fn count_inner_messages(records: &mut Cursor<&[u8]>) -> Result<usize, Compac
             field: "inner message size",
         });
     }
+    let mut visited_positions: Option<HashSet<usize>> = None;
+    let mut last_size = 0;
     while usize::try_from(records.position()).unwrap_or(usize::MAX) < limit {
         let offset = usize::try_from(records.position()).unwrap_or(usize::MAX);
+        if let Some(visited) = visited_positions.as_mut() {
+            if !visited.insert(offset) {
+                // Negative sizes can rewind Java's cursor into a cycle. Return
+                // at the repeated position instead of leaving Rust stuck.
+                return Err(CompactMessageError::InvalidInnerSize { size: last_size });
+            }
+        }
         let available = limit - offset;
         let size_bytes = records
             .get_ref()
@@ -154,7 +164,45 @@ pub fn count_inner_messages(records: &mut Cursor<&[u8]>) -> Result<usize, Compac
             return Err(CompactMessageError::InvalidInnerSize { size });
         }
         if size < 0 {
-            return Err(CompactMessageError::InvalidInnerSize { size });
+            let current = i32::try_from(offset).map_err(|_| CompactMessageError::SizeOverflow)?;
+            let target = current.wrapping_add(size);
+            if target < 0 || usize::try_from(target).unwrap_or(usize::MAX) > limit {
+                return Err(CompactMessageError::InvalidInnerSize { size });
+            }
+            if visited_positions.is_none() {
+                let mut visited = HashSet::new();
+                let mut prior = starting_position;
+                while prior < offset {
+                    visited.insert(prior);
+                    let prior_size_bytes = records
+                        .get_ref()
+                        .get(prior..prior.saturating_add(4))
+                        .ok_or(CompactMessageError::Truncated {
+                            field: "inner message size",
+                        })?;
+                    let prior_size = i32::from_be_bytes(
+                        prior_size_bytes
+                            .try_into()
+                            .expect("four bytes were selected"),
+                    );
+                    if prior_size == 0 {
+                        return Err(CompactMessageError::InvalidInnerSize { size: prior_size });
+                    }
+                    let prior_size = usize::try_from(prior_size)
+                        .map_err(|_| CompactMessageError::InvalidInnerSize { size: prior_size })?;
+                    prior = prior
+                        .checked_add(prior_size)
+                        .ok_or(CompactMessageError::SizeOverflow)?;
+                }
+                visited.insert(offset);
+                visited_positions = Some(visited);
+            }
+            records.set_position(target as u64);
+            last_size = size;
+            count = count
+                .checked_add(1)
+                .ok_or(CompactMessageError::SizeOverflow)?;
+            continue;
         }
         let size = usize::try_from(size).map_err(|_| CompactMessageError::SizeOverflow)?;
         if size > available {
@@ -168,6 +216,7 @@ pub fn count_inner_messages(records: &mut Cursor<&[u8]>) -> Result<usize, Compac
             .checked_add(size)
             .ok_or(CompactMessageError::SizeOverflow)?;
         records.set_position(end as u64);
+        last_size = size as i32;
         count = count
             .checked_add(1)
             .ok_or(CompactMessageError::SizeOverflow)?;

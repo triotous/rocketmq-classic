@@ -1200,6 +1200,16 @@ public final class MessageDecodeFixtures {
             outcome.put("negativeCountThrowsIllegalArgument", true);
         }
         outcome.put("negativeCountPositionAfter", negative.position());
+
+        ByteBuffer rewinding = ByteBuffer.wrap(
+            new byte[] {0, 0, 0, 8, 0, 0, 0, 0, -1, -1, -1, -3});
+        try {
+            MessageDecoder.countInnerMsgNum(rewinding);
+            outcome.put("rewindingCountThrowsIllegalArgument", false);
+        } catch (IllegalArgumentException expected) {
+            outcome.put("rewindingCountThrowsIllegalArgument", true);
+        }
+        outcome.put("rewindingCountPositionAfter", rewinding.position());
         return outcome;
     }
 
