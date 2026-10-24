@@ -9408,3 +9408,31 @@ owner-specific checks belong in the manual handoff.
   remote Ubuntu CI, and Phase 19 Broker/Docker validation remain open. No plan
   files were changed and no remote CI or push was run. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T221410Z.rlog`.
+
+## P18-V01 Fastjson repeated trailing EOF marker parity — 2026-10-24 (`053ea2d3`)
+
+- [x] Added two invoked Java 5.5.1 heartbeat DTO cases for repeated U+001A
+  terminators, adjacent and separated by JSON whitespace. The Rust differential
+  failed before the fix and passes with the expanded 1,088-case corpus after
+  the normalizer correction.
+- [x] Focused parser regression, fixture-backed differential, and offline
+  Maven `verify` pass; Maven validates 37 scenarios and Java decodes 106 typed
+  headers and 19 typed bodies. Fixture and run details are in
+  `rlogs/2026/10/24-phase-18-fastjson-trailing-eof__20261024T000554Z.rlog`.
+- [ ] This closes the repeated terminal-marker boundary only. Broad P18-V01
+  remains open.
+
+## P18-V01 current-tree Rustdoc export reconciliation — 2026-10-24 (`053ea2d3`)
+
+- [x] Current all-feature Rustdoc JSON counts distinct public names excluding
+  the crate-root marker: Common 439, Consumer 460, Core 798, Producer 361,
+  Protocol 1,524, and Remoting 337. Including Core's generated crate root
+  yields 799, reconciling the differing Core number.
+- [x] Against the prior 747-name Core inventory at `e7d779af`, the current
+  Core surface has 51 added names and no removals. All additions are controller
+  API names present in the compatibility crosswalk. This is name inventory
+  evidence, not behavioral closure. Run record:
+  `rlogs/2026/10/24-phase-18-rustdoc-export-reconcile__20261024T000638Z.rlog`.
+- [ ] Broad P18-V01 behavior/settings/input/error/control-flow and reverse
+  export reconciliation remains open. Native Windows runtime and current
+  remote Ubuntu CI remain pending; Phase 19 Broker/Docker evidence is separate.
