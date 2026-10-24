@@ -12,6 +12,8 @@ use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de, de::DeserializeOwned};
 use serde_json::Value;
 
+const FASTJSON_NUMBER_TOKEN_MARKER_PREFIX: &str = "\0rocketmq-fastjson-number-token:";
+
 pub type NullableStringListTable = BTreeMap<String, Option<Vec<Option<String>>>>;
 pub type NullableKeyStringMap = BTreeMap<Option<String>, Option<String>>;
 pub type NullableLongStringMap = BTreeMap<Option<i64>, Option<String>>;
@@ -20,6 +22,7 @@ enum FastjsonStringValue {
     Null,
     Bool(bool),
     Number(String),
+    NumberToken(String),
     String(String),
     Array(Vec<Self>),
     Object(Vec<(String, Self)>),
@@ -31,6 +34,10 @@ impl FastjsonStringValue {
             Self::Null => Ok("null".to_owned()),
             Self::Bool(value) => Ok(value.to_string()),
             Self::Number(value) => Ok(value),
+            Self::NumberToken(_) => Err(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Fastjson cannot convert a leading-dot number to a Java string",
+            ))),
             Self::String(value) => Ok(value),
             Self::Array(_) | Self::Object(_) => {
                 let mut output = String::new();
@@ -49,6 +56,10 @@ fn write_fastjson_string_value(
         FastjsonStringValue::Null => output.push_str("null"),
         FastjsonStringValue::Bool(value) => output.push_str(if *value { "true" } else { "false" }),
         FastjsonStringValue::Number(value) => output.push_str(value),
+        FastjsonStringValue::NumberToken(value) => output.push_str(
+            &normalize_fastjson_number_token(value)
+                .expect("Fastjson number marker stores a valid numeric token"),
+        ),
         FastjsonStringValue::String(value) => output.push_str(&serde_json::to_string(value)?),
         FastjsonStringValue::Array(values) => {
             output.push('[');
@@ -191,6 +202,9 @@ where
         _ => {}
     }
     if raw.starts_with('"') {
+        if let Some(token) = fastjson_number_token_from_raw(raw) {
+            return Ok(FastjsonStringValue::NumberToken(token));
+        }
         return serde_json::from_str::<String>(raw)
             .map(FastjsonStringValue::String)
             .map_err(de::Error::custom);
@@ -243,6 +257,13 @@ impl Serialize for FastjsonStringValue {
             Self::Number(value) => serde_json::value::RawValue::from_string(value.clone())
                 .map_err(serde::ser::Error::custom)?
                 .serialize(serializer),
+            Self::NumberToken(value) => {
+                let normalized = normalize_fastjson_number_token(value)
+                    .expect("Fastjson number marker stores a valid numeric token");
+                serde_json::value::RawValue::from_string(normalized)
+                    .map_err(serde::ser::Error::custom)?
+                    .serialize(serializer)
+            }
             Self::String(value) => serializer.serialize_str(value),
             Self::Array(values) => {
                 let mut sequence = serializer.serialize_seq(Some(values.len()))?;
@@ -265,12 +286,21 @@ impl Serialize for FastjsonStringValue {
 /// Normalizes Fastjson's invoked JSON syntax, whitespace, and numeric tokens
 /// before Serde parsing.
 pub fn normalize_json_input(input: &str) -> String {
+    normalize_json_input_with_marker(input, true)
+}
+
+fn normalize_json_input_for<T>(input: &str) -> String {
+    let preserve_leading_dot_tokens = std::any::type_name::<T>() != std::any::type_name::<Value>();
+    normalize_json_input_with_marker(input, preserve_leading_dot_tokens)
+}
+
+fn normalize_json_input_with_marker(input: &str, preserve_leading_dot_tokens: bool) -> String {
     let input = input.strip_prefix('\u{feff}').unwrap_or(input);
     let syntax_normalized = normalize_fastjson_syntax(input);
     let whitespace_normalized = normalize_fastjson_whitespace(&syntax_normalized);
     let eof_normalized = normalize_fastjson_trailing_eof_markers(&whitespace_normalized);
     let comma_normalized = normalize_fastjson_trailing_commas(&eof_normalized);
-    normalize_fastjson_number_tokens(&comma_normalized, false)
+    normalize_fastjson_number_tokens(&comma_normalized, false, preserve_leading_dot_tokens)
 }
 
 fn normalize_fastjson_trailing_eof_markers(input: &str) -> String {
@@ -294,7 +324,7 @@ fn normalize_fastjson_trailing_eof_markers(input: &str) -> String {
 }
 
 pub(crate) fn normalize_fastjson_integer_map_keys(input: &str) -> String {
-    normalize_fastjson_number_tokens(input, true)
+    normalize_fastjson_number_tokens(input, true, false)
 }
 
 fn normalize_fastjson_syntax(input: &str) -> String {
@@ -679,7 +709,7 @@ fn normalize_fastjson_trailing_commas(input: &str) -> String {
 /// Parses a JSON document with the Fastjson syntax cases recorded by the Java
 /// compatibility oracle, then applies this module's field coercions.
 pub fn from_fastjson_str<T: DeserializeOwned>(input: &str) -> Result<T, serde_json::Error> {
-    let normalized = normalize_json_input(input);
+    let normalized = normalize_json_input_for::<T>(input);
     serde_json::from_str(&normalized)
 }
 
@@ -694,7 +724,7 @@ pub fn from_fastjson_str_nullable<T: DeserializeOwned>(
     let Some(input) = input else {
         return Ok(None);
     };
-    let normalized = normalize_json_input(input);
+    let normalized = normalize_json_input_for::<T>(input);
     serde_json::from_str(&normalized)
 }
 
@@ -715,7 +745,7 @@ pub fn from_fastjson_list_nullable<T: DeserializeOwned>(
         return Ok(None);
     };
     let input = String::from_utf8_lossy(input);
-    let normalized = normalize_json_input(&input);
+    let normalized = normalize_json_input_for::<T>(&input);
     serde_json::from_str(&normalized)
 }
 
@@ -781,7 +811,11 @@ fn fastjson_nonbreaking_space_allowed(previous: Option<char>, next: Option<char>
     }
 }
 
-fn normalize_fastjson_number_tokens(input: &str, quote_integer_keys: bool) -> String {
+fn normalize_fastjson_number_tokens(
+    input: &str,
+    quote_integer_keys: bool,
+    preserve_leading_dot_tokens: bool,
+) -> String {
     let bytes = input.as_bytes();
     let mut output = String::with_capacity(input.len());
     let mut index = 0;
@@ -805,9 +839,19 @@ fn normalize_fastjson_number_tokens(input: &str, quote_integer_keys: bool) -> St
             continue;
         }
         if character == '"' {
-            in_string = true;
-            output.push(character);
-            index += character.len_utf8();
+            if let Some(end) = json_string_end(input, index) {
+                let raw = &input[index..end];
+                if fastjson_number_token_from_raw(raw).is_some() {
+                    output.push_str(&escape_reserved_fastjson_marker(raw));
+                } else {
+                    output.push_str(raw);
+                }
+                index = end;
+            } else {
+                in_string = true;
+                output.push(character);
+                index += character.len_utf8();
+            }
             continue;
         }
 
@@ -835,7 +879,11 @@ fn normalize_fastjson_number_tokens(input: &str, quote_integer_keys: bool) -> St
             }
             if bytes.get(next) != Some(&b':') {
                 if let Some(normalized) = normalize_fastjson_number_token(token) {
-                    output.push_str(&normalized);
+                    if preserve_leading_dot_tokens && token.starts_with('.') {
+                        output.push_str(&fastjson_number_token_marker(token));
+                    } else {
+                        output.push_str(&normalized);
+                    }
                     continue;
                 }
             }
@@ -847,6 +895,60 @@ fn normalize_fastjson_number_tokens(input: &str, quote_integer_keys: bool) -> St
         index += character.len_utf8();
     }
     output
+}
+
+fn json_string_end(input: &str, start: usize) -> Option<usize> {
+    let bytes = input.as_bytes();
+    let mut escaped = false;
+    for (offset, byte) in bytes.get(start + 1..)?.iter().copied().enumerate() {
+        if escaped {
+            escaped = false;
+        } else if byte == b'\\' {
+            escaped = true;
+        } else if byte == b'"' {
+            return Some(start + 2 + offset);
+        }
+    }
+    None
+}
+
+fn fastjson_number_token_marker(token: &str) -> String {
+    serde_json::to_string(&format!("{FASTJSON_NUMBER_TOKEN_MARKER_PREFIX}{token}"))
+        .expect("Fastjson marker is a valid string")
+}
+
+fn fastjson_number_token_from_raw(raw: &str) -> Option<String> {
+    let value = serde_json::from_str::<String>(raw).ok()?;
+    let token = value.strip_prefix(FASTJSON_NUMBER_TOKEN_MARKER_PREFIX)?;
+    normalize_fastjson_number_token(token)?;
+    (serde_json::to_string(&value).ok()?.as_str() == raw).then(|| token.to_owned())
+}
+
+fn escape_reserved_fastjson_marker(raw: &str) -> String {
+    let value = serde_json::from_str::<String>(raw).expect("recognized marker is a valid string");
+    let mut escaped = serde_json::to_string(&value).expect("marker string can be encoded");
+    let bytes = escaped.as_bytes();
+    let mut index = 1;
+    while index < bytes.len() - 1 {
+        if bytes[index] == b'\\' {
+            index += if bytes.get(index + 1) == Some(&b'u') {
+                6
+            } else {
+                2
+            };
+        } else if bytes[index].is_ascii_alphabetic() {
+            break;
+        } else {
+            index += 1;
+        }
+    }
+    assert!(
+        index < bytes.len() - 1,
+        "Fastjson marker contains an ASCII letter"
+    );
+    let replacement = format!("\\u{:04x}", bytes[index]);
+    escaped.replace_range(index..index + 1, &replacement);
+    escaped
 }
 
 fn is_fastjson_integer_key(token: &str) -> bool {
@@ -895,18 +997,24 @@ fn normalize_fastjson_number_token(token: &str) -> Option<String> {
         return None;
     }
     let mut exponent_start = None;
+    let mut incomplete_exponent = false;
     if matches!(bytes.get(index), Some(b'e' | b'E')) {
         exponent_start = Some(index);
         index += 1;
         if matches!(bytes.get(index), Some(b'+' | b'-')) {
             index += 1;
         }
-        let exponent_start = index;
+        let exponent_digits_start = index;
         while bytes.get(index).is_some_and(u8::is_ascii_digit) {
             index += 1;
         }
-        if index == exponent_start {
-            return None;
+        if index == exponent_digits_start {
+            if index == bytes.len() {
+                incomplete_exponent = true;
+                exponent_start = None;
+            } else {
+                return None;
+            }
         }
     }
     if index != bytes.len() {
@@ -916,7 +1024,13 @@ fn normalize_fastjson_number_token(token: &str) -> Option<String> {
     let leading_zeroes = integer_end - integer_start > 1 && bytes[integer_start] == b'0';
     let floating_suffix = matches!(suffix, Some(b'F' | b'D'));
     let trailing_decimal_point = decimal_point.is_some() && fraction_start == fraction_end;
-    if !positive && !leading_zeroes && has_integer && !trailing_decimal_point && suffix.is_none() {
+    if !positive
+        && !leading_zeroes
+        && has_integer
+        && !trailing_decimal_point
+        && !incomplete_exponent
+        && suffix.is_none()
+    {
         return None;
     }
 
@@ -933,12 +1047,16 @@ fn normalize_fastjson_number_token(token: &str) -> Option<String> {
     } else {
         normalized.push('0');
     }
+    let omit_incomplete_trailing_decimal =
+        incomplete_exponent && trailing_decimal_point && !floating_suffix;
     if let (Some(_), Some(start), Some(end)) = (decimal_point, fraction_start, fraction_end) {
-        normalized.push('.');
-        if start == end {
-            normalized.push('0');
-        } else {
-            normalized.push_str(&token[start..end]);
+        if !omit_incomplete_trailing_decimal {
+            normalized.push('.');
+            if start == end {
+                normalized.push('0');
+            } else {
+                normalized.push_str(&token[start..end]);
+            }
         }
     } else if floating_suffix && exponent_start.is_none() {
         normalized.push_str(".0");
@@ -1051,7 +1169,14 @@ pub fn deserialize_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let value = Value::deserialize(deserializer)?;
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    let normalized = fastjson_number_token_from_raw(raw.get())
+        .and_then(|token| normalize_fastjson_number_token(&token));
+    let value = if let Some(normalized) = normalized {
+        serde_json::from_str::<Value>(&normalized).map_err(de::Error::custom)?
+    } else {
+        serde_json::from_str::<Value>(raw.get()).map_err(de::Error::custom)?
+    };
     match value {
         Value::Null => Ok(false),
         Value::Bool(value) => Ok(value),
@@ -1472,6 +1597,16 @@ where
     E: de::Error,
 {
     let raw = raw.trim();
+    if let Some(token) = fastjson_number_token_from_raw(raw) {
+        let normalized = normalize_fastjson_number_token(&token)
+            .ok_or_else(|| E::custom("Fastjson cannot coerce numeric token to integer"))?;
+        let bits = if minimum == i32::MIN as i128 && maximum == i32::MAX as i128 {
+            32
+        } else {
+            64
+        };
+        return decimal_integer::<E>(&normalized, bits);
+    }
     if raw.starts_with('{') {
         if reject_object {
             return Err(E::custom(
@@ -1643,8 +1778,17 @@ where
 
 #[cfg(test)]
 mod syntax_compat_tests {
-    use super::from_fastjson_str;
+    use super::{from_fastjson_str, normalize_json_input};
+    use serde::Deserialize;
     use serde_json::{Value, json};
+
+    #[derive(Debug, Deserialize)]
+    struct NumericAndStringFields {
+        #[serde(default, deserialize_with = "super::deserialize_nullable_string")]
+        topic: Option<String>,
+        #[serde(default, deserialize_with = "super::deserialize_i32")]
+        sub_version: i32,
+    }
 
     #[test]
     fn parses_single_quotes_comments_and_trailing_commas() {
@@ -1695,6 +1839,58 @@ mod syntax_compat_tests {
         assert_eq!(
             decoded,
             serde_json::json!({"values": [1, 1.0, 1.0, 1, 1, -0.5, 1.0, 100.0, 100.0]})
+        );
+        assert_eq!(
+            from_fastjson_str::<Value>(r#"{"value":.5}"#).unwrap(),
+            serde_json::json!({"value": 0.5})
+        );
+    }
+
+    #[test]
+    fn preserves_leading_dot_number_field_coercions() {
+        let numeric: NumericAndStringFields = from_fastjson_str(r#"{"sub_version":.5}"#).unwrap();
+        assert_eq!(numeric.sub_version, 0);
+        assert!(from_fastjson_str::<NumericAndStringFields>(r#"{"topic":.5}"#).is_err());
+
+        let explicit_positive: NumericAndStringFields =
+            from_fastjson_str(r#"{"topic":+.5}"#).unwrap();
+        assert_eq!(explicit_positive.topic.as_deref(), Some("0.5"));
+
+        let suffixed_numeric: NumericAndStringFields =
+            from_fastjson_str(r#"{"sub_version":.5F}"#).unwrap();
+        assert_eq!(suffixed_numeric.sub_version, 0);
+        assert!(from_fastjson_str::<NumericAndStringFields>(r#"{"topic":.5F}"#).is_err());
+    }
+
+    #[test]
+    fn accepts_fastjson_incomplete_exponents_as_their_numeric_prefix() {
+        assert_eq!(
+            normalize_json_input(r#"{"sub_version":1e+}"#),
+            r#"{"sub_version":1}"#
+        );
+        let integer: NumericAndStringFields = from_fastjson_str(r#"{"sub_version":1e+}"#).unwrap();
+        assert_eq!(integer.sub_version, 1);
+        let plain: NumericAndStringFields = from_fastjson_str(r#"{"topic":1e+}"#).unwrap();
+        assert_eq!(plain.topic.as_deref(), Some("1"));
+        let float_suffix: NumericAndStringFields = from_fastjson_str(r#"{"topic":1e+F}"#).unwrap();
+        assert_eq!(float_suffix.topic.as_deref(), Some("1.0"));
+        let trailing_dot: NumericAndStringFields = from_fastjson_str(r#"{"topic":1.E}"#).unwrap();
+        assert_eq!(trailing_dot.topic.as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn preserves_user_strings_matching_the_internal_number_marker() {
+        let value = format!("{} .5", super::FASTJSON_NUMBER_TOKEN_MARKER_PREFIX);
+        let raw = serde_json::to_string(&json!({"topic": value})).unwrap();
+        let decoded: Value = from_fastjson_str(&raw).unwrap();
+        assert_eq!(decoded["topic"], value);
+
+        let marker = super::fastjson_number_token_marker(".5");
+        let normalized = normalize_json_input(&marker);
+        assert_ne!(normalized, marker);
+        assert_eq!(
+            serde_json::from_str::<String>(&normalized).unwrap(),
+            format!("{}.5", super::FASTJSON_NUMBER_TOKEN_MARKER_PREFIX)
         );
     }
 

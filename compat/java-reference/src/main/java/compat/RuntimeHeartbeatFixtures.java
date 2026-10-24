@@ -1098,6 +1098,24 @@ public final class RuntimeHeartbeatFixtures {
             "{\"subVersion\":1.}"));
         cases.add(heartbeatDtoInputCase("subscription-trailing-dot-exponent-double-suffix", "subscription",
             "{\"subVersion\":1.e2D}"));
+        cases.add(heartbeatDtoInputCase("subscription-leading-dot-positive-version", "subscription",
+            "{\"subVersion\":.5}"));
+        cases.add(heartbeatDtoInputCase("subscription-leading-dot-positive-float-version", "subscription",
+            "{\"subVersion\":.5F}"));
+        cases.add(heartbeatDtoInputCase("subscription-leading-dot-positive-topic-rejected", "subscription",
+            "{\"subVersion\":0,\"topic\":.5}"));
+        cases.add(heartbeatDtoInputCase("subscription-leading-dot-positive-float-topic-rejected", "subscription",
+            "{\"subVersion\":0,\"topic\":.5F}"));
+        cases.add(heartbeatDtoInputCase("subscription-leading-dot-explicit-positive-topic", "subscription",
+            "{\"subVersion\":0,\"topic\":+.5}"));
+        cases.add(heartbeatDtoInputCase("subscription-incomplete-exponent-version", "subscription",
+            "{\"subVersion\":1e+}"));
+        cases.add(heartbeatDtoInputCase("subscription-incomplete-exponent-topic", "subscription",
+            "{\"subVersion\":0,\"topic\":1e+}"));
+        cases.add(heartbeatDtoInputCase("subscription-incomplete-exponent-float-topic", "subscription",
+            "{\"subVersion\":0,\"topic\":1e+F}"));
+        cases.add(heartbeatDtoInputCase("subscription-incomplete-exponent-trailing-dot-topic", "subscription",
+            "{\"subVersion\":0,\"topic\":1.E}"));
         cases.add(heartbeatDtoInputCase("heartbeat-leading-plus-zero-fingerprint", "heartbeat",
             "{\"heartbeatFingerprint\":+02}"));
         cases.add(heartbeatDtoInputCase("heartbeat-exponent-float-suffix-fingerprint", "heartbeat",

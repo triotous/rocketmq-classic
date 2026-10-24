@@ -1276,7 +1276,7 @@ mod fastjson_dto_input_tests {
         let cases = fixture["heartbeatDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            1102,
+            1111,
             "Java oracle includes DTO root shapes, scalar, numeric-boundary, collection-shape, syntax-grammar, numeric suffix and decimal-point forms, per-field token-kind, systematic whitespace-position/string probes, and repeated EOF markers"
         );
         for dto in ["subscription", "producer", "consumer", "heartbeat"] {
@@ -1337,6 +1337,15 @@ mod fastjson_dto_input_tests {
             "subscription-leading-dot-negative-version",
             "subscription-trailing-dot-version",
             "subscription-trailing-dot-exponent-double-suffix",
+            "subscription-leading-dot-positive-version",
+            "subscription-leading-dot-positive-float-version",
+            "subscription-leading-dot-positive-topic-rejected",
+            "subscription-leading-dot-positive-float-topic-rejected",
+            "subscription-leading-dot-explicit-positive-topic",
+            "subscription-incomplete-exponent-version",
+            "subscription-incomplete-exponent-topic",
+            "subscription-incomplete-exponent-float-topic",
+            "subscription-incomplete-exponent-trailing-dot-topic",
             "heartbeat-leading-plus-zero-fingerprint",
             "heartbeat-exponent-float-suffix-fingerprint",
             "consumer-form-feed-and-leading-zero",
