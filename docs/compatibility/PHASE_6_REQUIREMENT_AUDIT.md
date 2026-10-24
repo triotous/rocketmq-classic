@@ -27,10 +27,12 @@ queue. Rust regression
 the same states while driving an authoritative route assignment. The combined
 `fixtures/runtime/consumer-operations.json` SHA-256 is
 `892956f5ef65b5418bf637a5065f4697f4342a7926d9e04d69cdd657a7d3a911`.
-Focused Rust coverage, pinned Java Maven `verify`, formatter, and diff checks
-pass. This closes the assigned PULL expiry/retention slice only; broad P18-V01
-source/API/input/error/control-flow/reverse-export reconciliation and current
-native/remote platform evidence remain open.
+Focused Rust coverage, locked all-feature workspace tests/doctests, strict
+all-target/all-feature workspace Clippy, pinned Java Maven `verify`, formatter,
+and diff checks pass on code commit `33c57f09`. This closes the assigned PULL
+expiry/retention slice only; broad P18-V01 source/API/input/error/control-flow/
+reverse-export reconciliation and current native/remote platform evidence
+remain open.
 
 ## Phase 18 Fastjson numeric-token continuation — 2026-10-24
 

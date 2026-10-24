@@ -27,6 +27,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `892956f5ef65b5418bf637a5065f4697f4342a7926d9e04d69cdd657a7d3a911`. This
   closes this assignment slice only; broad P18-V01 and current native/remote
   platform evidence remain open.
+- [x] P18-V02 post-PULL full-feature refresh (`33c57f09`, 2026-10-24): locked
+  all-feature workspace tests and doctests pass, including the new assignment
+  regression; strict all-target/all-feature workspace Clippy passes. The run
+  used `CARGO_TARGET_DIR=/tmp/rocketmq-phase18-allfeat-target` after the prior
+  repository target stalled in the macOS loader. Formatting and diff checks
+  pass. Broad P18-V01 and current native Windows/current remote Ubuntu
+  evidence remain open.
 - [x] Keep the Java client and Broker baselines separate in docs and fixture
   provenance.
 - P18-V01 Fastjson leading-dot and incomplete-exponent follow-up (`9333cbc2`,

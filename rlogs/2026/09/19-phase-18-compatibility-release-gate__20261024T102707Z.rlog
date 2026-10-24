@@ -237,3 +237,18 @@ Detailed run records for the focused code and current-tree gate runs are in
   native Windows/current remote Ubuntu evidence, and Phase 19 Broker/Docker
   validation remain open. No push or remote CI ran; Phase 19-owned worktree
   paths remain untouched and unstaged.
+
+## P18-V02 post-PULL full-feature refresh — 2026-10-24 12:11 UTC
+
+- On code commit `33c57f09`,
+  `CARGO_TARGET_DIR=/tmp/rocketmq-phase18-allfeat-target cargo test --offline
+  --all-features --locked --workspace` passed all workspace tests and
+  doctests, including the new Consumer PULL assignment regression.
+- Strict all-target/all-feature workspace Clippy passed with `-D warnings`.
+  `cargo fmt --all -- --check` and `git diff --check` passed. The earlier
+  repository-target loader stall and isolated-target recovery are recorded
+  above.
+- This refreshes the local full-feature gate only. Broad P18-V01, native
+  Windows/current remote Ubuntu evidence, and Phase 19 Broker/Docker
+  validation remain open. No push or remote CI ran; Phase 19-owned worktree
+  paths remain untouched and unstaged.
