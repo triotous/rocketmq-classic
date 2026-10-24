@@ -4956,3 +4956,27 @@ while launching `fuzz_regressions`; strict Clippy also stalled in rustc
 dependency-directory enumeration. Maven `verify` and focused formatting checks
 pass. This closes these JSON-header inputs only; broad P18-V01 remains
 `PARTIAL`.
+
+## P18-V01 Remoting outbound write-flow parity — 2026-10-24 (`719e5aa3`)
+
+Pinned Java 5.5.1 `NettyRemotingAbstract` was invoked with `EmbeddedChannel`
+and a delayed outbound write promise. The `outboundWriteFlows` fixture verifies
+that sync RPC response waiting does not wait for local write completion, and
+that one-way invocation returns while its write remains pending with admission
+held until that write completes. Rust now queues client frames without using
+the RPC deadline to cancel socket progress, concurrently reads responses while
+a frame is pending, and retains the one-way permit through local write
+completion or failure. The connection writer tracks partial-write offsets so
+selecting inbound reads cannot restart or duplicate bytes. Fixture SHA-256:
+`6818a879b34ecab39936c1636c659ca3157e2d52fbd4f9e50f5bcadc49a9e09d`.
+
+The Rust regressions `sync_response_is_read_while_request_write_is_pending`,
+`oneway_write_remains_queued_after_the_call_deadline`, and
+`p3_inbound_responses_survive_unbounded_outbound_backlog` pass. Locked default
+and all-feature workspace tests/doctests, strict all-target/all-feature
+Clippy, release examples, formatting, diff checks, comparator self-test, and
+pinned offline Maven `verify` pass on this revision. Maven verified 36 runtime
+hook cases, 37 differential scenarios, fixture drift, 11 message fixtures,
+106 typed headers, and 19 typed bodies. This closes the client write-flow
+deadline/completion slice only; queued-byte writability remains a documented
+framework difference and broad P18-V01 reconciliation remains `PARTIAL`.

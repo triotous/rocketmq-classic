@@ -9665,3 +9665,28 @@ owner-specific checks belong in the manual handoff.
   evidence remains separate. No push or remote CI was run. The four protected
   Phase 19 worktree paths remain unchanged and unstaged. Run record:
   `rlogs/2026/10/24-phase-18-current-tree-clean-target-gate__20261024T072654Z.rlog`.
+
+## P18-V01 Remoting outbound write-flow parity — 2026-10-24 (`719e5aa3`)
+
+- [x] Pinned Java 5.5.1 `EmbeddedChannel` fixture verifies sync RPC returns
+  from a received response while the local request write is pending, and
+  one-way returns before write completion while holding admission until the
+  write completes. Rust now reads inbound frames during partial outbound
+  progress, does not cancel an enqueued client write at the RPC deadline, and
+  holds one-way admission through local write completion/failure. Runtime
+  fixture SHA-256:
+  `6818a879b34ecab39936c1636c659ca3157e2d52fbd4f9e50f5bcadc49a9e09d`.
+- [x] Default/all-feature locked workspace tests and doctests, strict
+  all-target/all-feature Clippy, release examples, formatting, diff checks,
+  differential comparator self-test, and pinned offline Maven `verify` passed.
+  Maven verified 36 runtime hook cases, 37 scenarios, 11 message fixtures, 106
+  typed headers, and 19 typed bodies. The initial cancellation-unsafe
+  `write_all` experiment exposed the existing backlog regression; the final
+  offset-preserving partial-write loop passes that regression and both new
+  Java-fixture-backed tests.
+- [ ] Broad P18-V01 bidirectional API/settings/input/error/control-flow and
+  reverse-export audit remains PARTIAL. Native Windows runtime and
+  current-revision remote Ubuntu CI remain unverified; Phase 19 Broker/Docker
+  validation is separate. No push or remote CI was run. Protected Phase 19
+  worktree items remain untouched and unstaged. Run record:
+  `rlogs/2026/10/24-phase-18-remoting-write-flow-parity__20261024T075744Z.rlog`.
