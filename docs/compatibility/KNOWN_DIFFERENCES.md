@@ -9,6 +9,10 @@
 - Pull facade, offset-store and boundary-RPC offline checks are recorded in [PHASE_9_OFFLINE_METHOD_MATRIX.md](PHASE_9_OFFLINE_METHOD_MATRIX.md). They use Java 5.5.1 source-derived fixtures and scripted peers; no live 5.3.4 Broker result is claimed. P9-V03 remains `PENDING_PHASE_19` until the Docker local integration suite runs.
 - Search timestamps and response offsets are signed Java `long` values. A successful `-1` empty-queue result stays a valid value; only transport/protocol/Broker failures return an error.
 
+## P18 compact inner-message counter malformed sizes
+
+- `countInnerMsgNum(ByteBuffer)` moves the Java cursor by each declared size without validating progress. Rust `count_inner_messages` uses a mutable `Cursor` and matches ordinary records, positioned cursors, truncated size prefixes, incomplete positive sizes, and finite positive sizes below four. A zero size would set the Java cursor back to the same position and loop indefinitely; Rust returns `InvalidInnerSize` with the cursor restored to that position. Java can also move backward for a negative size when the resulting position is in range; Rust rejects negative sizes to avoid backward loops. At position zero, the pinned fixture confirms Java throws `IllegalArgumentException` after consuming the four-byte prefix and Rust returns a typed error at the same position. These guards are limited to malformed count input; broad P18-V01 remains open.
+
 ## Phase 2 Remoting codec
 
 - Java's private serializer writes both absent and empty remark as a zero-length string; Rust preserves the distinction in its command model but the wire decoder returns `None` for either representation. An absent versus empty body similarly collapses to no body when the frame body length is zero.

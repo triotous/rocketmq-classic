@@ -9714,3 +9714,20 @@ owner-specific checks belong in the manual handoff.
   workspace contains protected Phase 19 edits, so package listing was scoped
   to the seven product crates and those edits remain untouched. Run record:
   `rlogs/2026/10/24-phase-18-current-tree-final-server-free-gate__20261024T080301Z.rlog`.
+
+## P18-V01 `MessageDecoder` cursor parity — 2026-10-24 (`b2326a3a`)
+
+- [x] Rust now exposes the two buffer-sensitive helpers through mutable and
+  positioned `Cursor` inputs and records Java success and failure positions in
+  the invoked message fixture. This corrects the earlier immutable-slice API
+  mapping. The focused Common fixture, default/all-feature workspace tests and
+  doctests, strict workspace Clippy, release facade examples, Windows GNU
+  compile-only check/Clippy, differential self-test/manifest, format/diff
+  checks, and pinned offline Maven verification all pass; the fixture
+  contains 11 message scenarios.
+- [ ] Zero and negative count sizes retain bounded Rust errors where Java can
+  loop or rewind, as recorded in `KNOWN_DIFFERENCES.md`. This closes these
+  cursor items only; broad P18-V01 remains open. Native Windows runtime,
+  current-revision remote Ubuntu CI, and Phase 19 Broker/Docker evidence remain
+  unverified or separate. Code commit: `b2326a3a`; run record:
+  `rlogs/2026/10/24-phase-18-message-decoder-buffer-cursors__20261024T083406Z.rlog`.

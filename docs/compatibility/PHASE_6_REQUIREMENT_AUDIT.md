@@ -3191,17 +3191,12 @@ and inner-message counter as summarized in
 constructor is represented by Rust module functions. This is a signature
 crosswalk only; existing invoked tests cover mapped cases, but broad input,
 error, control-flow, settings and reverse-export reconciliation remains open.
-The `createMessageId(ByteBuffer,ByteBuffer,long)` helper's mutable scratch-buffer
-positions are not represented by the immutable Rust host-byte slice. Source
-inspection of pinned `MessageDecoder`, `DefaultMessageStore`, and both
-`DLedgerCommitLog` append call sites confirms they use local scratch buffers
-and retain only the returned string. Rust preserves that ID-producing
-capability with `create_message_id_from_host_bytes`; the Java-only scratch
-cursor mutations are intentionally not modeled because the Rust API does not
-expose a mutable buffer abstraction and no pinned production flow observes
-those states. The return value remains covered by the invoked IPv4/IPv6 ID
-fixture. This source-confirmed API-shape adaptation resolves this helper's
-cursor-side-effect review item; broad P18-V01 reconciliation remains open.
+At this 2026-10-22 checkpoint, the `createMessageId(ByteBuffer,ByteBuffer,long)`
+helper's mutable scratch-buffer positions were not represented by the immutable
+Rust host-byte slice. Source inspection found that pinned production call sites
+discarded those local cursors, so the checkpoint recorded the difference as an
+API-shape adaptation. The 2026-10-24 cursor follow-up below supersedes that
+disposition; the history here records the earlier state, not the current API.
 
 ## P18-V01 compact inner-batch `MessageClientExt` subtype — 2026-10-22 (`adf93b21`)
 
@@ -3227,13 +3222,11 @@ Pinned Java advances the supplied buffer while counting, leaving it at the
 limit for valid compact batches. The only pinned production caller in
 `SendMessageProcessor` wraps `messageExtBatch.getBody()` in a temporary
 `ByteBuffer`, uses the returned count to set `PROPERTY_INNER_NUM`, then drops
-the buffer; no production flow observes its final position. Rust's
-`count_inner_messages(&[u8])` preserves the count capability and uses an
-immutable slice, so the discarded Java cursor state is a source-confirmed
-API-shape adaptation. The compact API fixture already compares valid counts
-and malformed-size outcomes. This resolves the count-helper cursor review
-item; broad P18-V01 reconciliation remains open. No tests were run for this
-docs-only update.
+the buffer; no production flow observes its final position. At this 2026-10-22
+checkpoint, Rust's `count_inner_messages(&[u8])` used an immutable slice and the
+cursor difference was recorded as an API-shape adaptation. The 2026-10-24
+cursor follow-up below supersedes that disposition; the history here records
+the earlier state, not the current API.
 
 ## P18-V01 Java `MessageDecoder.decodesBatch` malformed-tail control flow — 2026-10-22 (`4e718e35`)
 
@@ -4999,3 +4992,35 @@ scenarios, 11 message fixtures, 106 typed headers and 19 typed bodies. This
 closes the current-tree local P18-V02 gates only. P18-V01 remains PARTIAL;
 native Windows runtime and current-revision remote Ubuntu CI remain
 unverified, while Phase 19 Broker/Docker scenarios remain separate.
+
+## P18-V01 `MessageDecoder` buffer cursor parity — 2026-10-24 (`b2326a3a`)
+
+The public Rust message ID helper now accepts Java-style output and address
+cursors, preserving `flip`, current source position, output position, returned
+backing-array bytes, and Java's put failure order. Its invoked fixture covers
+IPv4/IPv6, positioned and short addresses, output-capacity failure, address
+put overflow, and offset put overflow. `count_inner_messages` now accepts a
+mutable cursor and reaches the limit on success; fixture cases cover a
+nonzero start, a truncated size prefix, an incomplete positive size, and a
+sub-four size followed by Java's next read/position failure. Negative sizes at
+position zero compare the Java exception boundary and cursor position. A zero
+size is guarded in Rust because Java rewinds to the same position and loops;
+negative sizes that Java can use to rewind from a nonzero position are also
+rejected to prevent malformed backtracking. These safety cases remain recorded
+in `KNOWN_DIFFERENCES.md`.
+
+Code commit: `b2326a3a`. `fixtures/messages/records.json` SHA-256:
+`8447099d7fa609a9898cffb6045432d7a0252a94785aa118ed08ca7ecbf7ed2f`;
+Java fixture source SHA-256:
+`cdef8c8a47a751a4c1030777eacc97678972bf5a74207cc5e461adb05f9c0b05`.
+Execution record: `../../rlogs/2026/10/24-phase-18-message-decoder-buffer-cursors__20261024T083406Z.rlog`.
+The focused Common message fixture passes (27 tests), as do default and
+all-feature locked workspace tests/doctests, strict all-target/all-feature
+Clippy, release facade examples, Windows GNU all-target/all-feature
+compile-only check and strict Clippy, comparator self-test and 37-scenario
+manifest validation, format/diff checks, and pinned offline Maven `verify`
+(37 scenarios, 11 message fixtures, 106 typed headers, 19 typed bodies). The
+API matrix and older cursor dispositions have been updated. This closes these
+two cursor review items only; broad P18-V01 remains PARTIAL. Native Windows runtime and
+current-revision remote Ubuntu CI remain unverified; Phase 19 Broker/Docker
+evidence remains separate.
