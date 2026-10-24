@@ -4957,9 +4957,37 @@ implementation-local boundary, not a portable wire-flow difference; see
 
 `cargo test -p rocketmq-classic-protocol assignment_set_hash_collision_oracle_records_the_java_boundary`
 passes. No production code or Java fixture changed; Maven fixture verification
-was not rerun. This closes the portable collection-flow disposition only;
-broad P18-V01 source/API/settings/input/error/control-flow and reverse-export
-reconciliation remains PARTIAL.
+was not rerun. The stable same-mode collision gap recorded here is superseded by
+the 2026-10-24 follow-up below; the cross-mode enum identity-hash boundary and
+broad P18-V01 reconciliation remain open.
+
+## P18-V01 assignment HashSet stable collision follow-up — 2026-10-24
+
+The earlier process-local fixture did not cover a portable collision: Java
+strings `Aa` and `BB` have the same `String.hashCode()`. Two attachment maps
+using those different keys and the same value therefore have the same
+`Map.hashCode()`. With the same queue and same mode, Java assignment hashes
+match, `equals` returns true, and `QueryAssignmentResponseBody.decode` retains
+one Set row. Rust's lawful all-fields `Eq`/`Hash` kept both rows before this
+follow-up.
+
+The response JSON decoder now indexes stable Java hash buckets by queue hash,
+mode value, and attachment-map hash, then applies Java `equals` within a
+matching bucket. This reproduces same-mode collisions and Java's
+`NullPointerException` when duplicate equal-hash rows have null queues without
+changing `MessageQueueAssignment`'s lawful Rust traits. The invoked lookup
+fixture adds a same-mode collision, a different-hash control, and the duplicate
+null-queue failure. Its assignment response input corpus now has 33 Set-field
+cases and seven whole-root cases. The separate different-mode collision still
+depends on JVM-local enum identity hashes and remains nonportable.
+
+The focused assignment-body differential and all 168 Protocol unit tests pass.
+Default and all-feature locked/offline workspace tests and doctests, strict
+all-target/all-feature host Clippy, offline Maven `verify`, formatting and diff
+checks pass. Windows GNU workspace check, strict Clippy, and all-feature test
+compile/link pass; no Windows runtime execution is claimed. Broad P18-V01
+method/overload/input/error/control-flow and reverse-export reconciliation
+remains PARTIAL.
 
 ## P18-V01 internal producer latency-fault path follow-up — 2026-10-23
 

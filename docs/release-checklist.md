@@ -36,9 +36,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   corrected `assignment_methods_match_invoked_java_public_api`, whose previous
   `mode()` self-comparison did not verify the Java setter/getter value. The
   focused Protocol test, strict Protocol Clippy, formatting, and diff checks
-  pass. Java's process-local `MessageQueueAssignment` hash collision behavior
-  remains an explicit unresolved runtime-set gap; broad P18-V01 remains
-  PARTIAL.
+  pass. The decoder now matches stable same-mode assignment hash collisions;
+  different-mode collisions still depend on Java enum identity hashes. Broad
+  P18-V01 remains PARTIAL.
 
 - [x] P18-V01 `LatencyFaultToleranceImpl.FaultItem` scope disposition
   (2026-10-24): Java exposes a public nested helper, but instances stay in the
@@ -10142,3 +10142,24 @@ owner-specific checks belong in the manual handoff.
   runtime, and current-revision remote Ubuntu CI remain open. No push or remote
   CI was run; protected Phase 19 paths remain unchanged and unstaged. Run record:
   `rlogs/2026/10/24-phase-18-replica-identity-equals-object__20261024T143249Z.rlog`.
+
+## P18-V01 assignment stable HashSet bucket parity — 2026-10-24 (`cc49b573`)
+
+- [x] Protocol JSON decoding now matches stable same-mode Java `HashSet`
+  collisions by queue hash, mode value, and attachment-map hash. The fixture
+  covers the `Aa`/`BB` attachment-key collision, a different-hash control, and
+  Java's null-queue `NullPointerException`. The DTO retains lawful all-fields
+  Rust `Eq`/`Hash`.
+- [x] Default and all-feature locked workspace tests/doctests, strict host
+  all-target/all-feature Clippy, and offline Maven verification pass. The Java
+  reference verification covers 37 scenarios, 40 assignment response input
+  cases, 106 typed headers, and 19 typed bodies.
+- [x] Windows GNU all-target/all-feature check, strict Clippy, and all-feature
+  `cargo test --no-run` pass as compile/link-only evidence.
+- [ ] Different-mode hash collisions remain JVM-local because enum identity
+  hashes are process-local. Broad P18-V01 method/overload/input/error/control-
+  flow and reverse-export reconciliation remains PARTIAL. Native Windows
+  runtime and current-revision remote Ubuntu CI remain unverified; no push or
+  remote CI was run. Phase 19 user-owned paths remain unchanged and unstaged.
+  Run record:
+  `rlogs/2026/10/24-phase-18-assignment-stable-hash-buckets__20261024T151417Z.rlog`.

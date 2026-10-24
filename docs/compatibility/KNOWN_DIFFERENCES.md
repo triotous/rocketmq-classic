@@ -16,7 +16,18 @@
 
 ## P18 `MessageQueueAssignment` collection-hash boundary
 
-- Java `MessageQueueAssignment.equals` compares only `messageQueue`, while `hashCode` also includes `MessageRequestMode.hashCode()` and attachments. Since the enum inherits `Object.hashCode`, Java `HashSet` collision behavior can depend on that JVM's process-local identity hash. The invoked Java fixture constructs an equal-hash pair and confirms that the set collapses it; ordinary same-queue/different-mode rows remain distinct when their hashes differ. Rust maps the public `equals` method through `java_equals` and keeps lawful all-fields `Eq`/`Hash` for native collections. A Java Set serialized after insertion already reflects Java's own membership result; a raw collection engineered to collide for a particular JVM has no stable cross-process hash contract. This is an implementation-local collection boundary, not a portable wire-flow requirement. See the assignment input and method rows in `PHASE_6_API_CONFIG_MAP.md` and fixture `fixtures/runtime/lookup.json`.
+- Java `MessageQueueAssignment.equals` compares only `messageQueue`, while
+  `hashCode` also includes mode and attachments. The Protocol JSON decoder now
+  matches stable Java `HashSet` bucket behavior when equal queues use the same
+  mode and their attachment maps have colliding Java hashes; it also preserves
+  Java's null-queue failure when a second equal-hash row invokes `equals`.
+  `MessageQueueAssignment` keeps lawful all-fields Rust `Eq`/`Hash` for native
+  collections. A different-mode equal-hash collision still depends on the JVM's
+  process-local enum identity hashes, so a manually supplied raw array engineered
+  for one JVM has no guaranteed cross-process result. A Java Set serialized
+  after insertion already reflects that JVM's membership result. See the
+  assignment input and method rows in `PHASE_6_API_CONFIG_MAP.md` and fixture
+  `fixtures/runtime/lookup.json`.
 
 ## Phase 9 pull and offset validation boundary
 
