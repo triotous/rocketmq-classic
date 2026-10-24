@@ -1,5 +1,17 @@
 # Phase 6 heartbeat branch audit
 
+Heartbeat DTO trailing EOF-marker continuation (2026-10-24): two direct Java
+5.5.1 Fastjson inputs confirm that repeated U+001A document terminators are
+accepted both adjacently and with JSON whitespace between them. The former
+Rust normalizer removed only one final marker; the 1086-case differential
+failed on both new inputs with trailing-character errors. Rust now removes
+U+001A markers from the trailing whitespace/marker suffix while preserving
+markers inside the document. The Rust regressions and expanded 1088-case
+Java/Rust DTO differential pass. Current `heartbeat.json` SHA-256:
+`2f55c06fd34dabb708de5c5455da71bbcc3ec19f0a5df19b0e9e65e9d18b706b`.
+This closes the repeated trailing-marker boundary only; broader Fastjson
+grammar and Phase 6 source/API/input reconciliation remain open.
+
 Heartbeat DTO whitespace and raw string controls (2026-10-13): expanded the invoked Java Fastjson input corpus from 276 to 1086 cases. The added 810 probes place 54 ASCII/Unicode whitespace code points in 15 token, delimiter, key, and string-value positions. Pinned Fastjson accepts raw U+0000–U+001F characters in string keys and values; the Rust normalizer now escapes those code points before Serde parsing while preserving their decoded values. It also records Fastjson's context-sensitive treatment of nonbreaking space and the trailing U+001A marker. The common and protocol crate suites pass, including the 1086-case Rust differential, and Maven verify passes all 37 scenarios with fixture drift and cross-decode checks. `heartbeat.json` SHA-256: `7ee5f23d02df0033c914e6ea772f133dc29013e1061444a4490ea18e63bdaf6f`. This closes only the enumerated whitespace/string cases; unprobed Fastjson grammar and broad Phase 6 source/API/input reconciliation remain open.
 
 Heartbeat DTO Fastjson escape/comment continuation (2026-10-12): the fixture now contains 276 actual Java input cases. The 27 cases beyond the former 249-case checkpoint cover the Fastjson 2.0.63 `char1` escape table, `\x` lookup behavior, and comment positions at object/array starts, object commas, nested object values, and document boundaries. The Java oracle confirms `\0`–`\7`, `\v`, `\F`, identity escapes, and `\xG1` (U+0001) decode; `\8`, `\q`, and `\xg1` reject. Plain trailing commas and single-quoted keys/strings accept. Comments after a colon, after array commas, after ordinary values, and after trailing commas reject. The Rust fixture differential passes all 276 cases. `heartbeat.json` SHA-256: 67b844d3a61ee31ac12c340cf09f30d81083435635d6f17bebc44206b65d37cc. Unprobed Fastjson grammar and broader Phase 6 source/input reconciliation remain open.

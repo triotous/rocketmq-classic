@@ -1078,6 +1078,10 @@ public final class RuntimeHeartbeatFixtures {
             String.valueOf((char) 0x0c) + "{\"unitMode\":\f01}"));
         cases.add(heartbeatDtoInputCase("heartbeat-bom-prefix", "heartbeat",
             String.valueOf((char) 0xfeff) + "{\"withoutSub\":true}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-eof-marker-repeated", "heartbeat",
+            "{\"clientID\":\"eof\"}\u001a\u001a"));
+        cases.add(heartbeatDtoInputCase("heartbeat-eof-marker-separated", "heartbeat",
+            "{\"clientID\":\"eof\"}\u001a \u001a"));
         cases.add(heartbeatDtoInputCase("subscription-form-feed-before-version", "subscription",
             "{\"subVersion\":" + String.valueOf((char) 0x0c) + "+02}"));
         cases.add(heartbeatDtoInputCase("consumer-vertical-tab-prefix", "consumer",

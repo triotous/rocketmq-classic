@@ -267,11 +267,29 @@ pub fn normalize_json_input(input: &str) -> String {
     let input = input.strip_prefix('\u{feff}').unwrap_or(input);
     let syntax_normalized = normalize_fastjson_syntax(input);
     let whitespace_normalized = normalize_fastjson_whitespace(&syntax_normalized);
-    let eof_normalized = whitespace_normalized
-        .strip_suffix('\u{001a}')
-        .unwrap_or(&whitespace_normalized);
-    let comma_normalized = normalize_fastjson_trailing_commas(eof_normalized);
+    let eof_normalized = normalize_fastjson_trailing_eof_markers(&whitespace_normalized);
+    let comma_normalized = normalize_fastjson_trailing_commas(&eof_normalized);
     normalize_fastjson_number_tokens(&comma_normalized, false)
+}
+
+fn normalize_fastjson_trailing_eof_markers(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut suffix_start = bytes.len();
+    while suffix_start > 0 && matches!(bytes[suffix_start - 1], b' ' | 0x1a) {
+        suffix_start -= 1;
+    }
+    if !bytes[suffix_start..].contains(&0x1a) {
+        return input.to_owned();
+    }
+
+    let mut normalized = String::with_capacity(input.len());
+    normalized.push_str(&input[..suffix_start]);
+    for byte in &bytes[suffix_start..] {
+        if *byte != 0x1a {
+            normalized.push(char::from(*byte));
+        }
+    }
+    normalized
 }
 
 pub(crate) fn normalize_fastjson_integer_map_keys(input: &str) -> String {
@@ -1561,5 +1579,12 @@ mod syntax_compat_tests {
         let input = "{\"a\u{0000}b\":\"x\u{0001}\ny\u{001f}\"}";
         let decoded = from_fastjson_str::<Value>(input).unwrap();
         assert_eq!(decoded["a\u{0000}b"], "x\u{0001}\ny\u{001f}");
+    }
+
+    #[test]
+    fn removes_repeated_fastjson_eof_markers_after_the_document() {
+        let decoded = from_fastjson_str::<Value>("{}\u{001a} \u{001a}").unwrap();
+        assert_eq!(decoded, Value::Object(Default::default()));
+        assert!(from_fastjson_str::<Value>("\u{001a}{}").is_err());
     }
 }

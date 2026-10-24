@@ -1,5 +1,20 @@
 # Phase 6 requirement and handoff audit
 
+## Phase 18 Fastjson trailing EOF-marker continuation — 2026-10-24
+
+Pinned Java 5.5.1 Fastjson accepts one or more trailing U+001A markers after
+a DTO document, including markers separated by JSON whitespace. Adding two
+invoked heartbeat inputs first made the Rust differential fail with trailing
+characters; the shared protocol normalizer now removes marker characters only
+from the trailing whitespace/marker suffix. Markers in the root prefix and
+structural positions remain rejected, while raw markers inside strings retain
+their existing accepted behavior. The
+expanded 1088-case Rust differential and a focused parser regression pass.
+`fixtures/runtime/heartbeat.json` SHA-256 is
+`2f55c06fd34dabb708de5c5455da71bbcc3ec19f0a5df19b0e9e65e9d18b706b`.
+This closes that input boundary only; broad P18-V01 and Phase 6
+source/API/input/reverse-export reconciliation remain open.
+
 ## Current Phase 18 server-free rerun — 2026-10-23
 
 At code revision `c3b53fcb`, the server-free gates pass on macOS AArch64 with

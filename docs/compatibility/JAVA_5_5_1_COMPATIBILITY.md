@@ -7,6 +7,17 @@ It inventories 79 declared public instance methods against the Rust API and
 the invoked Java/Rust direct-consume evidence; the broader P18-V01 inventory
 remains in progress.
 
+Phase 18 Fastjson trailing EOF-marker continuation (2026-10-24): the pinned
+Java 5.5.1 heartbeat DTO oracle accepts repeated U+001A document terminators,
+with or without intervening JSON whitespace. Two new invoked cases first
+failed the native differential because Rust removed only one terminal marker;
+the shared protocol normalizer now removes the complete trailing marker run.
+Existing root-prefix/structural rejection cases and raw string controls remain
+unchanged. The expanded
+1088-case heartbeat DTO differential and focused parser regression pass.
+Fixture SHA-256: `2f55c06fd34dabb708de5c5455da71bbcc3ec19f0a5df19b0e9e65e9d18b706b`.
+This closes the named grammar boundary only; broad P18-V01 remains open.
+
 Phase 18 `exportRocksDBConfigToJson` (2026-10-21): Rust maps pinned
 `MQClientAPIImpl.exportRocksDBConfigToJson(String,List,long)` request 355 and
 the `ExportRocksDBConfigToJsonRequestHeader`/`ConfigType` APIs. Enum parsing
