@@ -9871,3 +9871,22 @@ owner-specific checks belong in the manual handoff.
   separate. No push or remote CI was run. The four protected Phase 19 worktree
   paths remain untouched and unstaged. Run record:
   `rlogs/2026/10/24-phase-18-current-tree-error-identity-gates__20261024T102143Z.rlog`.
+
+## P18-V01 Remoting and Phase 6 inventory review — 2026-10-24 (`1e928372`)
+
+- [x] Rechecked the Phase 3 Remoting surface after aligning `ErrorSource`
+  identity. No `NOT MAPPED` row remains in that inventory. The previously
+  recorded Java `ChannelWrapper` `tryLock` race still limits exact GO_AWAY
+  interleaving coverage: tests cover the post-swap retry path, not every
+  simultaneous lock-contention ordering. Rust's global connection-map mutex
+  is not a faithful model of Java's per-wrapper lock, so no lock behavior was
+  changed from this review.
+- [x] Removed the stale Known Differences sentence claiming no Rust client
+  implementation existed at Phase 0. No production code changed and no tests
+  were run for this documentation-only correction; `git diff --check` passed.
+- [ ] Phase 6 still explicitly calls for the complete Java method/overload,
+  input/default/error/control-flow, and reverse-export audit across its DTO,
+  route, heartbeat, enum, configuration, and subscription surfaces. Broad
+  P18-V01 remains PARTIAL; the documented GO_AWAY race is still open.
+  Run record:
+  `rlogs/2026/10/24-phase-18-cross-inventory-review__20261024T102515Z.rlog`.
