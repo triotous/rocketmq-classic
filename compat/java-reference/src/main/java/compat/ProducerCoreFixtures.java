@@ -3676,6 +3676,14 @@ public final class ProducerCoreFixtures {
             org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
         cases.add(getUserCase("json-null", "alice", nullBody, false,
             org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(getUserCase("eof-trailing-text", "alice",
+            (JSON.toJSONString(alice) + "\u001atrailing")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8), false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(getUserCase("eof-trailing-json", "alice",
+            (JSON.toJSONString(alice) + "\u001a{\"ignored\":true}")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8), false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
         cases.add(getUserCase("broker-error", "alice", null, false,
             org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "user lookup rejected"));
         cases.add(getUserCase("vip-enabled-address-unchanged", "alice", populatedBody, true,

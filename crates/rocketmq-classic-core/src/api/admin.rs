@@ -1577,12 +1577,7 @@ impl MQClientApi {
             )
             .await?;
         let reply = classify(reply, code, addr)?;
-        let decoded = reply
-            .body
-            .as_deref()
-            .map(serde_json::from_slice::<Option<UserInfo>>)
-            .transpose()
-            .map(Option::flatten);
+        let decoded = UserInfo::java_decode_nullable(reply.body.as_deref());
         decoded.map_err(|error| RpcError::MalformedResponse {
             request_code: code,
             peer: addr.to_owned(),

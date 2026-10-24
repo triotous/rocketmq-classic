@@ -4033,7 +4033,7 @@ async fn get_user_matches_java_requests_responses_and_outcomes() {
     );
 
     let cases = fixture["getUserOperations"]["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 8);
+    assert_eq!(cases.len(), 10);
     let (client_api, client) = api().await;
     for case in cases
         .iter()
