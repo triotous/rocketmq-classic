@@ -1403,3 +1403,23 @@ sets no performance threshold.
 
 Timing varies between runs and is not evidence of a regression or improvement;
 loopback time includes local TCP and Tokio scheduling.
+
+## Phase 18 final current-head refresh — 2026-10-24 (`4b7d0f27`)
+
+Captured after the Phase 18 compatibility closure with
+`cargo bench --offline --locked -p rocketmq-classic --bench offline`. Cargo
+used the release profile on macOS 26.6.1 AArch64, Apple M5 Max, 18 logical
+CPUs, with `rustc 1.85.0 (4d91de4e4 2025-02-17)`. This records the final
+tracked-code revision; it is an observational baseline and sets no performance
+threshold.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 3,575.4 ns | 62.00 (1,000 samples) | 6,787.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 1,152.1 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 1,176.2 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 14.1 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 78,032.1 ns | 125.00 (100 samples) | 12,873.0 (100 samples) |
+
+Timing varies between runs and is not evidence of a regression or improvement;
+loopback time includes local TCP and Tokio scheduling.

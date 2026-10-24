@@ -10382,3 +10382,13 @@ The Java oracle is RocketMQ 5.5.1 source commit
 - Phase 19 user-owned worktree paths remain untouched and unstaged. The
   Java checkout's pre-existing untracked `broker/src/test/java/org/apache/rocketmq/broker/aaaa.java`
   remains untouched.
+
+## P18-05 final current-head benchmark refresh — 2026-10-24 (`4b7d0f27`)
+
+- [x] After the compatibility closure, the bounded release benchmark was run
+  on the final tracked code revision with fixed fixture inputs. The baseline
+  now records hardware, toolchain, input sizes, iterations, timing and
+  allocation observations in
+  `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`; no performance
+  threshold is inferred from these machine-specific samples. Run record:
+  `rlogs/2026/10/24-phase-18-final-benchmark-refresh__20261024T233124Z.rlog`.
