@@ -5549,3 +5549,32 @@ The separate `MQClientManager.getOrCreateProduceAccumulator` cache is keyed by
 Java client ID and is used during producer startup; cross-Producer accumulator
 sharing and its observable batching ownership remain part of the broad
 P18-V01 flow audit. Broad P18-V01 remains `PARTIAL`.
+
+## P18-V01 `MQClientManager` producer accumulator cache and ownership — 2026-10-24 (`49fffa75`)
+
+Pinned `MQClientManager.getOrCreateProduceAccumulator(ClientConfig)` keys its
+`ProduceAccumulator` map by `ClientConfig.buildMQClientId()`. The invoked
+`produceAccumulatorClientIdCache` fixture records that repeated lookups for
+the same ID return the same accumulator and a different ID returns a distinct
+one. Fixture SHA-256 is
+`e285d6e3408c9824feb957fb8cbf16f0209c9b345343a6db8a1ca3a954f40eba`; the
+fixture generator SHA-256 is
+`647201a9c1439e69982145cf2de616a2f562bb78edcc66fc799622eeefd643cd`.
+
+Rust now keeps a manager-scoped cache keyed by the Java-compatible client ID.
+Producers with that identity share live accumulator limits, held batches and
+worker state. Each pending batch retains the first Producer as its send owner,
+matching Java's `MessageAccumulation` owner reference. Producer shutdown stops
+shared accumulator workers while retaining queued entries; a later Producer
+start restarts the workers and re-schedules their original deadlines. The
+`auto_batch_is_shared_by_client_id_and_keeps_first_producer_owner` scripted
+test checks cache identity, shared settings, first-owner transport routing,
+and restart behavior. The accumulator unit test
+`stopped_accumulator_retains_pending_batches_for_restart` checks retained
+entries and deadlines directly. The pinned Maven `verify` and the current
+server-free P18-V02 gates pass; see
+`rlogs/2026/10/24-phase-18-shared-accumulator-client-id__20261024T183639Z.rlog`.
+
+This closes the manager cache and cross-Producer batching ownership slice
+only. Broad P18-V01 method/overload/input/error/control-flow and
+reverse-export reconciliation remains `PARTIAL`.

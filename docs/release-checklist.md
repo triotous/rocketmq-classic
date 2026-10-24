@@ -10289,3 +10289,38 @@ owner-specific checks belong in the manual handoff.
   JVM identity hashes. Native Windows runtime and current-revision remote
   Ubuntu CI remain unverified; Phase 19 paths remain untouched. Run record:
   `rlogs/2026/10/24-phase-18-produce-accumulator-constructor-api__20261024T175426Z.rlog`.
+
+## P18-V01 client-ID-scoped Producer accumulator and P18-V02 current-tree gates — 2026-10-24 (`49fffa75`)
+
+- [x] Rust matches Java `MQClientManager.getOrCreateProduceAccumulator`
+  identity caching by `buildMQClientId`. Producers sharing a manager and client
+  ID share live limits, queued batches and worker state. Pending entries retain
+  the first Producer owner. Shutdown stops workers without clearing entries;
+  a later start restarts workers and schedules their retained deadlines. The
+  invoked `produceAccumulatorClientIdCache` fixture and
+  `auto_batch_is_shared_by_client_id_and_keeps_first_producer_owner` cover
+  cache identity, live settings and owner routing; a unit test covers
+  stop-retain-restart deadlines. Code commit: `49fffa75`.
+- [x] Default and all-feature locked workspace tests/doctests pass. Strict
+  host all-target/all-feature Clippy passes. Windows GNU all-feature workspace
+  check, strict Clippy, and test harness compile/link pass; Windows executables
+  were not run. Pinned offline Maven `verify` passes fixture drift, 37
+  scenarios, 11 message fixtures, 106 typed headers, 19 typed bodies, and
+  Java/Rust cross-decodes.
+- [x] Differential self-test and 37-scenario manifest validation pass.
+  Deterministic race/leak smoke passes 20 cases × 3; fixed-seed fuzz passes
+  163 frame seeds, 11 message seeds, 11 property seeds, 2,960 mutations and
+  564/192/176 frame/message/property decoder calls. Rustdoc JSON generation,
+  release examples, offline benchmark, strict benchmark Clippy, workspace
+  metadata, and all seven offline package listings with `LICENSE` and `NOTICE`
+  pass. Formatting and diff checks pass.
+- [ ] The accumulator cache/ownership slice is closed; broad P18-V01
+  method/overload/input/error/control-flow and reverse-export reconciliation
+  remains `PARTIAL`. `ResponseFuture.toString()` JVM identity rendering and
+  different-mode assignment hash collisions based on JVM process-local
+  identity hashes remain known gaps. Native Windows runtime and
+  current-revision remote Ubuntu CI remain unverified; P18-V04 remains open.
+  No push, remote CI, Broker or Docker run was performed. The Phase 19
+  user-owned worktree paths and Java checkout `aaaa.java` remain untouched.
+  Run record:
+  `rlogs/2026/10/24-phase-18-shared-accumulator-client-id__20261024T183639Z.rlog`.
