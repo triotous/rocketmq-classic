@@ -1479,8 +1479,8 @@ mod tests {
 
     struct DispatchRequest(Arc<AtomicUsize>);
     impl MessageRequest for DispatchRequest {
-        fn consumer_group(&self) -> &str {
-            "missing-dispatch-probe"
+        fn consumer_group(&self) -> Option<&str> {
+            Some("missing-dispatch-probe")
         }
         fn mode(&self) -> rocketmq_classic_protocol::body::MessageRequestMode {
             rocketmq_classic_protocol::body::MessageRequestMode::Pull

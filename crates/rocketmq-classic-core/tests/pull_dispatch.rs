@@ -16,8 +16,8 @@ struct Request {
     id: usize,
 }
 impl MessageRequest for Request {
-    fn consumer_group(&self) -> &str {
-        self.group
+    fn consumer_group(&self) -> Option<&str> {
+        Some(self.group)
     }
     fn mode(&self) -> MessageRequestMode {
         self.mode
@@ -243,7 +243,7 @@ impl ConsumerRuntime for BlockingConsumer {
             let runtime = self.runtime.upgrade().unwrap();
             assert!(
                 runtime
-                    .select_consumer(request.consumer_group())
+                    .select_consumer_nullable(request.consumer_group())
                     .unwrap()
                     .is_some()
             );

@@ -107,6 +107,59 @@ public final class ConsumerFacadeApiFixtures {
         return result;
     }
 
+    private static Map<String, Object> popRequestBehavior() {
+        PopRequest empty = new PopRequest();
+        Map<String, Object> defaults = new TreeMap<>();
+        defaults.put("topic", empty.getTopic());
+        defaults.put("consumerGroup", empty.getConsumerGroup());
+        defaults.put("messageQueue", empty.getMessageQueue());
+        defaults.put("popProcessQueue", empty.getPopProcessQueue());
+        defaults.put("lockedFirst", empty.isLockedFirst());
+        defaults.put("initMode", empty.getInitMode());
+        defaults.put("mode", empty.getMessageRequestMode().name());
+        defaults.put("hashCode", empty.hashCode());
+        defaults.put("toString", empty.toString());
+
+        PopRequest request = new PopRequest();
+        MessageQueue queue = new MessageQueue("orders-😀", "broker-雪", 17);
+        PopProcessQueue processQueue = new PopProcessQueue();
+        request.setTopic("orders-😀");
+        request.setConsumerGroup("group-雪");
+        request.setMessageQueue(queue);
+        request.setPopProcessQueue(processQueue);
+        request.setLockedFirst(true);
+        request.setInitMode(-7);
+
+        PopRequest equalByValue = new PopRequest();
+        equalByValue.setTopic("orders-😀");
+        equalByValue.setConsumerGroup("group-雪");
+        equalByValue.setMessageQueue(new MessageQueue("orders-😀", "broker-雪", 17));
+        equalByValue.setPopProcessQueue(new PopProcessQueue());
+
+        Map<String, Object> populated = new TreeMap<>();
+        populated.put("topic", request.getTopic());
+        populated.put("consumerGroup", request.getConsumerGroup());
+        populated.put("messageQueue", request.getMessageQueue().toString());
+        populated.put("messageQueuePreservesIdentity", request.getMessageQueue() == queue);
+        populated.put("popProcessQueuePreservesIdentity", request.getPopProcessQueue() == processQueue);
+        populated.put("lockedFirst", request.isLockedFirst());
+        populated.put("initMode", request.getInitMode());
+        populated.put("mode", request.getMessageRequestMode().name());
+        populated.put("hashCode", request.hashCode());
+        populated.put("toString", request.toString());
+        populated.put("equalsIgnoresProcessQueueAndFlags", request.equals(equalByValue));
+        populated.put("equalHashCode", equalByValue.hashCode());
+
+        queue.setTopic("orders-mutated");
+        populated.put("topicAfterMessageQueueMutation", request.getMessageQueue().getTopic());
+        populated.put("toStringAfterMessageQueueMutation", request.toString());
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("defaults", defaults);
+        result.put("populated", populated);
+        return result;
+    }
+
     private static Map<String, Object> rebalancePullBehavior() {
         RebalancePullImpl rebalance = new RebalancePullImpl("pull-group",
             MessageModel.CLUSTERING, null, null, null);
@@ -677,9 +730,11 @@ public final class ConsumerFacadeApiFixtures {
         implementationApis.put("RebalancePullImpl", publicApiSurface(RebalancePullImpl.class));
         implementationApis.put("ProcessQueue", publicApiSurface(ProcessQueue.class));
         implementationApis.put("PopProcessQueue", publicApiSurface(PopProcessQueue.class));
+        implementationApis.put("PopRequest", publicApiSurface(PopRequest.class));
         fixture.put("implementationApis", implementationApis);
         Map<String, Object> implementationBehaviors = new TreeMap<>();
         implementationBehaviors.put("popProcessQueue", popProcessQueueBehavior());
+        implementationBehaviors.put("popRequest", popRequestBehavior());
         implementationBehaviors.put("processQueue", processQueueBehavior());
         implementationBehaviors.put("processQueueTryUnlockOverflow", processQueueTryUnlockOverflow());
         implementationBehaviors.put("rebalancePush", rebalancePushBehavior());

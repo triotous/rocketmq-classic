@@ -22,9 +22,10 @@ pub use rocketmq_classic_consumer::{
     ConsumeMessageContext, ConsumeMessageHook, ConsumeMessageService, ConsumeMessageServiceFuture,
     ConsumeOrderlyContext, ConsumeOrderlyStatus, ConsumerServiceState, ConsumerStatsManager,
     LitePullConsumer, LitePullConsumerConfig, LitePullConsumerError, MessageListenerConcurrently,
-    MessageListenerOrderly, MessageQueueListener, MqHelper, OrderlyListenerFuture, PopResult,
-    PopStatus, PullConsumerConfig, PullConsumerError, PushConsumer, PushConsumerConfig,
-    PushConsumerError, PushMessageListener, TopicMessageQueueChangeListener, offset, pull,
+    MessageListenerOrderly, MessageQueueListener, MqHelper, OrderlyListenerFuture, PopProcessQueue,
+    PopRequest, PopResult, PopStatus, PullConsumerConfig, PullConsumerError, PushConsumer,
+    PushConsumerConfig, PushConsumerError, PushMessageListener, TopicMessageQueueChangeListener,
+    offset, pull,
 };
 pub use rocketmq_classic_core::api::extensions::NotifyResult;
 pub use rocketmq_classic_core::auth::{

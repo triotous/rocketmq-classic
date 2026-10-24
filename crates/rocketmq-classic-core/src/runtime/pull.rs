@@ -21,7 +21,8 @@ use tokio::{
 /// Routing-only contract; concrete PullRequest/PopRequest state belongs to
 /// consumer phases, not a second Phase 6 consumer scheduler.
 pub trait MessageRequest: Any + Send + Sync {
-    fn consumer_group(&self) -> &str;
+    /// Java's `MessageRequest.getConsumerGroup()` may return null.
+    fn consumer_group(&self) -> Option<&str>;
     fn mode(&self) -> MessageRequestMode;
     fn as_any(&self) -> &dyn Any;
 }
@@ -470,7 +471,7 @@ impl OwnedPullWorker {
                                 return;
                             };
                             if let Ok(Some(consumer)) =
-                                runtime.select_consumer(request.consumer_group())
+                                runtime.select_consumer_nullable(request.consumer_group())
                             {
                                 let operation = match request.mode() {
                                     MessageRequestMode::Pull => consumer.pull_message(request),
@@ -562,8 +563,8 @@ mod tests {
 
     struct Request(Arc<AtomicUsize>);
     impl MessageRequest for Request {
-        fn consumer_group(&self) -> &str {
-            "unactivated"
+        fn consumer_group(&self) -> Option<&str> {
+            Some("unactivated")
         }
         fn mode(&self) -> MessageRequestMode {
             MessageRequestMode::Pull

@@ -20,6 +20,7 @@ pub mod lite;
 mod mq_helper;
 pub mod offset;
 pub mod pop;
+pub mod pop_request;
 pub mod process_queue;
 pub mod pull;
 pub mod push;
@@ -39,6 +40,7 @@ pub use mq_helper::MqHelper;
 pub use pop::{
     PopProcessQueue, PopProcessQueueError, PopReceipt, PopReceiptError, PopResult, PopStatus,
 };
+pub use pop_request::PopRequest;
 pub use process_queue::{ExpiredMessageCleanupError, ProcessQueue};
 pub use push::{
     ConcurrentListenerFuture, ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus,

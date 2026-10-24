@@ -247,8 +247,8 @@ impl Drop for PullRpcWorkers {
 }
 
 impl MessageRequest for PullRequest {
-    fn consumer_group(&self) -> &str {
-        &self.consumer_group
+    fn consumer_group(&self) -> Option<&str> {
+        Some(&self.consumer_group)
     }
 
     fn mode(&self) -> MessageRequestMode {
