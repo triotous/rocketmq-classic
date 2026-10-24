@@ -6,6 +6,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 
 ## Compatibility and validation
 
+- [x] P18-V01 `SubscriptionData.compareTo(null)` (`fdfdbaea`, 2026-10-24):
+  invoked Java records `NullPointerException`; Rust maps it to
+  `SubscriptionDataCompareError::NullOther`. Protocol all-feature tests and
+  doctests, strict Protocol Clippy, pinned Maven `verify` (37 scenarios, 106
+  typed headers and 19 typed bodies), formatting and diff checks pass. Fixture
+  SHA-256: `7329d0dc1c886c1110a9e81661f72984087f8ecf86fd8a46120a8b86cfe415a8`.
+  This closes the null argument branch only; broad P18-V01 remains PARTIAL.
+
 - [x] P18 Windows GNU all-feature compile/link slice (2026-10-24): on macOS
   ARM64 with Rust 1.85.0, Windows GNU workspace `cargo check`, strict
   all-target/all-feature Clippy, and `cargo test --no-run` passed. All workspace

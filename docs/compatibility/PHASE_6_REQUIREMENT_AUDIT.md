@@ -1,5 +1,18 @@
 # Phase 6 requirement and handoff audit
 
+## Phase 18 `SubscriptionData.compareTo(null)` input parity — 2026-10-24 (`fdfdbaea`)
+
+Pinned Java 5.5.1 `SubscriptionData.compareTo(null)` throws
+`NullPointerException`. Rust now exposes `java_compare_to_nullable` and the
+typed `SubscriptionDataCompareError::NullOther` result while preserving the
+existing non-null `java_compare_to` API. The invoked heartbeat fixture records
+the Java exception class; `heartbeat.json` SHA-256 is
+`7329d0dc1c886c1110a9e81661f72984087f8ecf86fd8a46120a8b86cfe415a8`.
+Focused Protocol regression, Protocol all-feature tests/doctests (168 unit,
+165 doctests), strict all-target/all-feature Protocol Clippy, Maven `verify`
+(37 scenarios, 106 typed headers, 19 typed bodies), formatting, and diff checks
+pass. This closes the null argument branch only; broad P18-V01 remains PARTIAL.
+
 ## Phase 18 current-revision race, fuzz, and handoff smoke — 2026-10-24
 
 On code commit `33c57f09`, the offline deterministic race/leak suite passes 20

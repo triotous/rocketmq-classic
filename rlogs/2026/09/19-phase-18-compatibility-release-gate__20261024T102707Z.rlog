@@ -285,3 +285,24 @@ Detailed run records for the focused code and current-tree gate runs are in
 - These checks refresh the local P18-V02 smoke gates. Native Windows runtime,
   current-revision remote Ubuntu CI, and broad P18-V01 remain open. No push or
   remote CI was run; Phase 19-owned worktree files were left untouched.
+
+## P18-V01 SubscriptionData.compareTo null-input parity — 2026-10-24 12:28 UTC
+
+- Source-backed gap: Java 5.5.1 `SubscriptionData.compareTo(null)` throws
+  `NullPointerException`; the Rust API only accepted a non-null reference.
+- Added public `java_compare_to_nullable` and
+  `SubscriptionDataCompareError::NullOther`; kept the existing non-null API.
+  The invoked Java `RuntimeHeartbeatFixtures` now records the null-argument
+  exception class. Fixture SHA-256:
+  `7329d0dc1c886c1110a9e81661f72984087f8ecf86fd8a46120a8b86cfe415a8`.
+- Initial `mvn exec:java -Dexec.mainClass=...` attempt invoked the configured
+  `compat.Main` without a recognized command and exited with usage. Corrected
+  to `mvn -o -q -f compat/java-reference/pom.xml compile exec:java
+  -Dexec.args='runtime-heartbeat-fixtures <fixture-path>'`; direct generation
+  passed. Full offline Maven `verify` passed (37 scenarios, 11 message
+  fixtures, 106 typed headers, 19 typed bodies).
+- PASS: focused Protocol regression; Protocol all-feature package tests and
+  doctests (168 unit tests, 165 doctests); strict all-target/all-feature
+  Protocol Clippy; `cargo fmt --all -- --check`; `git diff --check`.
+- Code commit: `fdfdbaea`. This closes the null argument branch only; broad
+  P18-V01 remains PARTIAL. Phase 19-owned worktree files remain untouched.
