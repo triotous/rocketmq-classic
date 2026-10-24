@@ -327,8 +327,9 @@ P18-V01 caller-defined subtype property-map follow-up (2026-10-21):
 `MessageExtSubtype` now maps nullable `getProperties()` snapshots, and
 `MessageExt::nullable_property_entries()` uses that override for Push retry
 property copies. The invoked direct-consume fixture compares a custom map value
-and getter count with Java. Java's live map identity and mutation aliasing are
-not preserved by the Rust snapshot. Fixture SHA-256:
+and getter count with Java. At this snapshot-only checkpoint, Java's live map
+identity and mutation aliasing were not yet preserved; the `live_properties`
+follow-up below closes that gap. Fixture SHA-256:
 `348f65888fbce4d8d36fec26ac88c9279deacb6bbbcaf3514646e2efa3f460e5`.
 
 P18-V01 caller-defined subtype store-host follow-up (2026-10-21):
@@ -1837,8 +1838,9 @@ and eight setter calls. It also distinguishes the virtual host getters from
 Java's host string/name/byte helpers, which read the stored host fields
 directly. Fixture SHA-256:
 `aa202880244ea5606fbebc63d8558965fddede4a95be58baacd56320f8f16571`.
-Other inherited methods, the mutable `getProperties()` map identity gap, the
-broad P18-V01 audit and P18-V04 platform evidence remain open.
+Other inherited methods, the broad P18-V01 audit and P18-V04 platform evidence
+remained open at this checkpoint; the live `getProperties()` map identity gap
+was closed by the later `158a049f` follow-up below.
 
 P18-V01 caller-defined subtype transient sysFlag follow-up (2026-10-21):
 `topic_sys_flag()` and `group_sys_flag()` now use the subtype's virtual
@@ -1855,8 +1857,9 @@ four delay/delivery setters dispatch through subtype hooks. The invoked
 Java/Rust direct-consume fixture compares these getter values and seven setter
 calls. Fixture SHA-256:
 `5148df4ac22baa84eb75326238a8d5903927ba1c0380dc34b7cc4093a47bf446`.
-The remaining inherited override inventory, mutable custom `getProperties()`
-map identity, broad P18-V01 audit and P18-V04 platform evidence remain open.
+The remaining inherited override inventory, broad P18-V01 audit and P18-V04
+platform evidence remained open at this checkpoint; the live custom
+`getProperties()` map identity gap was later closed by `158a049f` below.
 
 P18-V01 inherited user-property and transaction metadata follow-up (code
 revision `27c872bc`, 2026-10-21): subtype hooks now cover `getUserProperty`,
@@ -1866,16 +1869,18 @@ The invoked Java/Rust fixture verifies custom getter results and setter counts,
 including blank and null inputs handled by an overridden `putUserProperty`.
 Fixture SHA-256:
 `33de50fa577340aa50df1637f1d2f6aa32ae8d23e5e03ba21a2a012630e37542`.
-Other inherited methods, custom live property-map identity, broad P18-V01 and
-P18-V04 platform evidence remain open.
+Other inherited methods, broad P18-V01 and P18-V04 platform evidence remained
+open at this checkpoint; custom live property-map identity was later closed by
+`158a049f` below.
 
 P18-V01 MessageExt IPv6 host-flag setters (code revision `c7354649`,
 2026-10-21): `setBornHostV6Flag` and `setStoreHostAddressV6Flag` now dispatch
 to subtype hooks. The Java/Rust direct-consume fixture confirms both virtual
 calls; base messages still set their corresponding sysFlag bits. Fixture
 SHA-256: `7cf4e8040b8e040117207c8819d67f1dd7bf7f9f0daa6374ce0f7c345bf9171c`.
-Other inherited methods, custom live property-map identity, broad P18-V01 and
-P18-V04 platform evidence remain open.
+Other inherited methods, broad P18-V01 and P18-V04 platform evidence remained
+open at this checkpoint; custom live property-map identity was later closed by
+`158a049f` below.
 
 P18-V01 live subtype `getProperties()` map follow-up (code revision
 `158a049f`, 2026-10-21): `MessageExtSubtype::live_properties` now exposes a

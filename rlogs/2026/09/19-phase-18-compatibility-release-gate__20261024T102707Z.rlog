@@ -194,3 +194,12 @@ Detailed run records for the focused code and current-tree gate runs are in
   P18-V01 reconciliation and native Windows/current remote Ubuntu evidence
   remain open; no push or remote CI ran, and the Phase 19-owned worktree paths
   remain untouched and unstaged.
+
+## P18-V01 stale property-map status references — 2026-10-24
+
+- Reconciled four historical Phase 6 audit passages that still described
+  caller-defined `MessageExt.getProperties()` live-map aliasing as open after
+  code revision `158a049f` and the crosswalk had closed it.
+- Marked each finding as open at its original checkpoint and linked the later
+  closure. Documentation-only; `git diff --check` passed. No code or tests
+  changed, and Phase 19-owned worktree paths remain untouched and unstaged.
