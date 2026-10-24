@@ -10,8 +10,10 @@ use rocketmq_classic_core::{
 };
 use rocketmq_classic_protocol::{
     codes::LanguageCode,
+    header::BoundaryType,
     header::{
-        GetConsumeStatsRequestHeader, QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1,
+        DeleteTopicFromNamesrvRequestHeader, GetConsumeStatsRequestHeader,
+        QueryConsumerOffsetRequestHeader, SearchOffsetRequestHeader, SendMessageRequestHeaderV1,
         UpdateConsumerOffsetRequestHeader,
     },
 };
@@ -122,25 +124,35 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
     let entries: Vec<_> = fs::read_dir(&dir).unwrap().collect();
     assert_eq!(
         entries.len(),
-        19,
+        29,
         "all pinned Java invoked cases must be compared"
     );
     for name in [
         "route-success",
         "route-not-found",
+        "route-not-found-explicit-false",
         "route-unknown",
         "route-no-body",
         "route-invalid-json",
         "send-success",
+        "send-full-overload",
         "send-unknown",
         "send-no-header",
         "offset-success",
         "offset-not-found",
         "offset-unknown",
         "offset-no-header",
+        "search-offset-deprecated",
+        "search-offset-default-boundary",
         "reset-offset-cpp",
         "reset-offset-explicit",
+        "reset-offset-default",
         "consume-stats-topic-list",
+        "consume-stats-default",
+        "consume-stats-list",
+        "consume-stats-topic",
+        "delete-topic-nameserver",
+        "delete-topic-nameserver-cluster",
         "update-success",
         "update-error",
         "update-unknown",
@@ -259,6 +271,20 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
                     other => panic!("unexpected offset result: {other:?}"),
                 }
             }
+            "search-offset-deprecated" | "search-offset-default-boundary" => {
+                let mut header = SearchOffsetRequestHeader::default();
+                header.set_topic(Some("oracle-topic".into()));
+                header.set_queue_id(Some(2));
+                header.set_timestamp(Some(-7));
+                if name == "search-offset-default-boundary" {
+                    header.set_boundary_type(Some(BoundaryType::Lower));
+                    header.set_broker_name(Some("broker".into()));
+                }
+                format!(
+                    "offset={}",
+                    api.search_offset(&addr, &header, deadline).await.unwrap()
+                )
+            }
             "reset-offset-cpp" => {
                 match api
                     .invoke_broker_to_reset_offset_for_client(
@@ -301,11 +327,44 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
                     other => panic!("unexpected explicit reset offset result: {other:?}"),
                 }
             }
-            "consume-stats-topic-list" => {
+            "reset-offset-default" => {
+                match api
+                    .invoke_broker_to_reset_offset_for_client(
+                        &addr,
+                        "oracle-topic",
+                        "workers",
+                        1_712_345_678_901,
+                        true,
+                        false,
+                        deadline,
+                    )
+                    .await
+                {
+                    Ok(Some(offsets)) => {
+                        assert!(offsets.snapshot().is_empty());
+                        "ok".to_owned()
+                    }
+                    other => panic!("unexpected default reset offset result: {other:?}"),
+                }
+            }
+            name if name.starts_with("consume-stats-") => {
                 let mut header = GetConsumeStatsRequestHeader::default();
                 header.set_consumer_group(Some("workers".into()));
-                header.set_topic(Some("orders".into()));
-                header.update_topic_list(Some(&[Some("orders".into()), None]));
+                match name {
+                    "consume-stats-topic-list" => {
+                        header.set_topic(Some("orders".into()));
+                        header.update_topic_list(Some(&[Some("orders".into()), None]));
+                    }
+                    "consume-stats-list" => {
+                        header.update_topic_list(Some(&[
+                            Some("orders".into()),
+                            Some("payments".into()),
+                        ]));
+                    }
+                    "consume-stats-topic" => header.set_topic(Some("orders".into())),
+                    "consume-stats-default" => {}
+                    _ => panic!("unexpected consume stats overload: {name}"),
+                }
                 match api.get_consume_stats_sync(&addr, &header, deadline).await {
                     Ok(Some(stats)) => {
                         assert!(
@@ -318,6 +377,17 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
                     }
                     other => panic!("unexpected consume stats result: {other:?}"),
                 }
+            }
+            name if name.starts_with("delete-topic-nameserver") => {
+                let mut header = DeleteTopicFromNamesrvRequestHeader::default();
+                header.set_topic(Some("oracle-topic".into()));
+                if name == "delete-topic-nameserver-cluster" {
+                    header.set_cluster_name(Some("cluster-a".into()));
+                }
+                api.delete_topic_in_nameserver(&addr, &header, deadline)
+                    .await
+                    .unwrap();
+                "ok".to_owned()
             }
             _ => panic!("unexpected case {name}"),
         };

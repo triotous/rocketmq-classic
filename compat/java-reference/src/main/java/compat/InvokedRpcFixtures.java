@@ -17,6 +17,7 @@ import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.RemotingClient;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
@@ -27,6 +28,7 @@ import org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody;
 import org.apache.rocketmq.remoting.protocol.admin.ConsumeStats;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.SearchOffsetResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.UpdateConsumerOffsetRequestHeader;
@@ -138,6 +140,17 @@ public final class InvokedRpcFixtures {
         cases.add(new String[] {"route-not-found.json", fixture("route-not-found", capture,
             RequestCode.GET_ROUTEINFO_BY_TOPIC, "MQClientException;code=17")});
 
+        try {
+            api.getTopicRouteInfoFromNameServer("oracle-topic", 10000, false);
+            throw new IllegalStateException("missing route accepted when disallowed");
+        } catch (MQClientException expected) {
+            check(expected.getResponseCode() == ResponseCode.TOPIC_NOT_EXIST,
+                "explicit route-not-found code");
+        }
+        cases.add(new String[] {"route-not-found-explicit-false.json", fixture(
+            "route-not-found-explicit-false", capture, RequestCode.GET_ROUTEINFO_BY_TOPIC,
+            "MQClientException;code=17")});
+
         capture.response = RemotingCommand.createResponseCommand(987654, "unknown");
         try {
             api.getTopicRouteInfoFromNameServer("oracle-topic", 10000);
@@ -193,6 +206,14 @@ public final class InvokedRpcFixtures {
         check(result.getQueueOffset() == 17L && "broker-message".equals(result.getOffsetMsgId()),
             "send outcome");
         cases.add(new String[] {"send-success.json", fixture("send-success", capture,
+            RequestCode.SEND_MESSAGE_V2, "SEND_OK;queueOffset=17;offsetMsgId=broker-message")});
+
+        result = api.sendMessage("broker:10911", "broker",
+            new Message("oracle-topic", "payload".getBytes(StandardCharsets.UTF_8)), send, 10000,
+            CommunicationMode.SYNC, null, null, null, 0, null, null);
+        check(result.getQueueOffset() == 17L && "broker-message".equals(result.getOffsetMsgId()),
+            "full send overload outcome");
+        cases.add(new String[] {"send-full-overload.json", fixture("send-full-overload", capture,
             RequestCode.SEND_MESSAGE_V2, "SEND_OK;queueOffset=17;offsetMsgId=broker-message")});
 
         capture.response = RemotingCommand.createResponseCommand(987654, "unknown");
@@ -273,6 +294,13 @@ public final class InvokedRpcFixtures {
         cases.add(new String[] {"reset-offset-explicit.json", fixture("reset-offset-explicit",
             capture, RequestCode.INVOKE_BROKER_TO_RESET_OFFSET, "offset=27")});
 
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        capture.response.setBody(RemotingSerializable.encode(new ResetOffsetBody()));
+        check(api.invokeBrokerToResetOffset("broker:10911", "oracle-topic", "workers",
+            1712345678901L, true, 10000).isEmpty(), "default reset offset overload outcome");
+        cases.add(new String[] {"reset-offset-default.json", fixture("reset-offset-default",
+            capture, RequestCode.INVOKE_BROKER_TO_RESET_OFFSET, "ok")});
+
         ConsumeStats emptyConsumeStats = new ConsumeStats();
         capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
         capture.response.setBody(RemotingSerializable.encode(emptyConsumeStats));
@@ -283,6 +311,33 @@ public final class InvokedRpcFixtures {
         cases.add(new String[] {"consume-stats-topic-list.json", fixture("consume-stats-topic-list",
             capture, RequestCode.GET_CONSUME_STATS, "ok")});
 
+        stats = api.getConsumeStats("broker:10911", "workers", 10000);
+        check(stats.getOffsetTable().isEmpty(), "default consume stats overload outcome");
+        cases.add(new String[] {"consume-stats-default.json", fixture("consume-stats-default",
+            capture, RequestCode.GET_CONSUME_STATS, "ok")});
+
+        stats = api.getConsumeStats("broker:10911", "workers",
+            java.util.Arrays.asList("orders", "payments"), 10000);
+        check(stats.getOffsetTable().isEmpty(), "topic-list consume stats overload outcome");
+        cases.add(new String[] {"consume-stats-list.json", fixture("consume-stats-list",
+            capture, RequestCode.GET_CONSUME_STATS, "ok")});
+
+        stats = api.getConsumeStats("broker:10911", "workers", "orders", 10000);
+        check(stats.getOffsetTable().isEmpty(), "topic consume stats overload outcome");
+        cases.add(new String[] {"consume-stats-topic.json", fixture("consume-stats-topic",
+            capture, RequestCode.GET_CONSUME_STATS, "ok")});
+
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        api.deleteTopicInNameServer("namesrv:9876", "oracle-topic", 10000);
+        cases.add(new String[] {"delete-topic-nameserver.json", fixture("delete-topic-nameserver",
+            capture, RequestCode.DELETE_TOPIC_IN_NAMESRV, "ok")});
+
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        api.deleteTopicInNameServer("namesrv:9876", "cluster-a", "oracle-topic", 10000);
+        cases.add(new String[] {"delete-topic-nameserver-cluster.json", fixture(
+            "delete-topic-nameserver-cluster", capture, RequestCode.DELETE_TOPIC_IN_NAMESRV,
+            "ok")});
+
         capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "no header");
         try {
             api.queryConsumerOffset("broker:10911", offset, 10000);
@@ -292,6 +347,22 @@ public final class InvokedRpcFixtures {
         }
         cases.add(new String[] {"offset-no-header.json", fixture("offset-no-header", capture,
             RequestCode.QUERY_CONSUMER_OFFSET, "NullPointerException;malformed")});
+
+        SearchOffsetResponseHeader searchReply = new SearchOffsetResponseHeader();
+        searchReply.setOffset(42L);
+        capture.response = RemotingCommand.createResponseCommandWithHeader(ResponseCode.SUCCESS, searchReply);
+        capture.response.makeCustomHeaderToNet();
+        check(api.searchOffset("broker:10911", "oracle-topic", 2, -7L, 10000) == 42L,
+            "deprecated search offset overload outcome");
+        cases.add(new String[] {"search-offset-deprecated.json", fixture("search-offset-deprecated",
+            capture, RequestCode.SEARCH_OFFSET_BY_TIMESTAMP, "offset=42")});
+
+        MessageQueue searchQueue = new MessageQueue("oracle-topic", "broker", 2);
+        check(api.searchOffset("broker:10911", searchQueue, -7L, 10000) == 42L,
+            "default-boundary search offset overload outcome");
+        cases.add(new String[] {"search-offset-default-boundary.json", fixture(
+            "search-offset-default-boundary", capture, RequestCode.SEARCH_OFFSET_BY_TIMESTAMP,
+            "offset=42")});
 
         UpdateConsumerOffsetRequestHeader update = new UpdateConsumerOffsetRequestHeader();
         update.setConsumerGroup("consumer");
