@@ -18,3 +18,9 @@ Verification
 - `git diff --check` — PASS after code changes and again after documentation edits.
 - Full workspace tests, Maven verification, Clippy and P18-V02 gate were not rerun for this slice.
 - No remote CI or push was run. Phase 19 worktree files were not modified or staged.
+
+## Post-commit Remoting package verification — 2026-10-24 09:43 UTC
+
+- At code revision `dbbed745`, `CARGO_TARGET_DIR=/tmp/rocketmq-phase18-target cargo test --offline --locked -p rocketmq-classic-remoting` passed: 145 unit tests, 9 codec tests, 1 fuzz-regression test, 7 security tests, 109 transport tests, and 20 doctests.
+- `CARGO_TARGET_DIR=/tmp/rocketmq-phase18-target cargo clippy --offline --locked -p rocketmq-classic-remoting --all-targets --all-features -- -D warnings` passed.
+- Full workspace gates and Maven verification were not repeated for this slice. No remote CI or push was run.

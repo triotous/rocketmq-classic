@@ -9795,9 +9795,12 @@ owner-specific checks belong in the manual handoff.
   still closes the retained generation. The focused scripted-peer regression
   passed and verifies an old request can finish after `close_channels`, then
   verifies shutdown closes its socket.
-- [x] Formatting and `git diff --check` passed. Code commit: `dbbed745`.
-  Pinned Java source commit: `efa1be59d6fc747ad220f036c86030f05f0419f9`.
-  This checklist and run record are in the separate documentation commit.
+- [x] The post-commit Remoting package run passed 145 unit, 9 codec, 1 fuzz,
+  7 security, 109 transport tests and 20 doctests. Strict all-target/all-feature
+  Remoting Clippy passed. Formatting and `git diff --check` passed. Code
+  commit: `dbbed745`; pinned Java source commit:
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`. This checklist and run record
+  are in the separate documentation commit.
 - [ ] This closes the explicit-close GO_AWAY lifecycle discrepancy only. Broad
   P18-V01 remains PARTIAL. Native Windows runtime and current-revision remote
   Ubuntu CI remain unverified; Phase 19 Broker/Docker evidence remains
