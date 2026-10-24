@@ -6,6 +6,18 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 
 ## Compatibility and validation
 
+- [x] P18-V02 full current-code refresh (`80acf42f`, 2026-10-24): locked
+  all-feature workspace tests/doctests and strict workspace Clippy pass.
+  Windows GNU workspace check, strict Clippy, and test-harness compile/link
+  pass; Windows executables were not run. Deterministic race/leak smoke passes
+  20 cases × 3; fixed-seed fuzz passes 163 frame, 11 message, and 11 property
+  seeds with 2,960 mutations and 564/192/176 decoder calls; comparator
+  self-test and 37-scenario manifest validation pass. Pinned offline Maven
+  `verify` passes 37 scenarios, 11 message fixtures, 106 typed headers, and
+  19 typed bodies. Formatting and diff checks pass. Native Windows runtime and
+  current-revision remote Ubuntu CI remain unverified; broad P18-V01 remains
+  PARTIAL.
+
 - [x] P18-V01 route DTO `compareTo(null)` (`80acf42f`, 2026-10-24): invoked
   Java records `NullPointerException` for `MessageQueue`, `QueueData`, and
   `BrokerData`; Rust maps these to each comparator's `NullOther` error through

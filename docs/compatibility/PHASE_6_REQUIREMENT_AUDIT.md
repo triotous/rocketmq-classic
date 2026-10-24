@@ -1,5 +1,22 @@
 # Phase 6 requirement and handoff audit
 
+## Phase 18 current-code full-feature and server-free refresh — 2026-10-24 (`80acf42f`)
+
+On code revision `80acf42f`, locked all-feature workspace tests and doctests
+pass, as does strict all-target/all-feature workspace Clippy. Windows GNU
+workspace `cargo check`, strict Clippy and `cargo test --no-run` also pass on
+the macOS host; the Windows harnesses were compiled and linked, not executed.
+The offline deterministic race/leak smoke passes 20 cases × 3 repetitions;
+fixed-seed fuzz passes 163 frame seeds, 11 message seeds, 11 property seeds,
+2,960 mutations and 564/192/176 frame/message/property decodes; comparator
+self-test and manifest validation pass for all 37 scenarios. The pinned
+offline Maven `verify` on this same code revision passes 37 scenarios, 11
+message fixtures, 106 typed headers and 19 typed bodies. Formatting and diff
+checks pass. This refreshes local P18-V02 evidence only: broad P18-V01 remains
+PARTIAL, native Windows execution and current-revision remote Ubuntu CI remain
+unverified, and Phase 19 Broker/Docker evidence remains separate. No push or
+remote CI was run.
+
 ## Phase 18 route DTO `compareTo(null)` input parity — 2026-10-24 (`80acf42f`)
 
 Pinned Java 5.5.1 `MessageQueue.compareTo(null)`, `QueueData.compareTo(null)`,
