@@ -2689,6 +2689,10 @@ public final class RuntimeLookupFixtures {
             "{\"consumerIdList\":7,\"consumerIdList\":[\"last\"]}"));
         cases.add(consumerListRawCase("duplicate-field-last-scalar",
             "{\"consumerIdList\":[\"first\"],\"consumerIdList\":7}"));
+        cases.add(consumerListRawCase("eof-trailing-text",
+            "{\"consumerIdList\":[\"before\"]}\u001atrailing"));
+        cases.add(consumerListRawCase("eof-trailing-json",
+            "{\"consumerIdList\":[\"before\"]}\u001a{\"consumerIdList\":[\"after\"]}"));
         return cases;
     }
 

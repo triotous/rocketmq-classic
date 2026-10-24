@@ -391,6 +391,35 @@ async fn list_send_back_lock_and_unlock() {
     }
 }
 
+#[tokio::test]
+async fn consumer_list_reply_uses_pinned_java_fastjson_eof_rules() {
+    for (body, use_future) in [
+        ("{\"consumerIdList\":[\"before\"]}\u{001a}trailing", false),
+        (
+            "{\"consumerIdList\":[\"before\"]}\u{001a}{\"consumerIdList\":[\"after\"]}",
+            true,
+        ),
+    ] {
+        let (api, client, addr) = scripted(
+            response::SUCCESS,
+            None,
+            Some(body.as_bytes().to_vec()),
+            request::GET_CONSUMER_LIST_BY_GROUP,
+            false,
+        )
+        .await;
+        let result = if use_future {
+            api.get_consumer_list_by_group_future(&addr, Some("workers"), deadline())
+                .await
+        } else {
+            api.get_consumer_list_by_group(&addr, "workers", deadline())
+                .await
+        };
+        assert_eq!(result.unwrap(), Some(vec![Some("before".into())]));
+        client.shutdown().await;
+    }
+}
+
 fn rejected(
     result: Result<impl std::fmt::Debug, RpcError>,
     request_code: i32,

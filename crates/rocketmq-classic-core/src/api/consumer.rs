@@ -496,7 +496,7 @@ impl MQClientApi {
                 remark: reply.remark,
             });
         }
-        let body: ConsumerListByGroupResponseBody = decode_body(&reply, code, addr)?;
+        let body = decode_consumer_list_body(&reply, code, addr)?;
         Ok(body
             .get_consumer_id_list()
             .map(|consumer_ids| consumer_ids.snapshot()))
@@ -528,7 +528,7 @@ impl MQClientApi {
                 remark: reply.remark,
             });
         }
-        let body: ConsumerListByGroupResponseBody = decode_body(&reply, code, addr)?;
+        let body = decode_consumer_list_body(&reply, code, addr)?;
         Ok(body
             .get_consumer_id_list()
             .map(|consumer_ids| consumer_ids.snapshot()))
@@ -565,7 +565,7 @@ impl MQClientApi {
                 remark: reply.remark,
             });
         }
-        let body: ConsumerListByGroupResponseBody = decode_body(&reply, code, addr)?;
+        let body = decode_consumer_list_body(&reply, code, addr)?;
         Ok(body
             .get_consumer_id_list()
             .map(|consumer_ids| consumer_ids.snapshot()))
@@ -721,6 +721,28 @@ impl MQClientApi {
         )
         .await
     }
+}
+
+fn decode_consumer_list_body(
+    reply: &rocketmq_classic_remoting::RemotingCommand,
+    code: i32,
+    peer: &str,
+) -> Result<ConsumerListByGroupResponseBody, RpcError> {
+    let body = reply
+        .body
+        .as_deref()
+        .ok_or_else(|| RpcError::MalformedResponse {
+            request_code: code,
+            peer: peer.to_owned(),
+            reason: "missing response body".into(),
+        })?;
+    ConsumerListByGroupResponseBody::java_decode(body).map_err(|error| {
+        RpcError::MalformedResponse {
+            request_code: code,
+            peer: peer.to_owned(),
+            reason: error.to_string(),
+        }
+    })
 }
 
 fn required_response_header_field(

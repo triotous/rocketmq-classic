@@ -17354,8 +17354,8 @@ mod tests {
         let cases = fixture["consumerListCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            16,
-            "Java oracle includes high-precision numeric strings and duplicate-field last-wins input"
+            18,
+            "Java oracle includes high-precision numeric strings, duplicate fields, and EOF-marker suffixes"
         );
         assert!(
             cases
@@ -17363,8 +17363,8 @@ mod tests {
                 .any(|case| case["name"] == "high-precision-numeric-strings")
         );
         for case in cases {
-            let decoded = serde_json::from_str::<ConsumerListByGroupResponseBody>(
-                case["rawInput"].as_str().unwrap(),
+            let decoded = ConsumerListByGroupResponseBody::java_decode(
+                case["rawInput"].as_str().unwrap().as_bytes(),
             );
             let java_accepts = case["outcome"] == "ACCEPTED";
             assert_eq!(
