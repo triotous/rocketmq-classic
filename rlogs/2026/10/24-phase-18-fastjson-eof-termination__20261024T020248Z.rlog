@@ -122,3 +122,44 @@ consumer list.
   remote Ubuntu CI remain unverified. Phase 19 Broker/Docker validation is
   separate. No push or remote CI was run. The four protected Phase 19 worktree
   paths remain unchanged and unstaged.
+
+## Phase 18 typed RPC response Fastjson decoder continuation
+
+- Recorded: 2026-10-24 06:44 UTC
+- Code revision: `9a13acb7`
+- Fixture: `fixtures/runtime/lookup.json`, SHA-256
+  `85c4496ce6e9055da78b4f7624e6713115b90d8c4e7beea60a332c810b5e5bf2`
+
+Audit of Core response decoding found nine typed RPC response variants still
+using generic Serde despite pinned 5.5.1 methods calling
+`RemotingSerializable.decode`. They now pass the corresponding DTO Java
+Fastjson decoder into the shared response helper. The affected types are
+QueryAssignmentResponseBody, QueryConsumeTimeSpanBody, LockBatchResponseBody,
+GroupList, TopicList, QuerySubscriptionResponseBody, and
+ConsumeMessageDirectlyResult. The missing `java_decode` adapters for GroupList
+and QuerySubscriptionResponseBody now use the shared Fastjson input layer.
+
+The same audit found controller sync-state, epoch-cache, and election response
+bodies going through `serde_json::from_slice`. Their nullable body helper now
+uses the shared Java Fastjson decoder, preserving JSON `null` roots as `None`.
+The pinned fixture has 14 EOF suffix cases across the seven RPC DTOs and six
+across BrokerReplicasInfo, EpochEntryCache, and BrokerMemberGroup. Sync-state,
+epoch-cache, and election Core loopback replies also exercise raw U+001A
+followed by trailing text.
+
+## Verification
+
+- `cargo test --offline --locked -p rocketmq-classic-protocol` passed: 168 unit
+  tests, 165 doctests, and all package integration tests.
+- `cargo test --offline --locked -p rocketmq-classic-core` passed, including
+  doctests. The controller API integration suite passed all nine tests.
+- `cargo clippy --offline --locked --workspace --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+- `mvn -o -f compat/java-reference/pom.xml verify` passed: 37 scenarios,
+  fixture-drift checks, 11 message fixtures, 106 typed headers, and 19 typed
+  bodies.
+- The all-features workspace test gate remains unverified on this revision.
+  The preceding attempt stalled during macOS `dyld` launch of Remoting `codec`.
+  Native Windows runtime and current-revision remote Ubuntu CI remain
+  unverified. Phase 19 Broker/Docker validation is separate. No push or remote
+  CI was run; the four protected Phase 19 paths remain unchanged and unstaged.

@@ -9564,6 +9564,28 @@ owner-specific checks belong in the manual handoff.
   four protected Phase 19 worktree paths remain unchanged and unstaged. Run
   record: `rlogs/2026/10/24-phase-18-fastjson-eof-termination__20261024T020248Z.rlog`.
 
+## P18-V01 Typed RPC response Fastjson decoders — 2026-10-24 (`9a13acb7`)
+
+- [x] Nine Core RPC response variants now call their DTO Java Fastjson
+  decoders explicitly. The three controller body paths use nullable Java
+  Fastjson decoding, including JSON `null` roots. Pinned Java invoked inputs
+  cover EOF trailing text and a second JSON document for seven RPC response
+  DTOs (14 suffix cases) and three controller DTOs (six suffix cases). Runtime
+  lookup fixture SHA-256:
+  `85c4496ce6e9055da78b4f7624e6713115b90d8c4e7beea60a332c810b5e5bf2`.
+- [x] Full locked Protocol and Core package tests/doctests passed. The
+  controller API integration suite passed all nine tests. Strict
+  all-target/all-feature workspace Clippy, formatting, diff checks, and pinned
+  offline Maven `verify` passed; Maven verified 37 scenarios, fixture drift,
+  11 message fixtures, 106 typed headers, and 19 typed bodies.
+- [ ] The all-features workspace test gate remains unverified on this revision;
+  a preceding run stalled during macOS `dyld` launch of the Remoting `codec`
+  binary. Broad P18-V01 remains PARTIAL. Native Windows runtime and
+  current-revision remote Ubuntu CI remain unverified; Phase 19 Broker/Docker
+  evidence is separate. No push or remote CI was run. The four protected Phase
+  19 worktree paths remain unchanged and unstaged. Run record:
+  `rlogs/2026/10/24-phase-18-fastjson-eof-termination__20261024T020248Z.rlog`.
+
 ## P18-V01 Consumer-list response Fastjson decoder — 2026-10-24 (`99f12b98`)
 
 - [x] The three Core consumer-list response variants now use the DTO's Java

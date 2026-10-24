@@ -959,3 +959,17 @@ responses. Runtime lookup fixture SHA-256:
 `b3b2efa341e83f40d9b18f345ee175796d8891d84208b2f396f6cf8da162ee33`. This
 closes the tested consumer-list decoding paths only; broad P18-V01 remains
 open.
+
+Phase 18 typed RPC response Fastjson decoding (2026-10-24, `9a13acb7`): nine
+Core response variants across QueryAssignment, query consume time span,
+lock-batch, GroupList, TopicList, query subscription, and direct consume now
+pass their DTO's Java Fastjson decoder explicitly. Controller sync-state,
+epoch-cache, and election bodies use nullable Fastjson decoding, preserving
+JSON `null` results. The invoked Java lookup fixture adds 14 EOF suffix cases
+for seven RPC response DTOs and six cases for three controller DTOs. These
+cover trailing text and a second JSON document after raw U+001A. Runtime lookup
+fixture SHA-256: `85c4496ce6e9055da78b4f7624e6713115b90d8c4e7beea60a332c810b5e5bf2`.
+The focused controller API suite, full locked Protocol and Core package suites
+with doctests, strict all-target/all-feature workspace Clippy, formatting,
+diff checks, and pinned offline Maven `verify` pass. This closes the tested
+typed response decoder paths only; broad P18-V01 remains open.
