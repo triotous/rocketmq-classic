@@ -1,5 +1,19 @@
 # Known differences and evidence gaps
 
+## P18 public nested producer `FaultItem` surface
+
+- Java 5.5.1 declares `LatencyFaultToleranceImpl.FaultItem` public with a
+  constructor, mutable/accessor methods, `equals`/`hashCode`/`toString`, and
+  `Comparable`. Rust keeps producer fault records inside its owner and does
+  not expose a standalone raw record type. Java's enclosing implementation
+  retains those values only in a private table; its public fault-tolerance
+  methods do not return them, and the production selection path does not call
+  `compareTo`. The operational Producer fault-selection and settings flows are
+  mapped in [the Phase 7 producer matrix](PHASE_7_PRODUCER_MATRIX.md). This
+  identifies a low-level direct nested-type API surface for P18-V01 review; it
+  is not a waiver for a missing client feature or setting, and no full
+  compatibility claim is made while the broad audit remains open.
+
 ## P18 `MessageQueueAssignment` collection-hash boundary
 
 - Java `MessageQueueAssignment.equals` compares only `messageQueue`, while `hashCode` also includes `MessageRequestMode.hashCode()` and attachments. Since the enum inherits `Object.hashCode`, Java `HashSet` collision behavior can depend on that JVM's process-local identity hash. The invoked Java fixture constructs an equal-hash pair and confirms that the set collapses it; ordinary same-queue/different-mode rows remain distinct when their hashes differ. Rust maps the public `equals` method through `java_equals` and keeps lawful all-fields `Eq`/`Hash` for native collections. A Java Set serialized after insertion already reflects Java's own membership result; a raw collection engineered to collide for a particular JVM has no stable cross-process hash contract. This is an implementation-local collection boundary, not a portable wire-flow requirement. See the assignment input and method rows in `PHASE_6_API_CONFIG_MAP.md` and fixture `fixtures/runtime/lookup.json`.

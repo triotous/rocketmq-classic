@@ -6,6 +6,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 
 ## Compatibility and validation
 
+- [ ] P18-V01 direct `LatencyFaultToleranceImpl.FaultItem` nested-type API
+  disposition: Java exposes a public constructor and methods, while Rust keeps
+  producer fault records private and does not return raw items. Source confirms
+  the type is retained only in a private table and its comparator has no
+  production call site. The operational fault-selection flow maps through the
+  Producer owner; resolve whether the directly constructible helper surface
+  belongs in the Rust public API before closing P18-V01.
+
 - [x] P18-V01 `MessageQueueForC` public value API (`a460d966`, 2026-10-24):
   Common exports the Java 5.5.1 four-argument constructor, getter/setter
   equivalents, value equality, Java hash code and text form, plus comparison

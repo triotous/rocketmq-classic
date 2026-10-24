@@ -381,3 +381,16 @@ Detailed run records for the focused code and current-tree gate runs are in
   Broad P18-V01 remains PARTIAL. Native Windows runtime and current-revision
   remote Ubuntu CI remain unverified. No push or remote CI ran; Phase 19-owned
   worktree paths remain untouched.
+
+## P18-V01 Java nested FaultItem reverse-surface audit — 2026-10-24 13:08 UTC
+
+- Source review confirms `LatencyFaultToleranceImpl.FaultItem` is public and
+  non-static, with a constructor, public mutators/accessors, value methods and
+  `Comparable`. Its enclosing implementation stores values only in its private
+  table, public interface methods never return them, and production source does
+  not call `FaultItem.compareTo`; `pickOneAtLeast` shuffles private values.
+- Rust keeps operational producer fault records private and maps selection
+  through the Producer owner. The directly constructible nested Java helper
+  has no standalone Rust public API counterpart, so its scope remains an open
+  P18-V01 reverse-surface item pending explicit disposition. No code changed.
+- Phase 19-owned worktree paths remain untouched; no push or remote CI ran.
