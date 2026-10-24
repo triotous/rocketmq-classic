@@ -1,6 +1,8 @@
 package compat;
 
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
+import io.netty.channel.ChannelPromise;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.embedded.EmbeddedChannel;
 import java.nio.file.Files;
@@ -11,7 +13,9 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.rpchook.NamespaceRpcHook;
 import org.apache.rocketmq.common.AbortProcessException;
@@ -69,6 +73,7 @@ public final class RuntimeHookFixtures {
         fixture.put("afterResponseMutation", afterResponseMutation());
         fixture.put("requestPipelineMutation", requestPipelineMutation());
         fixture.put("inboundFailureFlows", inboundFailureFlows());
+        fixture.put("outboundWriteFlows", outboundWriteFlows());
         fixture.put("serverBaselineContacted", false); fixture.put("cases", cases);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
@@ -255,6 +260,61 @@ public final class RuntimeHookFixtures {
         Map<String, Object> result = new TreeMap<>();
         result.put("entrypoint", "NettyRemotingAbstract.processRequestCommand with EmbeddedChannel and direct ExecutorService");
         result.put("cases", rows);
+        return result;
+    }
+
+    private static Map<String, Object> outboundWriteFlows() throws Exception {
+        FixtureRemoting syncRemoting = new FixtureRemoting();
+        AtomicReference<ChannelPromise> syncPromise = new AtomicReference<>();
+        EmbeddedChannel syncChannel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter() {
+            @Override
+            public void write(ChannelHandlerContext context, Object message, ChannelPromise promise) {
+                RemotingCommand request = (RemotingCommand) message;
+                RemotingCommand response = RemotingCommand.createResponseCommand(
+                    RemotingSysResponseCode.SUCCESS, "queued write response");
+                response.setOpaque(request.getOpaque());
+                syncRemoting.processResponseCommand(context, response);
+                syncPromise.set(promise);
+            }
+        });
+        RemotingCommand request = RemotingCommand.createRequestCommand(900_040, null);
+        RemotingCommand response = syncRemoting.invokeSyncImpl(syncChannel, request, 1_000);
+        boolean syncReturnedBeforeWrite = response != null
+            && response.getOpaque() == request.getOpaque()
+            && syncPromise.get() != null
+            && !syncPromise.get().isDone();
+        syncPromise.get().setSuccess();
+        syncChannel.runPendingTasks();
+        syncChannel.finishAndReleaseAll();
+
+        FixtureRemoting onewayRemoting = new FixtureRemoting();
+        AtomicReference<ChannelPromise> onewayPromise = new AtomicReference<>();
+        EmbeddedChannel onewayChannel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter() {
+            @Override
+            public void write(ChannelHandlerContext context, Object message, ChannelPromise promise) {
+                onewayPromise.set(promise);
+            }
+        });
+        java.lang.reflect.Field permitField = NettyRemotingAbstract.class
+            .getDeclaredField("semaphoreOneway");
+        permitField.setAccessible(true);
+        Semaphore onewaySemaphore = (Semaphore) permitField.get(onewayRemoting);
+        RemotingCommand oneway = RemotingCommand.createRequestCommand(900_041, null);
+        onewayRemoting.invokeOnewayImpl(onewayChannel, oneway, 1_000);
+        int permitsWhileWritePending = onewaySemaphore.availablePermits();
+        boolean onewayReturnedBeforeWrite = onewayPromise.get() != null
+            && !onewayPromise.get().isDone();
+        onewayPromise.get().setSuccess();
+        onewayChannel.runPendingTasks();
+        int permitsAfterWrite = onewaySemaphore.availablePermits();
+        onewayChannel.finishAndReleaseAll();
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("syncReturnedBeforeWriteCompletion", syncReturnedBeforeWrite);
+        result.put("onewayReturnedBeforeWriteCompletion", onewayReturnedBeforeWrite);
+        result.put("onewayPermitsWhileWritePending", permitsWhileWritePending);
+        result.put("onewayPermitsAfterWriteCompletion", permitsAfterWrite);
+        result.put("entrypoint", "NettyRemotingAbstract.invokeSyncImpl/invokeOnewayImpl with EmbeddedChannel delayed write promises");
         return result;
     }
 }

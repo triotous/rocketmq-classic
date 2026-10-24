@@ -2093,32 +2093,15 @@ impl RemotingClient {
         let frame = connection
             .encode_command(&command, crate::codec::frame::JAVA_ENCODER_MAX_FRAME_SIZE)
             .map_err(|error| classify_write_error(connection.address(), error))?;
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        match time::timeout(remaining, connection.send(frame, deadline)).await {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                self.inner.cancel_pending(opaque, connection.generation);
-                pending.disarm();
-                return Err(classify_write_error(connection.address(), error));
-            }
-            Err(_) => {
-                self.inner.cancel_pending(opaque, connection.generation);
-                pending.disarm();
-                return Err(TransportError::TimeoutWithContext {
-                    phase: crate::error::TimeoutPhase::Write,
-                    remote_addr: Some(addr.to_owned()),
-                    timeout,
-                    cause: None,
-                });
-            }
-        }
+        connection
+            .enqueue_without_deadline(frame)
+            .map_err(|error| classify_write_error(connection.address(), error))?;
         let response_deadline = if options.close_socket_on_timeout {
             deadline
         } else {
             pending_deadline
         };
-        let response_wait = response_deadline.saturating_duration_since(Instant::now());
-        match time::timeout(response_wait, receiver).await {
+        match time::timeout_at(response_deadline, receiver).await {
             Ok(Ok(Ok(mut response))) => {
                 pending.disarm();
                 if response.code == rocketmq_classic_protocol::codes::response::GO_AWAY {
@@ -2290,9 +2273,12 @@ impl RemotingClient {
                     })?;
                 let frame = connection
                     .encode_command(&command, crate::codec::frame::JAVA_ENCODER_MAX_FRAME_SIZE)?;
-                connection
-                    .send(frame, deadline)
+                let written = connection
+                    .enqueue_without_deadline(frame)
+                    .map_err(|error| classify_write_error(&addr, error))?;
+                written
                     .await
+                    .map_err(|_| TransportError::Closed)?
                     .map_err(|error| classify_write_error(&addr, error))
             }
             .await;
@@ -3385,6 +3371,160 @@ mod tests {
 
     fn test_command() -> RemotingCommand {
         RemotingCommand::default()
+    }
+
+    fn install_test_connection(
+        client: &RemotingClient,
+        address: &str,
+        stream: connection::BoxedStream,
+        generation: u64,
+    ) -> Arc<connection::Connection> {
+        let connection = connection::Connection::spawn(
+            stream,
+            generation,
+            Arc::downgrade(&client.inner),
+            client.inner.frame_max_length().unwrap(),
+            (64 * 1024, 32 * 1024),
+            address.to_owned(),
+            false,
+        );
+        client
+            .inner
+            .connections
+            .lock()
+            .unwrap()
+            .insert(address.to_owned(), connection.clone());
+        connection
+    }
+
+    #[tokio::test]
+    async fn sync_response_is_read_while_request_write_is_pending() {
+        use tokio::io::{AsyncWriteExt, duplex};
+
+        let java_fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/hooks.json")).unwrap();
+        assert_eq!(
+            java_fixture["outboundWriteFlows"]["syncReturnedBeforeWriteCompletion"],
+            true
+        );
+        let address = "127.0.0.1:10911";
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let (client_stream, mut peer_stream) = duplex(1);
+        let connection = install_test_connection(&client, address, Box::new(client_stream), 9901);
+        let request = RemotingCommand {
+            code: 1,
+            body: Some(vec![0; 1024 * 1024]),
+            ..RemotingCommand::default()
+        };
+        let invoke_client = client.clone();
+        let mut invoke = tokio::spawn(async move {
+            invoke_client
+                .invoke_sync_with_deadline(
+                    address,
+                    request,
+                    Instant::now() + std::time::Duration::from_secs(2),
+                )
+                .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while client.is_channel_writable(address) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("large request did not stall the tiny socket writer");
+        assert!(connection.queued_write_bytes() > 0);
+
+        let mut response = RemotingCommand {
+            opaque: 0,
+            ..RemotingCommand::default()
+        };
+        response.mark_response();
+        peer_stream
+            .write_all(&crate::codec::frame::encode(&response).unwrap())
+            .await
+            .unwrap();
+        let result = tokio::time::timeout(std::time::Duration::from_millis(250), &mut invoke)
+            .await
+            .expect("response handling waited for the blocked outbound write")
+            .unwrap()
+            .unwrap();
+        assert!(result.is_response());
+        assert!(
+            connection.queued_write_bytes() > 0,
+            "the response must complete before the queued request finishes writing"
+        );
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn oneway_write_remains_queued_after_the_call_deadline() {
+        use bytes::BytesMut;
+        use tokio::io::{AsyncReadExt, duplex};
+
+        let java_fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/hooks.json")).unwrap();
+        let java_write = &java_fixture["outboundWriteFlows"];
+        assert_eq!(java_write["onewayReturnedBeforeWriteCompletion"], true);
+        assert_eq!(java_write["onewayPermitsWhileWritePending"], 0);
+        assert_eq!(java_write["onewayPermitsAfterWriteCompletion"], 1);
+        let address = "127.0.0.1:10912";
+        let client = RemotingClient::with_config(ClientConfig {
+            oneway_semaphore_value: 1,
+            ..ClientConfig::default()
+        })
+        .unwrap();
+        client.start().unwrap();
+        const BODY_LEN: usize = 256 * 1024;
+        let (client_stream, mut peer_stream) = duplex(4096);
+        let connection = install_test_connection(&client, address, Box::new(client_stream), 9902);
+        let deadline = Instant::now() + std::time::Duration::from_millis(200);
+        client
+            .invoke_oneway(
+                address,
+                RemotingCommand {
+                    code: 2,
+                    body: Some(vec![0; BODY_LEN]),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while connection.queued_write_bytes() == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("one-way request was not enqueued");
+        assert_eq!(client.inner.oneway_admission.available_permits(), 0);
+        tokio::time::sleep_until(deadline + std::time::Duration::from_millis(50)).await;
+
+        let sent = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            let mut prefix = [0; 4];
+            peer_stream.read_exact(&mut prefix).await.unwrap();
+            let frame_length = u32::from_be_bytes(prefix) as usize;
+            let mut framed = BytesMut::with_capacity(frame_length + 4);
+            framed.extend_from_slice(&prefix);
+            framed.resize(frame_length + 4, 0);
+            peer_stream.read_exact(&mut framed[4..]).await.unwrap();
+            crate::codec::frame::decode_next(&mut framed)
+                .unwrap()
+                .unwrap()
+        })
+        .await
+        .expect("queued one-way frame did not finish after the peer drained it");
+        assert!(sent.is_oneway());
+        assert_eq!(sent.body.as_ref().unwrap().len(), BODY_LEN);
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while client.inner.oneway_admission.available_permits() == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("one-way permit was not released when the queued write completed");
+        client.shutdown().await;
     }
 
     #[tokio::test]

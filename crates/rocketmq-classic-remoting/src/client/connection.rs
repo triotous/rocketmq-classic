@@ -461,6 +461,31 @@ async fn run_connection(
     tokio::pin!(idle_timer);
     let mut input = BytesMut::with_capacity(8192);
     let mut read_buffer = vec![0; 8192];
+    let mut active_frame: Option<OutboundFrame> = None;
+    let mut active_offset = 0;
+    let complete_frame = |mut frame: OutboundFrame, result: Result<(), TransportError>| {
+        let write_length = frame.bytes.as_ref().expect("queued frame bytes").len();
+        let queued = queued_write_bytes
+            .fetch_sub(write_length, std::sync::atomic::Ordering::AcqRel)
+            .saturating_sub(write_length);
+        let (_, low) = write_watermarks;
+        if queued < low {
+            writable.store(true, std::sync::atomic::Ordering::Release);
+        }
+        if let Some(bytes) = frame.bytes.take() {
+            if pooled_byte_buffer_allocator_enabled {
+                let mut bytes = bytes;
+                bytes.clear();
+                let mut pool = frame_pool.lock().unwrap();
+                if pool.len() < 4 {
+                    pool.push(bytes);
+                }
+            }
+        }
+        if let Some(written) = frame.written.take() {
+            let _ = written.send(result);
+        }
+    };
     let failure = 'connection: loop {
         tokio::select! {
             biased;
@@ -471,56 +496,76 @@ async fn run_connection(
                 }
                 break None;
             },
-            frame = outbound.recv() => match frame {
-                Some(mut frame) => {
-                    let bytes = frame.bytes.as_ref().expect("queued frame bytes");
-                    let write_length = bytes.len();
-                    let result = tokio::select! {
-                        result = async {
-                            match frame.deadline {
-                                Some(deadline) => time::timeout_at(deadline, writer.write_all(bytes))
-                                    .await
-                                    .map_err(|_| TransportError::Timeout)?
-                                    .map_err(|error| TransportError::SendSource(ErrorSource::new(error))),
-                                None => writer.write_all(bytes)
-                                    .await
-                                    .map_err(|error| TransportError::SendSource(ErrorSource::new(error))),
-                            }
-                        } => result,
-                        _ = async { match &mut frame.cancelled { Some(cancelled) => { let _ = cancelled.await; }, None => std::future::pending().await } } => Err(TransportError::Closed),
-                        result = shutdown.changed() => {
-                            let _ = result;
-                            Err(TransportError::Shutdown)
+            result = async {
+                let frame = active_frame.as_mut().expect("active frame branch");
+                let bytes = frame.bytes.as_ref().expect("queued frame bytes");
+                let remaining = &bytes[active_offset..];
+                tokio::select! {
+                    result = async {
+                        match frame.deadline {
+                            Some(deadline) => time::timeout_at(deadline, writer.write(remaining))
+                                .await
+                                .map_err(|_| TransportError::Timeout)?
+                                .map_err(|error| TransportError::SendSource(ErrorSource::new(error))),
+                            None => writer.write(remaining)
+                                .await
+                                .map_err(|error| TransportError::SendSource(ErrorSource::new(error))),
                         }
-                    };
-                    if result.is_ok() && !max_idle_time.is_zero() {
-                        idle_timer
-                            .as_mut()
-                            .reset(Instant::now() + max_idle_time);
+                    } => result,
+                    _ = async {
+                        match frame.cancelled.as_mut() {
+                            Some(cancelled) => { let _ = cancelled.await; }
+                            None => std::future::pending().await,
+                        }
+                    } => Err(TransportError::Closed),
+                }
+            }, if active_frame.is_some() => {
+                match result {
+                    Ok(0) => {
+                        let frame = active_frame.take().expect("completed active frame");
+                        let error = TransportError::SendSource(ErrorSource::new(
+                            std::io::Error::new(
+                                std::io::ErrorKind::WriteZero,
+                                "failed to write the complete remoting frame",
+                            ),
+                        ));
+                        complete_frame(frame, Err(error.clone()));
+                        break Some(error);
                     }
-                    let queued = queued_write_bytes
-                        .fetch_sub(write_length, std::sync::atomic::Ordering::AcqRel)
-                        .saturating_sub(write_length);
-                    let (_, low) = write_watermarks;
-                    if queued < low {
-                        writable.store(true, std::sync::atomic::Ordering::Release);
-                    }
-                    if let Some(bytes) = frame.bytes.take() {
-                        if pooled_byte_buffer_allocator_enabled {
-                            let mut bytes = bytes;
-                            bytes.clear();
-                            let mut pool = frame_pool.lock().unwrap();
-                            if pool.len() < 4 {
-                                pool.push(bytes);
+                    Ok(written) => {
+                        active_offset += written;
+                        if active_offset == active_frame
+                            .as_ref()
+                            .expect("active frame after partial write")
+                            .bytes
+                            .as_ref()
+                            .expect("queued frame bytes")
+                            .len()
+                        {
+                            let frame = active_frame.take().expect("completed active frame");
+                            if !max_idle_time.is_zero() {
+                                idle_timer
+                                    .as_mut()
+                                    .reset(Instant::now() + max_idle_time);
                             }
+                            complete_frame(frame, Ok(()));
                         }
                     }
-                    if let Some(written) = frame.written.take() {
-                        let _ = written.send(result.clone());
+                    Err(error) => {
+                        let frame = active_frame.take().expect("failed active frame");
+                        complete_frame(frame, Err(error.clone()));
+                        break if error == TransportError::Shutdown {
+                            None
+                        } else {
+                            Some(error)
+                        };
                     }
-                    if result.is_err() {
-                        break if result == Err(TransportError::Shutdown) { None } else { result.err() }
-                    }
+                }
+            },
+            frame = outbound.recv(), if active_frame.is_none() => match frame {
+                Some(frame) => {
+                    active_frame = Some(frame);
+                    active_offset = 0;
                 },
                 None if closed.load(std::sync::atomic::Ordering::Acquire) => break None,
                 None => break Some(TransportError::Closed),
@@ -568,6 +613,12 @@ async fn run_connection(
             },
         }
     };
+    if let Some(frame) = active_frame.take() {
+        complete_frame(
+            frame,
+            Err(failure.clone().unwrap_or(TransportError::Shutdown)),
+        );
+    }
     closed.store(true, std::sync::atomic::Ordering::Release);
     if let Some(inner) = inner.upgrade() {
         inner.connection_closed(generation, failure);
