@@ -70,37 +70,6 @@ impl ClientInner {
         true
     }
 
-    pub(super) fn close_retired_connections(&self, addresses: &[String]) {
-        let normalized = addresses
-            .iter()
-            .filter_map(|address| Address::parse(address).ok())
-            .map(|address| address.0)
-            .collect::<std::collections::HashSet<_>>();
-        let retired = {
-            let mut table = self.retired_connections.lock().unwrap();
-            let generations = table
-                .iter()
-                .filter_map(|(generation, (address, _))| {
-                    normalized.contains(address).then_some(*generation)
-                })
-                .collect::<Vec<_>>();
-            generations
-                .into_iter()
-                .filter_map(|generation| table.remove(&generation))
-                .collect::<Vec<_>>()
-        };
-        for (address, connection) in retired {
-            connection.close();
-            self.fail_generation(
-                connection.generation,
-                TransportError::SendRequest {
-                    remote_addr: address,
-                    cause: None,
-                },
-            );
-        }
-    }
-
     pub(super) fn connection_closed_for_address(&self, address: &str) {
         let generation = self
             .connections

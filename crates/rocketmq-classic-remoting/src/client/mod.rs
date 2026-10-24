@@ -1658,7 +1658,6 @@ impl RemotingClient {
             self.inner.interrupt_pull_requests(&key);
             self.inner.connection_closed_for_address(&key);
         }
-        self.inner.close_retired_connections(addresses);
     }
 
     pub fn invoke_async(

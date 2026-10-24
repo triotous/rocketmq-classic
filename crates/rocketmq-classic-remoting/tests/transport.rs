@@ -4613,18 +4613,24 @@ async fn p3_go_away_replacement_keeps_other_old_connection_requests_alive() {
 }
 
 #[tokio::test]
-async fn p3_close_channels_closes_go_away_current_and_retired_generations() {
+async fn p3_close_channels_closes_go_away_current_but_keeps_retired_generation() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (retry_seen_tx, retry_seen_rx) = tokio::sync::oneshot::channel();
     let (old_closed_tx, old_closed_rx) = tokio::sync::oneshot::channel();
     let (replacement_closed_tx, replacement_closed_rx) = tokio::sync::oneshot::channel();
+    let (continue_old_tx, continue_old_rx) = tokio::sync::oneshot::channel();
     let peer = tokio::spawn(async move {
         let (mut old_connection, _) = listener.accept().await.unwrap();
-        let first = read_command(&mut old_connection).await;
-        let _other_pending = read_command(&mut old_connection).await;
+        let first_request = read_command(&mut old_connection).await;
+        let second_request = read_command(&mut old_connection).await;
+        let (retry_request, other_pending) = if first_request.code == 1 {
+            (first_request, second_request)
+        } else {
+            (second_request, first_request)
+        };
         let mut go_away = command(response::GO_AWAY);
-        go_away.opaque = first.opaque;
+        go_away.opaque = retry_request.opaque;
         go_away.mark_response();
         write_command(&mut old_connection, &go_away).await;
 
@@ -4632,10 +4638,15 @@ async fn p3_close_channels_closes_go_away_current_and_retired_generations() {
         let _retry = read_command(&mut replacement).await;
         let _ = retry_seen_tx.send(());
         let mut byte = [0];
-        old_connection.read_exact(&mut byte).await.unwrap_err();
-        let _ = old_closed_tx.send(());
         replacement.read_exact(&mut byte).await.unwrap_err();
         let _ = replacement_closed_tx.send(());
+        let _ = continue_old_rx.await;
+        let mut old_response = command(62);
+        old_response.opaque = other_pending.opaque;
+        old_response.mark_response();
+        write_command(&mut old_connection, &old_response).await;
+        old_connection.read_exact(&mut byte).await.unwrap_err();
+        let _ = old_closed_tx.send(());
     });
     let client = RemotingClient::new(TransportMode::Plain);
     client.start().unwrap();
@@ -4668,20 +4679,30 @@ async fn p3_close_channels_closes_go_away_current_and_retired_generations() {
         .unwrap();
     client.close_channels(&[address.to_string()]);
 
-    let results = tokio::time::timeout(Duration::from_secs(2), async {
-        (first.await.unwrap(), second.await.unwrap())
-    })
-    .await
-    .expect("close_channels must terminate pending calls on both generations");
-    assert!(results.0.is_err());
-    assert!(results.1.is_err());
-    tokio::time::timeout(Duration::from_secs(2), async {
-        old_closed_rx.await.unwrap();
-        replacement_closed_rx.await.unwrap();
-    })
-    .await
-    .expect("close_channels must close both generation sockets");
+    tokio::time::timeout(Duration::from_secs(2), replacement_closed_rx)
+        .await
+        .expect("close_channels must close the wrapper's current channel")
+        .unwrap();
+    let first_result = tokio::time::timeout(Duration::from_secs(2), first)
+        .await
+        .expect("closing the current generation must terminate its pending retry")
+        .unwrap();
+    assert!(first_result.is_err());
+    assert!(
+        !second.is_finished(),
+        "the retired channel remains open and can complete its pending call"
+    );
+    let _ = continue_old_tx.send(());
+    let second_result = tokio::time::timeout(Duration::from_secs(2), second)
+        .await
+        .expect("the retired generation's pending call must complete")
+        .unwrap();
+    assert_eq!(second_result.unwrap().code, 62);
     client.shutdown().await;
+    tokio::time::timeout(Duration::from_secs(2), old_closed_rx)
+        .await
+        .expect("shutdown must close the retained old generation")
+        .unwrap();
     peer.await.unwrap();
 }
 
