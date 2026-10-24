@@ -9905,3 +9905,35 @@ owner-specific checks belong in the manual handoff.
 - [x] This closes P18-V03 documentation/package review on code revision
   `1e928372`. P18-V01 and P18-V04 remain open. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261024T102707Z.rlog`.
+
+## P18-V01 Remoting GO_AWAY tryLock parity — 2026-10-24 (`3b7cb5d2`)
+
+- [x] Rust now models the Java `ChannelWrapper.reconnect()` contention path
+  with weakly cached per-address wrapper locks. Current-channel lookup uses a
+  read lock; GO_AWAY reconnect tries the write lock and checks the current
+  generation after contention. When the old generation remains current, it
+  returns the GO_AWAY error without retiring the connection. An already
+  replaced or previously retired generation retries through the shared
+  replacement. GO_AWAY received after socket-close cleanup still retries when
+  no current connection entry remains.
+- [x] `go_away_try_lock_skips_current_channel_and_retries_replaced_channel`
+  covers the same-generation contention and replacement paths. Remoting
+  all-feature tests passed (147 unit, 9 codec, 1 fuzz-regression, 7 security,
+  109 transport tests, and 20 doctests); strict all-target/all-feature
+  Remoting Clippy passed.
+- [x] On code revision `3b7cb5d2`, default and all-feature locked workspace
+  tests/doctests, strict all-target/all-feature workspace Clippy, formatting,
+  and diff checks passed. The Asia/Taipei Unique ID test, differential
+  self-test, 37-scenario manifest, 20-case × 3 race/leak smoke, bounded fuzz
+  smoke (163 frame seeds, 11 message seeds, 2,784 mutations, 564 frame
+  decodes, 192 message decodes), offline Maven `verify` (37 scenarios, 11
+  message fixtures, 106 typed headers, 19 typed bodies), release examples,
+  benchmark compilation, metadata and seven package listings with `LICENSE`/
+  `NOTICE` also passed. Windows GNU all-target/all-feature check and strict
+  Clippy passed as compile-only evidence.
+- [ ] This closes the recorded GO_AWAY contention discrepancy only. Broad
+  P18-V01 Phase 6 method/overload/input/error/control-flow and reverse-export
+  reconciliation remains PARTIAL. Native Windows runtime and current-revision
+  remote Ubuntu CI remain unverified; no push or remote CI was run. Phase 19
+  Broker/Docker evidence remains separate. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261024T102707Z.rlog`.

@@ -114,3 +114,44 @@ Detailed run records for the focused code and current-tree gate runs are in
   and current-revision remote Ubuntu CI remain unverified; no push or remote
   CI was run. The four pre-existing Phase 19 worktree paths remain unstaged
   and untouched.
+
+## P18-V01 Remoting GO_AWAY wrapper tryLock parity — 2026-10-24
+
+- Code commit: `3b7cb5d2 fix(remoting): match GoAway wrapper trylock`.
+- `ClientInner` now keeps weakly cached per-address wrapper locks. Current
+  connection lookup reads under the wrapper lock; a GO_AWAY response tries a
+  nonblocking write lock and, on contention, checks whether the generation
+  changed. Contention with the same generation skips retirement/retry. A
+  replacement or an already-retired generation remains eligible for the
+  shared retry path. Socket-close cleanup with no current entry still retains
+  the existing retry behavior.
+- Added `go_away_try_lock_skips_current_channel_and_retries_replaced_channel`
+  to cover same-generation lock contention and replacement routing.
+- Focused Remoting gates passed: all-feature package tests (147 unit, 9 codec,
+  1 fuzz-regression, 7 security, 109 transport, 20 doctests), strict
+  all-target/all-feature Remoting Clippy, and the GO_AWAY transport subset
+  (84 matching cases). A first full Remoting attempt exposed five regressions
+  when no current map entry followed socket-close cleanup; that branch was
+  corrected to preserve the pinned Java post-close retry and the rerun passed.
+
+## P18-V02 current-revision server-free gates — 2026-10-24 (`3b7cb5d2`)
+
+- Default and all-feature locked workspace tests/doctests passed on
+  `3b7cb5d2`; strict all-target/all-feature workspace Clippy, `cargo fmt`, and
+  `git diff --check` passed.
+- CI-equivalent checks passed: Asia/Taipei Unique ID fixture; differential
+  comparator self-test and 37-scenario manifest; stress smoke (20 cases × 3);
+  fuzz smoke (163 frame seeds, 11 message seeds, 2,784 mutations, 564 frame
+  decodes, 192 message decodes); offline Maven `verify` (37 scenarios, 11
+  message fixtures, 106 typed headers, 19 typed bodies); release examples;
+  offline benchmark compilation; workspace metadata; and seven package
+  listings, each including `LICENSE` and `NOTICE`.
+- Windows GNU all-target/all-feature workspace check and strict Clippy passed
+  as compile-only evidence. Maven emitted bounded probe-thread linger warnings
+  for the intentionally nonterminating Java zero-size/cycle decoder cases;
+  `verify` completed successfully.
+- Broad P18-V01 Phase 6 source/API/overload/input/error/control-flow and
+  reverse-export reconciliation remains PARTIAL. Native Windows runtime and
+  current-revision remote Ubuntu CI remain unverified. No push or remote CI
+  was run. The four pre-existing Phase 19-owned worktree paths remain
+  untouched and unstaged.
