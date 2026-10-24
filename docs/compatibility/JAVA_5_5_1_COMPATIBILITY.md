@@ -7,6 +7,16 @@ It inventories 79 declared public instance methods against the Rust API and
 the invoked Java/Rust direct-consume evidence; the broader P18-V01 inventory
 remains in progress.
 
+Phase 18 Fastjson U+001A end-of-input continuation (`12de2474`, 2026-10-24):
+the pinned Java 5.5.1 heartbeat DTO oracle accepts 108 new inputs with control
+or Unicode characters after U+001A and between repeated markers, and two more
+with ordinary text or a second JSON object after the marker. Fastjson treats
+U+001A as end-of-input and ignores its entire suffix. Rust now matches this
+while retaining raw U+001A characters inside strings. The expanded 1,221-case
+heartbeat DTO differential and focused parser regression pass. Fixture
+SHA-256: `3841442edc031bc70a028f0c2476f8b77f9ead0ec2eb959ace5a1ab2bad3f9c6`.
+This closes the tested terminator boundary only; broad P18-V01 remains open.
+
 Phase 18 Fastjson numeric-token continuation (2026-10-24): the pinned Java
 5.5.1 heartbeat DTO oracle accepts uppercase numeric suffixes `L`, `F`, `D`,
 `B`, and `S` in integer fields, exponent-plus-suffix values, and leading or

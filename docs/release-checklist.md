@@ -9514,3 +9514,31 @@ owner-specific checks belong in the manual handoff.
   remote Ubuntu CI remain unverified, and Phase 19 Broker/Docker evidence is
   separate. No push or remote CI was run. Run record:
   `rlogs/2026/10/24-phase-18-fastjson-numeric-suffix__20261024T010523Z.rlog`.
+
+## P18-V01 Fastjson U+001A end-of-input semantics — 2026-10-24 (`12de2474`)
+
+- [x] Added 110 invoked Java heartbeat DTO cases: 108 cover each of 54
+  control/Unicode separators after or between U+001A markers; two verify that
+  ordinary trailing text and a second JSON object are ignored after the marker.
+  The previous Rust differential failed on all 108 separator cases. Rust now
+  truncates at the first raw marker after string normalization. The expanded
+  DTO corpus has 1,221 cases; fixture SHA-256 is
+  `3841442edc031bc70a028f0c2476f8b77f9ead0ec2eb959ace5a1ab2bad3f9c6`.
+- [x] Focused parser regression, 1,221-case Java/Rust heartbeat DTO
+  differential, default workspace tests/doctests, strict all-target/all-feature
+  Clippy, formatting, diff checks, and offline Maven `verify` pass. Maven
+  verified 37 scenarios, fixture drift, 11 message fixtures, 106 typed headers,
+  and 19 typed bodies.
+- [ ] The all-features workspace run passed the Protocol test suite and several
+  Remoting integration targets, then stalled while launching
+  `rocketmq-classic-remoting --test codec`: the test executable
+  remained in macOS `dyld` for over two minutes with no loaded images or test
+  threads. Launching that binary with `--list` stalled the same way. This leaves
+  the current-revision all-features workspace gate unverified; it is recorded
+  without classifying the loader stall as a code-test failure.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and
+  reverse-export reconciliation remains open. Native Windows runtime and
+  current-revision remote Ubuntu CI remain unverified; Phase 19 Broker/Docker
+  validation is separate. No push or remote CI was run. The four protected
+  Phase 19 worktree items remain unchanged and unstaged. Run record:
+  `rlogs/2026/10/24-phase-18-fastjson-eof-termination__20261024T020248Z.rlog`.

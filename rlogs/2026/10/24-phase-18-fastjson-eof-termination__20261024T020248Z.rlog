@@ -1,0 +1,54 @@
+# Phase 18 Fastjson U+001A end-of-input semantics
+
+- Recorded: 2026-10-24 02:02:48 UTC
+- Workspace: `/Users/bruce.tsai/Projects/trio/rocketmq-classic`
+- Branch: `phase/18-phase-18-compatibility-closure`
+- Code/test revision: `12de24745efdf63f546a1b9f36df680c533c7cf2`
+- Pinned Java source: RocketMQ 5.5.1, `efa1be59d6fc747ad220f036c86030f05f0419f9`
+- Host: macOS 26.6.1, AArch64
+- Rust: `rustc 1.85.0 (4d91de4e4 2025-02-17)`
+- Heartbeat fixture SHA-256:
+  `3841442edc031bc70a028f0c2476f8b77f9ead0ec2eb959ace5a1ab2bad3f9c6`
+
+## Compatibility change
+
+- Added 108 invoked Java heartbeat DTO cases covering each of 54 C0/Unicode
+  separator values after U+001A and between repeated U+001A markers. Added two
+  more cases for trailing text and a second JSON object after the marker. Java
+  accepts all 110; the earlier native differential failed on the 108 separator
+  cases.
+- The heartbeat DTO corpus now contains 1,221 cases. Rust truncates at the
+  first raw U+001A after syntax and string normalization. Raw U+001A within a
+  quoted string remains part of the decoded value.
+- This closes the tested Fastjson end-of-input boundary only. Broad P18-V01
+  source/API/settings/input/error/control-flow and reverse-export
+  reconciliation remains PARTIAL.
+
+## Verification
+
+- Pinned Java fixture generation after compiling the fixture runner — passed.
+- `heartbeat_dto_inputs_match_invoked_java_fastjson` — passed for all 1,221
+  Java/Rust DTO inputs.
+- `fastjson_eof_marker_ends_the_document_and_ignores_the_suffix` — passed.
+- `cargo test --offline --locked --workspace` — passed, including doctests.
+  The only later change before the all-features attempt was replacing a test
+  `format!` with an equivalent owned string literal; strict Clippy passed on
+  that final source state.
+- `mvn -o -f compat/java-reference/pom.xml verify` — passed: 37 scenarios,
+  fixture drift checks, 11 message fixtures, 106 typed headers, and 19 typed
+  bodies cross-decoded.
+- `cargo fmt --all -- --check`, `git diff --check`, and strict workspace
+  all-target/all-feature Clippy — passed.
+- `cargo test --offline --locked --workspace --all-features` passed through
+  the 167-test Protocol library suite and several Remoting integration
+  targets, then stalled launching
+  `target/debug/deps/codec-353268327739c6fb`. The process stayed in macOS
+  `dyld` for over two minutes with only the loader image, no test threads, and
+  a 96 KiB physical footprint. Running the same binary with `--list` also
+  stalled in `dyld`. Both processes were stopped with SIGTERM. This gate is
+  unverified on the current revision; no Rust test assertion failed.
+
+Native Windows runtime and current-revision remote Ubuntu CI remain
+unverified. Phase 19 Broker/Docker validation is separate. No push or remote
+CI was run. The four protected Phase 19 worktree items remain unchanged and
+unstaged.

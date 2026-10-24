@@ -1,5 +1,20 @@
 # Phase 6 heartbeat branch audit
 
+Heartbeat DTO Fastjson EOF-termination continuation (`12de2474`, 2026-10-24):
+expanded the invoked corpus from 1,111 to 1,221 inputs. The Java oracle accepts
+all 108 cases placing each of 54 control/Unicode separators between repeated
+U+001A markers or after a marker, and it also ignores trailing text or a second
+JSON object after U+001A. The prior Rust differential failed on the 108
+separator cases because its normalizer removed only a trailing run of markers
+and spaces. Rust now truncates at the first raw U+001A after syntax/string
+normalization; an escaped U+001A inside a string remains data. The focused
+regression and 1,221-case Java/Rust DTO differential pass. Current
+`heartbeat.json` SHA-256:
+`3841442edc031bc70a028f0c2476f8b77f9ead0ec2eb959ace5a1ab2bad3f9c6`.
+This closes the tested EOF-termination boundary only; broad P18-V01 source,
+API, settings, input, error, control-flow, and reverse-export reconciliation
+remains open.
+
 Heartbeat DTO Fastjson numeric-token continuation (2026-10-24): expanded the
 invoked corpus from 1088 to 1102 cases. Pinned Java accepts uppercase `L`,
 `F`, `D`, `B`, and `S` numeric suffixes in integer DTO fields, exponent forms
