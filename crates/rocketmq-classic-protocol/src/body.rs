@@ -18855,7 +18855,12 @@ mod tests {
                 "{}",
                 case["name"]
             );
-            assert_eq!(assignment.mode(), assignment.mode(), "{}", case["name"]);
+            assert_eq!(
+                assignment.mode(),
+                serde_json::from_value::<Option<MessageRequestMode>>(case["mode"].clone()).unwrap(),
+                "{}",
+                case["name"]
+            );
             assert_eq!(
                 assignment
                     .attachments()
