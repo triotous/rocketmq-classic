@@ -8651,8 +8651,19 @@ public final class ProducerCoreFixtures {
             && (Boolean.parseBoolean(args[1]) || "--verify".equals(args[1]));
         String json = JSON.toJSONString(produce()) + "\n";
         if (verify) {
-            if (!Files.exists(path) || !json.equals(Files.readString(path))) {
-                throw new IllegalStateException("Java producer fixture drift: " + path);
+            String expected = Files.exists(path) ? Files.readString(path) : "";
+            if (!json.equals(expected)) {
+                int mismatch = 0;
+                while (mismatch < json.length() && mismatch < expected.length()
+                    && json.charAt(mismatch) == expected.charAt(mismatch)) {
+                    mismatch++;
+                }
+                int start = Math.max(0, mismatch - 80);
+                int expectedEnd = Math.min(expected.length(), mismatch + 160);
+                int actualEnd = Math.min(json.length(), mismatch + 160);
+                throw new IllegalStateException("Java producer fixture drift: " + path
+                    + " at char " + mismatch + " expected=" + expected.substring(start, expectedEnd)
+                    + " actual=" + json.substring(start, actualEnd));
             }
         } else {
             Files.createDirectories(path.getParent());
