@@ -346,3 +346,20 @@ Detailed run records for the focused code and current-tree gate runs are in
   Windows runtime and current-revision remote Ubuntu CI remain unverified.
   Phase 19 Broker/Docker validation remains separate. No push or remote CI ran;
   Phase 19-owned worktree paths remain untouched.
+
+## P18-V01 TraceContext.compareTo null-input parity — 2026-10-24 12:55 UTC
+
+- Code commit `3427d269` adds `TraceContext::java_compare_to_nullable` and
+  `TraceContextCompareError::NullOther`; the pinned Java fixture records
+  `NullPointerException` from `TraceContext.compareTo(null)`. Current
+  `fixtures/tracing/trace-records.json` SHA-256:
+  `e56224bb6c926d53ab4c118fcb38d5a6067e10e252bd42817f2be68c1f7a3f5e`.
+- PASS: focused trace identity/comparison regression; Core all-feature tests and
+  doctests; strict all-target/all-feature Core Clippy; pinned offline Maven
+  `verify` (37 scenarios, 11 message fixtures, 106 typed headers, 19 typed
+  bodies); `cargo fmt --all -- --check`; `git diff --check`.
+- The latest all-feature workspace P18-V02 gate was on code revision
+  `80acf42f`, before this slice; refresh it after remaining source-audit work.
+  This closes the null argument branch only. Broad P18-V01 remains PARTIAL;
+  native Windows runtime and current-revision remote Ubuntu CI are unverified.
+  No push or remote CI ran; Phase 19-owned worktree files remain untouched.

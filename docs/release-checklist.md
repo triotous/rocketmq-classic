@@ -6,6 +6,15 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 
 ## Compatibility and validation
 
+- [x] P18-V01 `TraceContext.compareTo(null)` (`3427d269`, 2026-10-24): invoked
+  Java records `NullPointerException`; Rust maps it to
+  `TraceContextCompareError::NullOther` through `java_compare_to_nullable`.
+  Core all-feature tests/doctests, strict Core Clippy, pinned offline Maven
+  `verify` (37 scenarios, 11 message fixtures, 106 typed headers and 19 typed
+  bodies), formatting and diff checks pass. `trace-records.json` SHA-256:
+  `e56224bb6c926d53ab4c118fcb38d5a6067e10e252bd42817f2be68c1f7a3f5e`. This
+  closes this null argument branch only; broad P18-V01 remains PARTIAL.
+
 - [x] P18-V02 full current-code refresh (`80acf42f`, 2026-10-24): locked
   all-feature workspace tests/doctests and strict workspace Clippy pass.
   Windows GNU workspace check, strict Clippy, and test-harness compile/link

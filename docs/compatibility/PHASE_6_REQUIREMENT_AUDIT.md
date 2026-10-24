@@ -1,5 +1,20 @@
 # Phase 6 requirement and handoff audit
 
+## Phase 18 `TraceContext.compareTo(null)` input parity — 2026-10-24 (`3427d269`)
+
+Pinned Java 5.5.1 `TraceContext.compareTo(null)` throws
+`NullPointerException`. Rust now exposes `java_compare_to_nullable`, which
+preserves the existing timestamp ordering and maps a null argument to
+`TraceContextCompareError::NullOther`. The invoked trace fixture records the
+Java exception class; `trace-records.json` SHA-256 is
+`e56224bb6c926d53ab4c118fcb38d5a6067e10e252bd42817f2be68c1f7a3f5e`.
+Core all-feature tests/doctests, strict all-target/all-feature Core Clippy,
+pinned offline Maven `verify` (37 scenarios, 11 message fixtures, 106 typed
+headers and 19 typed bodies), formatting, and diff checks pass. This closes
+the null argument branch only; broad P18-V01 remains PARTIAL. The latest full
+workspace P18-V02 refresh predates this code commit and will be repeated after
+the remaining source-audit slices.
+
 ## Phase 18 current-code full-feature and server-free refresh — 2026-10-24 (`80acf42f`)
 
 On code revision `80acf42f`, locked all-feature workspace tests and doctests
