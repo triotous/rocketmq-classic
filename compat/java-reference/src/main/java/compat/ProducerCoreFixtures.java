@@ -962,8 +962,8 @@ public final class ProducerCoreFixtures {
         int ipBytes = MessageClientIDSetter.getIPFromID(uniqueId).length;
         Map<String, Object> uniqueIdShape = new TreeMap<>();
         uniqueIdShape.put("hexUppercase", uniqueId.matches("[0-9A-F]+"));
-        uniqueIdShape.put("length", uniqueId.length());
-        uniqueIdShape.put("ipBytes", ipBytes);
+        uniqueIdShape.put("supportedIpBytes", ipBytes == 4 || ipBytes == 16);
+        uniqueIdShape.put("lengthMatchesIpBytes", uniqueId.length() == ipBytes * 2 + 24);
         uniqueIdShape.put("processIdBytes", 2);
         uniqueIdShape.put("processIdentityBytes", 4);
         uniqueIdShape.put("monthTimestampBytes", 4);
@@ -1050,7 +1050,8 @@ public final class ProducerCoreFixtures {
 
         Map<String, Object> result = new TreeMap<>();
         result.put("uniqueIdPresent", uniqueId != null);
-        result.put("uniqueIdLength", uniqueId == null ? 0 : uniqueId.length());
+        result.put("uniqueIdLengthMatchesAddressFamily", uniqueId == null
+            || uniqueId.length() == 32 || uniqueId.length() == 56);
         result.put("topic", message.getTopic());
         result.put("sendOutcome", sendOutcome);
         result.put("directUniqueIdPresent", directUniqueId != null);

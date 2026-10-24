@@ -4311,8 +4311,14 @@ mod tests {
         assert_ne!(first_unique_id, second_unique_id);
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
-        let expected_id_length = fixture["uniqueId"]["length"].as_u64().unwrap() as usize;
-        assert!(matches!(expected_id_length, 32 | 56));
+        assert_eq!(
+            fixture["uniqueId"]["supportedIpBytes"].as_bool(),
+            Some(true)
+        );
+        assert_eq!(
+            fixture["uniqueId"]["lengthMatchesIpBytes"].as_bool(),
+            Some(true)
+        );
         assert!(matches!(first_unique_id.len(), 32 | 56));
         assert!(matches!(second_unique_id.len(), 32 | 56));
 
@@ -4831,8 +4837,11 @@ mod tests {
             Some("MQClientException"),
             "{expected}"
         );
-        let java_id_length = expected["uniqueIdLength"].as_u64().unwrap() as usize;
-        assert!(matches!(java_id_length, 32 | 56), "{expected}");
+        assert_eq!(
+            expected["uniqueIdLengthMatchesAddressFamily"].as_bool(),
+            Some(true),
+            "{expected}"
+        );
         assert!(matches!(unique_id.len(), 32 | 56));
         assert_eq!(
             expected["topic"].as_str(),
