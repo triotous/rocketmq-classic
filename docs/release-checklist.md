@@ -9436,3 +9436,27 @@ owner-specific checks belong in the manual handoff.
 - [ ] Broad P18-V01 behavior/settings/input/error/control-flow and reverse
   export reconciliation remains open. Native Windows runtime and current
   remote Ubuntu CI remain pending; Phase 19 Broker/Docker evidence is separate.
+
+## P18-V02 current-tree server-free gate — 2026-10-24 (`23ef8749`)
+
+- [x] Strict workspace all-target/all-feature Clippy, formatter, default
+  workspace tests, and all-feature workspace tests/doctests passed. The two
+  workspace test configurations were run sequentially.
+- [x] Offline Maven `verify` passed with 37 scenarios, fixture-drift checks,
+  11 message fixtures, and Java cross-decodes for 106 typed headers and 19
+  typed bodies. Differential self-test and 37-scenario manifest validation
+  passed.
+- [x] Deterministic race/leak smoke passed 20 cases × 3 repetitions. Bounded
+  fuzz smoke passed 163 frame seeds, 11 message seeds, and 2,784 mutations
+  (245 frame decodes, 192 message decodes).
+- [x] Workspace metadata and all seven package-content listings passed with
+  `LICENSE` and `NOTICE`. Facade release examples built; the offline benchmark
+  ran and is recorded in
+  `compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+- [x] Windows GNU all-target/all-feature workspace check and strict Clippy
+  passed as compile-only evidence.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and
+  reverse-export reconciliation remains open. Native Windows runtime and
+  current-revision remote Ubuntu CI remain unverified; Phase 19 Broker/Docker
+  validation remains separate. No push or remote CI was run. Run record:
+  `rlogs/2026/10/24-phase-18-current-tree-server-free-gate__20261024T001852Z.rlog`.
