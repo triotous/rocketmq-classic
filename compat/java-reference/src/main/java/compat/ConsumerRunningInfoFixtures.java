@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.common.message.MessageQueue;
+import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
 import org.apache.rocketmq.remoting.protocol.body.ConsumeStatus;
 import org.apache.rocketmq.remoting.protocol.body.ConsumerRunningInfo;
 import org.apache.rocketmq.remoting.protocol.body.PopProcessQueueInfo;
@@ -130,7 +131,32 @@ public final class ConsumerRunningInfoFixtures {
         toStrings.put("PopProcessQueueInfo", popProcessQueueInfo.toString());
         fixture.put("toStrings", toStrings);
         fixture.put("body", new String(info.encode(), StandardCharsets.UTF_8));
+        fixture.put("decodeInputCases", decodeInputCases());
         return fixture;
+    }
+
+    private static List<Map<String, Object>> decodeInputCases() {
+        Map<String, String> inputs = new LinkedHashMap<>();
+        inputs.put("eof-trailing-text", "{}\u001atrailing");
+        inputs.put("eof-trailing-json", "{\"jstack\":\"before\"}\u001a{\"jstack\":\"after\"}");
+        inputs.put("eof-marker-in-string", "{\"jstack\":\"before\u001aafter\"}");
+        inputs.put("single-quoted-trailing-comma", "{'jstack':'single',}");
+
+        return inputs.entrySet().stream().map(entry -> {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("id", entry.getKey());
+            result.put("rawInput", entry.getValue());
+            try {
+                ConsumerRunningInfo decoded = RemotingSerializable.decode(
+                    entry.getValue().getBytes(StandardCharsets.UTF_8), ConsumerRunningInfo.class);
+                result.put("outcome", "ACCEPTED");
+                result.put("encodedBody", new String(decoded.encode(), StandardCharsets.UTF_8));
+            } catch (Throwable error) {
+                result.put("outcome", "REJECTED");
+                result.put("errorClass", error.getClass().getName());
+            }
+            return result;
+        }).collect(Collectors.toList());
     }
 
     private static Map<String, Object> apiInventories() {

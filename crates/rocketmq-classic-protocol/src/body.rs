@@ -10100,13 +10100,15 @@ impl ConsumerRunningInfoBody {
     }
 
     pub fn decode_java_json(input: &str) -> Result<serde_json::Value, serde_json::Error> {
-        let normalized = normalize_java_object_map_keys(input)?;
+        let fastjson_normalized = serde_fastjson::normalize_json_input(input);
+        let normalized = normalize_java_object_map_keys(&fastjson_normalized)?;
         serde_json::from_str(&normalized)
     }
 
     /// Decodes a Java `ConsumerRunningInfo` body into a typed Rust snapshot.
     /// Fastjson's object-valued `MessageQueue` map keys are normalized and
-    /// parsed back into their typed queue and process-info pairs.
+    /// parsed back into their typed queue and process-info pairs. Input syntax,
+    /// including Fastjson's raw EOF marker, is normalized before Serde parsing.
     pub fn decode_java_json_body(input: &str) -> Result<Self, serde_json::Error> {
         let value = Self::decode_java_json(input)?;
         let mut fields: BTreeMap<String, serde_json::Value> = serde_json::from_value(value)?;
@@ -11862,6 +11864,57 @@ fn write_java_remoting_body_indent(output: &mut String, depth: usize, indent: Op
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn consumer_running_info_raw_inputs_match_invoked_java_fastjson() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/consumer/running-info.json"))
+                .unwrap();
+        let cases = fixture["decodeInputCases"].as_array().unwrap();
+        assert_eq!(cases.len(), 4);
+        for case in cases {
+            let decoded =
+                ConsumerRunningInfoBody::decode_java_json_body(case["rawInput"].as_str().unwrap());
+            let java_accepts = case["outcome"] == "ACCEPTED";
+            assert_eq!(decoded.is_ok(), java_accepts, "{}: {decoded:?}", case["id"]);
+            if let Ok(decoded) = decoded {
+                let encoded = String::from_utf8(decoded.encode_java_json().unwrap()).unwrap();
+                assert_eq!(encoded, case["encodedBody"], "{}", case["id"]);
+            }
+        }
+
+        let java_body = fixture["body"].as_str().unwrap();
+        let decoded = ConsumerRunningInfoBody::decode_java_json_body(java_body).unwrap();
+        let encoded = String::from_utf8(decoded.encode_java_json().unwrap()).unwrap();
+        fn normalize_java_sets(value: &mut serde_json::Value) {
+            match value {
+                serde_json::Value::Object(fields) => {
+                    for (name, value) in fields {
+                        normalize_java_sets(value);
+                        if matches!(name.as_str(), "codeSet" | "tagsSet") {
+                            if let serde_json::Value::Array(values) = value {
+                                values.sort_by_key(serde_json::Value::to_string);
+                            }
+                        }
+                    }
+                }
+                serde_json::Value::Array(values) => {
+                    for value in values {
+                        normalize_java_sets(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut expected = ConsumerRunningInfoBody::decode_java_json(java_body).unwrap();
+        let mut actual = ConsumerRunningInfoBody::decode_java_json(&encoded).unwrap();
+        normalize_java_sets(&mut expected);
+        normalize_java_sets(&mut actual);
+        assert_eq!(
+            actual, expected,
+            "populated Java body with object-valued MessageQueue map keys"
+        );
+    }
 
     #[test]
     fn data_version_matches_java_comparison_and_copy_rules() {
