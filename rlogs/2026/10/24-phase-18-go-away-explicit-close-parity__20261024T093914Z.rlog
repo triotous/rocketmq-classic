@@ -1,0 +1,20 @@
+Phase 18 GO_AWAY explicit-close lifecycle parity
+Date: 2026-10-24 UTC
+
+Source review
+- Pinned Java source: `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+- `NettyRemotingClient.closeChannels(List)` obtains each address's `ChannelWrapper` and calls `closeChannel(addr, cw.getChannel())`, closing only its current channel.
+- `ChannelWrapper` retains its previous future in `channelToClose`; `ChannelWrapper.close()` closes both current and retained previous channels during shutdown.
+- Rust previously removed and closed every `retired_connections` entry from `close_channels`, terminating work that Java leaves on the old channel.
+
+Change
+- Code commit `dbbed745` removes retired-generation closure from explicit `close_channels`.
+- The scripted-peer regression now holds one request on the old generation while GO_AWAY causes another request to retry on the replacement. Explicit close terminates the replacement retry; the old request completes normally on its retained socket. Client shutdown then closes that old socket.
+- Documentation correction is committed separately.
+
+Verification
+- `cargo test --offline --locked -p rocketmq-classic-remoting --test transport p3_close_channels_closes_go_away_current_but_keeps_retired_generation` — PASS (1 passed).
+- `cargo fmt --all -- --check` — PASS before the code commit.
+- `git diff --check` — PASS after code changes and again after documentation edits.
+- Full workspace tests, Maven verification, Clippy and P18-V02 gate were not rerun for this slice.
+- No remote CI or push was run. Phase 19 worktree files were not modified or staged.

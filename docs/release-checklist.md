@@ -9785,3 +9785,21 @@ owner-specific checks belong in the manual handoff.
   separate. No push or remote CI was run, and the protected Phase 19 worktree
   paths remain untouched. Run record:
   `rlogs/2026/10/24-phase-18-malformed-inner-count-parity__20261024T093158Z.rlog`.
+
+## P18-V01 GO_AWAY explicit-close generation parity — 2026-10-24 (`dbbed745`)
+
+- [x] Pinned Java 5.5.1 `NettyRemotingClient.closeChannels(List)` looks up each
+  `ChannelWrapper` and closes its current channel only. An older GO_AWAY
+  generation remains open as `channelToClose`; Rust now preserves that
+  generation and its pending requests through explicit address close. Shutdown
+  still closes the retained generation. The focused scripted-peer regression
+  passed and verifies an old request can finish after `close_channels`, then
+  verifies shutdown closes its socket.
+- [x] Formatting and `git diff --check` passed. Code commit: `dbbed745`.
+  Pinned Java source commit: `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+  This checklist and run record are in the separate documentation commit.
+- [ ] This closes the explicit-close GO_AWAY lifecycle discrepancy only. Broad
+  P18-V01 remains PARTIAL. Native Windows runtime and current-revision remote
+  Ubuntu CI remain unverified; Phase 19 Broker/Docker evidence remains
+  separate. No push or remote CI was run. Run record:
+  `rlogs/2026/10/24-phase-18-go-away-explicit-close-parity__20261024T093914Z.rlog`.
