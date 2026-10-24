@@ -10124,3 +10124,21 @@ owner-specific checks belong in the manual handoff.
   No push or remote CI was run; protected Phase 19 paths remain untouched. Run
   record:
   `rlogs/2026/10/24-phase-18-assignment-equals-object-inputs__20261024T141418Z.rlog`.
+
+## P18-V01 `ReplicaIdentity.equals(Object)` type input — 2026-10-24 (`b5cbf46b`)
+
+- [x] `ReplicaIdentity::java_equals` now models Java's `equals(Object)` type
+  check and returns false for unrelated values. The invoked Java fixture now
+  records that branch and the Rust API test compares its result directly.
+- [x] Focused Controller API tests, default and all-feature workspace tests and
+  doctests, strict all-target/all-feature Clippy, formatting, and diff checks
+  pass. Offline Maven verification passes with the regenerated fixture.
+- [x] Current-revision Windows GNU workspace check, strict all-target/all-feature
+  Clippy, and all-feature `cargo test --no-run` pass as compile/link-only
+  evidence. Native Windows execution is unavailable.
+- [ ] This closes one Controller equality input branch only. Broad P18-V01
+  method/overload/input/error/control-flow and reverse-export reconciliation,
+  the process-local `MessageQueueAssignment` hash-set boundary, native Windows
+  runtime, and current-revision remote Ubuntu CI remain open. No push or remote
+  CI was run; protected Phase 19 paths remain unchanged and unstaged. Run record:
+  `rlogs/2026/10/24-phase-18-replica-identity-equals-object__20261024T143249Z.rlog`.
