@@ -1,5 +1,30 @@
 # Phase 6 requirement and handoff audit
 
+## P18-V01 `ConsumeMessagePopOrderlyService` public surface disposition — 2026-10-24 (`43ab1572`)
+
+The pinned Java 5.5.1 class has one public constructor and 15 declared public
+methods. The invoked `PushImplementationAccessorFixtures` records the complete
+signature list in `fixtures/consumer/push-implementation-accessor.json`; its
+SHA-256 is
+`be16e9671f172e534116f6b575d278a8105a883a2b2a7a847931fa4e656e8b15`. The
+fixture source SHA-256 is
+`42ba03bb1f206cba0e71277aab1df308037280e0650b7fb8a09449103154cfc1`, and the
+pinned production source SHA-256 is
+`0ac19d46f50110b5b5f2e6b3e21d4b6ac5e71ee33a81f63bfd24f5508803ad08`.
+
+`DefaultMQPushConsumerImpl` stores this service in a private POP field and
+exposes no getter for it. Its active calls are startup, shutdown, scheduled
+lock renewal and POP request submission; Rust routes those responsibilities
+through `PushConsumer`, `OrderlyConsumeService` and its internal POP worker.
+There is no standalone Rust concrete service type. In pinned Java,
+`submitConsumeRequest` throws `UnsupportedOperationException`,
+`processConsumeResult` is an unconditional `true`, and nested
+`ConsumeRequest.run` ends after checking the dropped flag and acquiring the
+sharded lock. `sendMessageBack` and `resetNamespace` are not reached from that
+request path. This records an implementation-class disposition and does not
+claim one-to-one direct construction or helper-method parity; broad P18-V01
+remains `PARTIAL`.
+
 ## P18-V01 Java `PullRequest` public value API — 2026-10-24
 
 The pinned Java `client.impl.consumer.PullRequest` declares one public
