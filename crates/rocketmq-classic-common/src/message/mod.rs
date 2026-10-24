@@ -34,8 +34,7 @@ pub use decoder::{
 pub use encoder::{MessageExtEncodeError, encode_message_ext, encode_message_ext_uniquely};
 pub use host_address::{MessageHostAddress, MessageHostAddressBytesError, MessageHostAddressError};
 pub use message_id::{
-    MessageId, MessageIdError, create_message_id, create_message_id_from_host_bytes,
-    decode_message_id,
+    MessageId, MessageIdError, create_message_id, create_message_id_from_buffers, decode_message_id,
 };
 pub use properties::{
     decode_properties, decode_properties_nullable, encode_nullable_property_entries,

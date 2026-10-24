@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use std::net::IpAddr;
 
 use thiserror::Error;
@@ -37,14 +38,18 @@ impl MessageId {
 pub enum MessageIdError {
     #[error("cannot create a message ID from an unresolved address")]
     UnresolvedAddress,
-    #[error("message ID address must contain 8 or 20 bytes, got {length}")]
-    InvalidAddressLength { length: usize },
     #[error("message ID cannot be empty")]
     EmptyMessageId,
     #[error("message ID has {available} decoded bytes; {required} are required")]
     InsufficientBytes { required: usize, available: usize },
     #[error("message ID port {port} is outside the socket range")]
     InvalidPort { port: i32 },
+    #[error("message ID output buffer requires {required} bytes but has capacity {capacity}")]
+    OutputBufferTooSmall { required: usize, capacity: usize },
+    #[error("message ID address cursor position {position} exceeds its limit {limit}")]
+    AddressCursorOutOfRange { position: u64, limit: usize },
+    #[error("message ID buffer write needs {needed} bytes but only {remaining} remain")]
+    BufferOverflow { needed: usize, remaining: usize },
 }
 
 /// Create a Java-compatible uppercase message ID from a resolved socket address
@@ -59,18 +64,59 @@ pub fn create_message_id(
     Ok(encode_message_id(&host_bytes, offset))
 }
 
-/// Create a Java-compatible uppercase message ID from address bytes containing
-/// IPv4 or IPv6 octets followed by the four-byte big-endian port.
-pub fn create_message_id_from_host_bytes(
-    host_bytes: &[u8],
+/// Create a Java-compatible message ID from Java-style address and output
+/// buffers. On success, the address cursor advances to its limit and the
+/// output cursor advances past the copied address and eight-byte offset.
+pub fn create_message_id_from_buffers(
+    input: &mut Cursor<&mut [u8]>,
+    address: &mut Cursor<&[u8]>,
     offset: i64,
 ) -> Result<String, MessageIdError> {
-    if !matches!(host_bytes.len(), 8 | 20) {
-        return Err(MessageIdError::InvalidAddressLength {
-            length: host_bytes.len(),
+    let address_limit = address.get_ref().len();
+    let input_capacity = input.get_ref().len();
+    let message_id_length = if address_limit == 8 { 16 } else { 28 };
+    // MessageDecoder.createMessageId flips the output buffer before setting
+    // its limit, so the output position is zero even when the caller supplied
+    // a previously positioned buffer.
+    input.set_position(0);
+    if input_capacity < message_id_length {
+        return Err(MessageIdError::OutputBufferTooSmall {
+            required: message_id_length,
+            capacity: input_capacity,
         });
     }
-    Ok(encode_message_id(host_bytes, offset))
+
+    let address_position = address.position();
+    if address_position > address_limit as u64 {
+        return Err(MessageIdError::AddressCursorOutOfRange {
+            position: address_position,
+            limit: address_limit,
+        });
+    }
+    let address_bytes = &address.get_ref()[address_position as usize..address_limit];
+    let copied = address_bytes.len();
+    if copied > message_id_length {
+        return Err(MessageIdError::BufferOverflow {
+            needed: copied,
+            remaining: message_id_length,
+        });
+    }
+    input.get_mut()[..copied].copy_from_slice(address_bytes);
+    input.set_position(copied as u64);
+    address.set_position(address_limit as u64);
+
+    let remaining = message_id_length - copied;
+    if remaining < 8 {
+        return Err(MessageIdError::BufferOverflow {
+            needed: 8,
+            remaining,
+        });
+    }
+    input.get_mut()[copied..copied + 8].copy_from_slice(&offset.to_be_bytes());
+    input.set_position((copied + 8) as u64);
+
+    let output = input.get_ref().to_vec();
+    Ok(encode_bytes_as_hex(&output))
 }
 
 /// Decode Java `MessageDecoder.decodeMessageId` output.
@@ -130,6 +176,16 @@ pub(crate) fn encode_message_id(host_bytes: &[u8], offset: i64) -> String {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut encoded = String::with_capacity((host_bytes.len() + 8) * 2);
     for byte in host_bytes.iter().copied().chain(offset.to_be_bytes()) {
+        encoded.push(HEX[usize::from(byte >> 4)] as char);
+        encoded.push(HEX[usize::from(byte & 0x0f)] as char);
+    }
+    encoded
+}
+
+fn encode_bytes_as_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
         encoded.push(HEX[usize::from(byte >> 4)] as char);
         encoded.push(HEX[usize::from(byte & 0x0f)] as char);
     }

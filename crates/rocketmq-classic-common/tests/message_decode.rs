@@ -9,7 +9,7 @@ use rocketmq_classic_common::{
         MessageVersionError, PHY_POS_POSITION, PROPERTY_SEPARATOR, QUEUE_OFFSET_POSITION,
         SYSFLAG_POSITION, TopicFilterType, append_crc32_property, client_decode, client_decodes,
         client_decodes_with_body, count_inner_messages, create_message_id,
-        create_message_id_from_host_bytes, decode_compact_message, decode_compact_messages,
+        create_message_id_from_buffers, decode_compact_message, decode_compact_messages,
         decode_inner_batch, decode_many_as_client_compatible, decode_many_compatible,
         decode_message_id, decode_one, decode_one_as_client, decode_properties_nullable,
         decode_record_properties, encode_compact_message, encode_compact_messages,
@@ -21,6 +21,7 @@ use rocketmq_classic_common::{
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
+use std::io::Cursor;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
@@ -1190,13 +1191,144 @@ fn message_id_api_matches_java_551() {
     let ipv6_id = create_message_id(&ipv6, ipv6_offset).unwrap();
     assert_eq!(ipv4_id, expected["messageIdIpv4Created"]);
     assert_eq!(ipv6_id, expected["messageIdIpv6Created"]);
+    let ipv4_address_bytes = ipv4.network_bytes().unwrap();
+    let mut ipv4_address = Cursor::new(ipv4_address_bytes.as_slice());
+    let mut ipv4_output_bytes = [0; 16];
+    let mut ipv4_output = Cursor::new(&mut ipv4_output_bytes[..]);
     assert_eq!(
-        create_message_id_from_host_bytes(&ipv4.network_bytes().unwrap(), ipv4_offset).unwrap(),
+        create_message_id_from_buffers(&mut ipv4_output, &mut ipv4_address, ipv4_offset).unwrap(),
         expected["messageIdIpv4CreatedFromBytes"]
     );
     assert_eq!(
-        create_message_id_from_host_bytes(&ipv6.network_bytes().unwrap(), ipv6_offset).unwrap(),
+        ipv4_address.position(),
+        expected["messageIdIpv4AddressPositionAfter"]
+    );
+    assert_eq!(
+        ipv4_output.position(),
+        expected["messageIdIpv4OutputPositionAfter"]
+    );
+
+    let ipv6_address_bytes = ipv6.network_bytes().unwrap();
+    let mut ipv6_address = Cursor::new(ipv6_address_bytes.as_slice());
+    let mut ipv6_output_bytes = [0; 28];
+    let mut ipv6_output = Cursor::new(&mut ipv6_output_bytes[..]);
+    assert_eq!(
+        create_message_id_from_buffers(&mut ipv6_output, &mut ipv6_address, ipv6_offset).unwrap(),
         expected["messageIdIpv6CreatedFromBytes"]
+    );
+    assert_eq!(
+        ipv6_address.position(),
+        expected["messageIdIpv6AddressPositionAfter"]
+    );
+    assert_eq!(
+        ipv6_output.position(),
+        expected["messageIdIpv6OutputPositionAfter"]
+    );
+
+    let mut positioned_address = Cursor::new(ipv4_address_bytes.as_slice());
+    positioned_address.set_position(2);
+    let mut positioned_output_bytes = [0; 16];
+    positioned_output_bytes[..5].copy_from_slice(&[1, 2, 3, 4, 5]);
+    let mut positioned_output = Cursor::new(&mut positioned_output_bytes[..]);
+    positioned_output.set_position(5);
+    assert_eq!(
+        create_message_id_from_buffers(
+            &mut positioned_output,
+            &mut positioned_address,
+            ipv4_offset
+        )
+        .unwrap(),
+        expected["messageIdIpv4CreatedFromPositionedBuffers"]
+    );
+    assert_eq!(
+        positioned_address.position(),
+        expected["messageIdPositionedAddressPositionAfter"]
+    );
+    assert_eq!(
+        positioned_output.position(),
+        expected["messageIdPositionedOutputPositionAfter"]
+    );
+
+    let short_address_bytes = [1, 2, 3, 4];
+    let mut short_address = Cursor::new(short_address_bytes.as_slice());
+    let mut short_output_bytes = [0; 28];
+    let mut short_output = Cursor::new(&mut short_output_bytes[..]);
+    assert_eq!(
+        create_message_id_from_buffers(&mut short_output, &mut short_address, 1234).unwrap(),
+        expected["messageIdShortAddressOutput"]
+    );
+    assert_eq!(
+        short_address.position(),
+        expected["messageIdShortAddressPositionAfter"]
+    );
+    assert_eq!(
+        short_output.position(),
+        expected["messageIdShortOutputPositionAfter"]
+    );
+
+    let small_output_address_bytes = [0; 8];
+    let mut small_output_address = Cursor::new(small_output_address_bytes.as_slice());
+    let mut small_output_bytes = [0; 15];
+    let mut small_output = Cursor::new(&mut small_output_bytes[..]);
+    assert_eq!(
+        create_message_id_from_buffers(&mut small_output, &mut small_output_address, 0),
+        Err(MessageIdError::OutputBufferTooSmall {
+            required: 16,
+            capacity: 15
+        })
+    );
+    assert_eq!(expected["messageIdOutputLimitThrowsIllegalArgument"], true);
+    assert_eq!(
+        small_output_address.position(),
+        expected["messageIdOutputLimitAddressPosition"]
+    );
+    assert_eq!(
+        small_output.position(),
+        expected["messageIdOutputLimitOutputPosition"]
+    );
+
+    let too_long_address_bytes = [0; 29];
+    let mut too_long_address = Cursor::new(too_long_address_bytes.as_slice());
+    let mut too_long_output_bytes = [0; 28];
+    let mut too_long_output = Cursor::new(&mut too_long_output_bytes[..]);
+    assert_eq!(
+        create_message_id_from_buffers(&mut too_long_output, &mut too_long_address, 0),
+        Err(MessageIdError::BufferOverflow {
+            needed: 29,
+            remaining: 28
+        })
+    );
+    assert_eq!(
+        too_long_address.position(),
+        expected["messageIdAddressPutOverflowAddressPosition"]
+    );
+    assert_eq!(
+        too_long_output.position(),
+        expected["messageIdAddressPutOverflowOutputPosition"]
+    );
+
+    let offset_overflow_address_bytes = [0; 25];
+    let mut offset_overflow_address = Cursor::new(offset_overflow_address_bytes.as_slice());
+    let mut offset_overflow_output_bytes = [0; 28];
+    let mut offset_overflow_output = Cursor::new(&mut offset_overflow_output_bytes[..]);
+    assert_eq!(
+        create_message_id_from_buffers(
+            &mut offset_overflow_output,
+            &mut offset_overflow_address,
+            0
+        ),
+        Err(MessageIdError::BufferOverflow {
+            needed: 8,
+            remaining: 3
+        })
+    );
+    assert_eq!(
+        offset_overflow_address.position(),
+        expected["messageIdOffsetPutOverflowAddressPosition"]
+    );
+    assert_eq!(
+        offset_overflow_output.position(),
+        expected["messageIdOffsetPutOverflowOutputPosition"]
     );
 
     let decoded_ipv4 = decode_message_id(&ipv4_id).unwrap();
@@ -1266,10 +1398,6 @@ fn message_id_api_matches_java_551() {
     assert_eq!(
         create_message_id(&MessageHostAddress::unresolved("broker.invalid", 10911), 0),
         Err(MessageIdError::UnresolvedAddress)
-    );
-    assert_eq!(
-        create_message_id_from_host_bytes(&[0; 4], 0),
-        Err(MessageIdError::InvalidAddressLength { length: 4 })
     );
     assert_eq!(
         decode_message_id("").unwrap_err(),
@@ -2087,13 +2215,35 @@ fn compact_message_codec_and_inner_batch_match_java_551() {
         base64::engine::general_purpose::STANDARD.encode(&batch_bytes),
         expected["batchEncodedBase64"]
     );
+    let mut batch_cursor = Cursor::new(batch_bytes.as_slice());
     assert_eq!(
-        count_inner_messages(&batch_bytes).unwrap(),
+        count_inner_messages(&mut batch_cursor).unwrap(),
         expected["innerMessageCount"].as_u64().unwrap() as usize
     );
     assert_eq!(
-        count_inner_messages(&[]).unwrap(),
+        batch_cursor.position(),
+        expected["innerMessageCountPositionAfter"]
+    );
+    let mut empty_cursor = Cursor::new(&[][..]);
+    assert_eq!(
+        count_inner_messages(&mut empty_cursor).unwrap(),
         expected["emptyInnerMessageCount"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        empty_cursor.position(),
+        expected["emptyInnerMessageCountPositionAfter"]
+    );
+    let mut positioned_batch_bytes = vec![91, 92, 93];
+    positioned_batch_bytes.extend_from_slice(&batch_bytes);
+    let mut positioned_batch_cursor = Cursor::new(positioned_batch_bytes.as_slice());
+    positioned_batch_cursor.set_position(3);
+    assert_eq!(
+        count_inner_messages(&mut positioned_batch_cursor).unwrap(),
+        expected["positionedInnerMessageCount"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        positioned_batch_cursor.position(),
+        expected["positionedInnerMessageCountPositionAfter"]
     );
 
     let (decoded_first, consumed) = decode_compact_message(&first_bytes).unwrap();
@@ -2254,14 +2404,62 @@ fn compact_message_codec_and_inner_batch_match_java_551() {
             length: -1
         }
     );
+    let incomplete_count_bytes = [0, 0, 0, 5];
+    let mut incomplete_count_cursor = Cursor::new(incomplete_count_bytes.as_slice());
     assert_eq!(
-        count_inner_messages(&[0, 0, 0, 5]).unwrap_err(),
+        count_inner_messages(&mut incomplete_count_cursor).unwrap_err(),
         CompactMessageError::IncompleteInnerMessage {
             offset: 0,
             size: 5,
             available: 4
         }
     );
+    assert_eq!(
+        incomplete_count_cursor.position(),
+        expected["incompleteCountPositionAfter"]
+    );
+    let mut short_count_cursor = Cursor::new(&[0, 0, 0][..]);
+    assert_eq!(
+        count_inner_messages(&mut short_count_cursor),
+        Err(CompactMessageError::Truncated {
+            field: "inner message size"
+        })
+    );
+    assert_eq!(expected["shortCountThrowsBufferUnderflow"], true);
+    assert_eq!(
+        short_count_cursor.position(),
+        expected["shortCountPositionAfter"]
+    );
+    let mut sub_four_count_cursor = Cursor::new(&[0, 0, 0, 3, 0, 0, 0, 4][..]);
+    assert_eq!(
+        count_inner_messages(&mut sub_four_count_cursor),
+        Err(CompactMessageError::IncompleteInnerMessage {
+            offset: 3,
+            size: 50_331_648,
+            available: 5
+        })
+    );
+    assert_eq!(expected["subFourCountThrowsIllegalArgument"], true);
+    assert_eq!(
+        sub_four_count_cursor.position(),
+        expected["subFourCountPositionAfter"]
+    );
+    let mut negative_count_cursor = Cursor::new(&[u8::MAX; 4][..]);
+    assert_eq!(
+        count_inner_messages(&mut negative_count_cursor),
+        Err(CompactMessageError::InvalidInnerSize { size: -1 })
+    );
+    assert_eq!(expected["negativeCountThrowsIllegalArgument"], true);
+    assert_eq!(
+        negative_count_cursor.position(),
+        expected["negativeCountPositionAfter"]
+    );
+    let mut zero_count_cursor = Cursor::new(&[0, 0, 0, 0][..]);
+    assert_eq!(
+        count_inner_messages(&mut zero_count_cursor),
+        Err(CompactMessageError::InvalidInnerSize { size: 0 })
+    );
+    assert_eq!(zero_count_cursor.position(), 0);
 }
 
 #[test]

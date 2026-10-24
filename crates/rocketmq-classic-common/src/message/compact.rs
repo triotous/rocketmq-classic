@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use thiserror::Error;
 
 use super::{Message, MessageExt, decode_properties, encode_nullable_property_entries};
@@ -121,32 +122,52 @@ pub fn decode_compact_messages(records: &[u8]) -> Result<Vec<Message>, CompactMe
 }
 
 /// Count concatenated inner records using their declared total-size fields.
-pub fn count_inner_messages(records: &[u8]) -> Result<usize, CompactMessageError> {
+/// The cursor advances to its limit on success; after a failed declared-size
+/// position update it remains just past the size prefix, matching Java's
+/// `ByteBuffer.getInt` followed by `position(currPos + size)`.
+pub fn count_inner_messages(records: &mut Cursor<&[u8]>) -> Result<usize, CompactMessageError> {
     let mut count = 0usize;
-    let mut offset = 0usize;
-    while offset < records.len() {
-        let available = records.len() - offset;
-        let size_bytes = records.get(offset..offset.saturating_add(4)).ok_or(
-            CompactMessageError::Truncated {
+    let starting_position = usize::try_from(records.position()).unwrap_or(usize::MAX);
+    let limit = records.get_ref().len();
+    if starting_position > limit {
+        return Err(CompactMessageError::Truncated {
+            field: "inner message size",
+        });
+    }
+    while usize::try_from(records.position()).unwrap_or(usize::MAX) < limit {
+        let offset = usize::try_from(records.position()).unwrap_or(usize::MAX);
+        let available = limit - offset;
+        let size_bytes = records
+            .get_ref()
+            .get(offset..offset.saturating_add(4))
+            .ok_or(CompactMessageError::Truncated {
                 field: "inner message size",
-            },
-        )?;
+            })?;
         let size = i32::from_be_bytes(size_bytes.try_into().expect("four bytes were selected"));
-        if size < 4 {
+        // Java ByteBuffer.getInt advances the position before validating the
+        // declared end position below.
+        records.set_position((offset + 4) as u64);
+        if size == 0 {
+            // Java would set the position back to `offset` and loop forever.
+            // Stop at that same observable cursor position instead.
+            records.set_position(offset as u64);
             return Err(CompactMessageError::InvalidInnerSize { size });
         }
-        let size = usize::try_from(size)
-            .map_err(|_| CompactMessageError::InvalidInnerSize { size: i32::MIN })?;
+        if size < 0 {
+            return Err(CompactMessageError::InvalidInnerSize { size });
+        }
+        let size = usize::try_from(size).map_err(|_| CompactMessageError::SizeOverflow)?;
         if size > available {
             return Err(CompactMessageError::IncompleteInnerMessage {
-                offset,
+                offset: offset - starting_position,
                 size,
                 available,
             });
         }
-        offset = offset
+        let end = offset
             .checked_add(size)
             .ok_or(CompactMessageError::SizeOverflow)?;
+        records.set_position(end as u64);
         count = count
             .checked_add(1)
             .ok_or(CompactMessageError::SizeOverflow)?;

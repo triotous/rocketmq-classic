@@ -977,8 +977,20 @@ public final class MessageDecodeFixtures {
         expected.put("batchDecoded", decodedBatch.stream()
             .map(MessageDecodeFixtures::compactMessageSnapshot)
             .collect(java.util.stream.Collectors.toList()));
-        expected.put("innerMessageCount", MessageDecoder.countInnerMsgNum(ByteBuffer.wrap(batchBytes)));
-        expected.put("emptyInnerMessageCount", MessageDecoder.countInnerMsgNum(ByteBuffer.allocate(0)));
+        ByteBuffer innerMessageCountInput = ByteBuffer.wrap(batchBytes);
+        expected.put("innerMessageCount", MessageDecoder.countInnerMsgNum(innerMessageCountInput));
+        expected.put("innerMessageCountPositionAfter", innerMessageCountInput.position());
+        ByteBuffer emptyInnerMessageCountInput = ByteBuffer.allocate(0);
+        expected.put("emptyInnerMessageCount", MessageDecoder.countInnerMsgNum(emptyInnerMessageCountInput));
+        expected.put("emptyInnerMessageCountPositionAfter", emptyInnerMessageCountInput.position());
+        ByteBuffer positionedInnerMessageCountInput = ByteBuffer.allocate(batchBytes.length + 3);
+        positionedInnerMessageCountInput.put(new byte[] {91, 92, 93}).put(batchBytes).flip();
+        positionedInnerMessageCountInput.position(3);
+        expected.put("positionedInnerMessageCount",
+            MessageDecoder.countInnerMsgNum(positionedInnerMessageCountInput));
+        expected.put("positionedInnerMessageCountPositionAfter", positionedInnerMessageCountInput.position());
+        expected.putAll(shortCompactCountOutcome());
+        expected.putAll(nonstandardCompactCountSizeOutcomes());
 
         InetSocketAddress bornHost = new InetSocketAddress(InetAddress.getByName("192.0.2.10"), 10911);
         InetSocketAddress storeHost = new InetSocketAddress(InetAddress.getByName("198.51.100.20"), 10912);
@@ -1004,7 +1016,7 @@ public final class MessageDecodeFixtures {
             () -> MessageDecoder.encodeMessage(new Message())));
         expected.put("shortDecodeThrowsBufferUnderflow", throwsCompactDecodeBufferUnderflow());
         expected.put("negativeBodyDecodeThrows", throwsNegativeCompactBodyLength());
-        expected.put("incompleteCountThrowsIllegalArgument", throwsIncompleteCompactCount());
+        expected.putAll(incompleteCompactCountOutcome());
         return expected;
     }
 
@@ -1143,13 +1155,52 @@ public final class MessageDecodeFixtures {
         }
     }
 
-    private static boolean throwsIncompleteCompactCount() {
+    private static Map<String, Object> incompleteCompactCountOutcome() {
+        Map<String, Object> outcome = new TreeMap<>();
+        ByteBuffer input = ByteBuffer.wrap(new byte[] {0, 0, 0, 5});
         try {
-            MessageDecoder.countInnerMsgNum(ByteBuffer.wrap(new byte[] {0, 0, 0, 5}));
-            return false;
+            MessageDecoder.countInnerMsgNum(input);
+            outcome.put("incompleteCountThrowsIllegalArgument", false);
         } catch (IllegalArgumentException expected) {
-            return true;
+            outcome.put("incompleteCountThrowsIllegalArgument", true);
         }
+        outcome.put("incompleteCountPositionAfter", input.position());
+        return outcome;
+    }
+
+    private static Map<String, Object> shortCompactCountOutcome() {
+        Map<String, Object> outcome = new TreeMap<>();
+        ByteBuffer input = ByteBuffer.wrap(new byte[] {0, 0, 0});
+        try {
+            MessageDecoder.countInnerMsgNum(input);
+            outcome.put("shortCountThrowsBufferUnderflow", false);
+        } catch (java.nio.BufferUnderflowException expected) {
+            outcome.put("shortCountThrowsBufferUnderflow", true);
+        }
+        outcome.put("shortCountPositionAfter", input.position());
+        return outcome;
+    }
+
+    private static Map<String, Object> nonstandardCompactCountSizeOutcomes() {
+        Map<String, Object> outcome = new TreeMap<>();
+        ByteBuffer subFour = ByteBuffer.wrap(new byte[] {0, 0, 0, 3, 0, 0, 0, 4});
+        try {
+            MessageDecoder.countInnerMsgNum(subFour);
+            outcome.put("subFourCountThrowsIllegalArgument", false);
+        } catch (IllegalArgumentException expected) {
+            outcome.put("subFourCountThrowsIllegalArgument", true);
+        }
+        outcome.put("subFourCountPositionAfter", subFour.position());
+
+        ByteBuffer negative = ByteBuffer.wrap(new byte[] {-1, -1, -1, -1});
+        try {
+            MessageDecoder.countInnerMsgNum(negative);
+            outcome.put("negativeCountThrowsIllegalArgument", false);
+        } catch (IllegalArgumentException expected) {
+            outcome.put("negativeCountThrowsIllegalArgument", true);
+        }
+        outcome.put("negativeCountPositionAfter", negative.position());
+        return outcome;
     }
 
     private static Map<String, Object> messageExtEncodeApi() throws Exception {
@@ -1592,13 +1643,36 @@ public final class MessageDecodeFixtures {
         ByteBuffer ipv4AddressBytes = ByteBuffer.allocate(8)
             .put(messageIdIpv4Address.getAddress().getAddress())
             .putInt(messageIdIpv4Address.getPort());
+        ByteBuffer ipv4MessageIdOutput = ByteBuffer.allocate(16);
         expected.put("messageIdIpv4CreatedFromBytes", MessageDecoder.createMessageId(
-            ByteBuffer.allocate(16), ipv4AddressBytes.flip(), messageIdIpv4Offset));
+            ipv4MessageIdOutput, ipv4AddressBytes.flip(), messageIdIpv4Offset));
+        expected.put("messageIdIpv4AddressPositionAfter", ipv4AddressBytes.position());
+        expected.put("messageIdIpv4OutputPositionAfter", ipv4MessageIdOutput.position());
         ByteBuffer ipv6AddressBytes = ByteBuffer.allocate(20)
             .put(messageIdIpv6Address.getAddress().getAddress())
             .putInt(messageIdIpv6Address.getPort());
+        ByteBuffer ipv6MessageIdOutput = ByteBuffer.allocate(28);
         expected.put("messageIdIpv6CreatedFromBytes", MessageDecoder.createMessageId(
-            ByteBuffer.allocate(28), ipv6AddressBytes.flip(), messageIdIpv6Offset));
+            ipv6MessageIdOutput, ipv6AddressBytes.flip(), messageIdIpv6Offset));
+        expected.put("messageIdIpv6AddressPositionAfter", ipv6AddressBytes.position());
+        expected.put("messageIdIpv6OutputPositionAfter", ipv6MessageIdOutput.position());
+        ByteBuffer positionedAddress = ByteBuffer.allocate(8)
+            .put(messageIdIpv4Address.getAddress().getAddress())
+            .putInt(messageIdIpv4Address.getPort());
+        positionedAddress.flip().position(2);
+        ByteBuffer positionedMessageIdOutput = ByteBuffer.allocate(16);
+        positionedMessageIdOutput.put(new byte[] {1, 2, 3, 4, 5});
+        expected.put("messageIdIpv4CreatedFromPositionedBuffers", MessageDecoder.createMessageId(
+            positionedMessageIdOutput, positionedAddress, messageIdIpv4Offset));
+        expected.put("messageIdPositionedAddressPositionAfter", positionedAddress.position());
+        expected.put("messageIdPositionedOutputPositionAfter", positionedMessageIdOutput.position());
+        ByteBuffer shortAddressBytes = ByteBuffer.wrap(new byte[] {1, 2, 3, 4});
+        ByteBuffer shortAddressOutput = ByteBuffer.allocate(28);
+        expected.put("messageIdShortAddressOutput", MessageDecoder.createMessageId(
+            shortAddressOutput, shortAddressBytes, 1234L));
+        expected.put("messageIdShortAddressPositionAfter", shortAddressBytes.position());
+        expected.put("messageIdShortOutputPositionAfter", shortAddressOutput.position());
+        expected.putAll(messageIdBufferOverflowCases());
 
         MessageId decodedIpv4MessageId = MessageDecoder.decodeMessageId(messageIdIpv4);
         InetSocketAddress decodedIpv4Address = (InetSocketAddress) decodedIpv4MessageId.getAddress();
@@ -1634,6 +1708,43 @@ public final class MessageDecodeFixtures {
         expected.put("messageIdInvalidHexHost",
             ((InetSocketAddress) MessageDecoder.decodeMessageId("GG00000100002A9F0000000000003039")
                 .getAddress()).getAddress().getHostAddress());
+        return expected;
+    }
+
+    private static Map<String, Object> messageIdBufferOverflowCases() {
+        Map<String, Object> expected = new TreeMap<>();
+        ByteBuffer tooSmallOutput = ByteBuffer.allocate(15);
+        ByteBuffer smallOutputAddress = ByteBuffer.wrap(new byte[8]);
+        try {
+            MessageDecoder.createMessageId(tooSmallOutput, smallOutputAddress, 0L);
+            expected.put("messageIdOutputLimitThrowsIllegalArgument", false);
+        } catch (IllegalArgumentException expectedLimitFailure) {
+            expected.put("messageIdOutputLimitThrowsIllegalArgument", true);
+        }
+        expected.put("messageIdOutputLimitAddressPosition", smallOutputAddress.position());
+        expected.put("messageIdOutputLimitOutputPosition", tooSmallOutput.position());
+
+        ByteBuffer tooLongAddress = ByteBuffer.wrap(new byte[29]);
+        ByteBuffer tooLongOutput = ByteBuffer.allocate(28);
+        try {
+            MessageDecoder.createMessageId(tooLongOutput, tooLongAddress, 0L);
+            expected.put("messageIdAddressPutOverflows", false);
+        } catch (java.nio.BufferOverflowException expectedOverflow) {
+            expected.put("messageIdAddressPutOverflows", true);
+        }
+        expected.put("messageIdAddressPutOverflowAddressPosition", tooLongAddress.position());
+        expected.put("messageIdAddressPutOverflowOutputPosition", tooLongOutput.position());
+
+        ByteBuffer offsetOverflowAddress = ByteBuffer.wrap(new byte[25]);
+        ByteBuffer offsetOverflowOutput = ByteBuffer.allocate(28);
+        try {
+            MessageDecoder.createMessageId(offsetOverflowOutput, offsetOverflowAddress, 0L);
+            expected.put("messageIdOffsetPutOverflows", false);
+        } catch (java.nio.BufferOverflowException expectedOverflow) {
+            expected.put("messageIdOffsetPutOverflows", true);
+        }
+        expected.put("messageIdOffsetPutOverflowAddressPosition", offsetOverflowAddress.position());
+        expected.put("messageIdOffsetPutOverflowOutputPosition", offsetOverflowOutput.position());
         return expected;
     }
 
