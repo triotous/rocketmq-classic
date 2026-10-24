@@ -252,3 +252,19 @@ Detailed run records for the focused code and current-tree gate runs are in
   Windows/current remote Ubuntu evidence, and Phase 19 Broker/Docker
   validation remain open. No push or remote CI ran; Phase 19-owned worktree
   paths remain untouched and unstaged.
+
+
+## Windows GNU all-feature workspace compile/link — 2026-10-24 12:18 UTC
+
+- Environment: macOS ARM64 host, Rust 1.85.0, target
+  `x86_64-pc-windows-gnu`, MinGW GCC linker.
+- PASS: `CARGO_TARGET_DIR=/tmp/rocketmq-phase18-windows-target cargo check
+  --offline --all-features --locked --workspace --target
+  x86_64-pc-windows-gnu`.
+- PASS: strict all-target/all-feature Windows GNU workspace Clippy with
+  `-D warnings`.
+- PASS: `cargo test --no-run --offline --all-features --locked --workspace`
+  for the Windows GNU target; all test harnesses compiled and linked, not run.
+- This is compile-only platform evidence. Native Windows runtime and
+  current-revision remote Ubuntu CI remain unverified. Broad P18-V01 remains
+  PARTIAL. No push, remote CI, or Phase 19 file changes.

@@ -6,6 +6,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 
 ## Compatibility and validation
 
+- [x] P18 Windows GNU all-feature compile/link slice (2026-10-24): on macOS
+  ARM64 with Rust 1.85.0, Windows GNU workspace `cargo check`, strict
+  all-target/all-feature Clippy, and `cargo test --no-run` passed. All workspace
+  test harnesses link, but no Windows binary was run. Native Windows runtime and
+  current-revision remote Ubuntu CI remain open; this does not close P18-V04.
+
 - [x] P18-V02 Remoting property-decoder fuzz follow-up (`67ee9ec4`,
   2026-10-24): the deterministic smoke now seeds the property parser directly
   from 11 unique invoked-Java encoded property strings and decoded message

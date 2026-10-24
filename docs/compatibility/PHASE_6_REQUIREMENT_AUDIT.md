@@ -1,5 +1,15 @@
 # Phase 6 requirement and handoff audit
 
+## Phase 18 Windows GNU all-feature workspace compile/link — 2026-10-24
+
+On macOS ARM64 with Rust 1.85.0 and the installed MinGW linker, the current
+Phase 18 code passes Windows GNU all-feature workspace `cargo check`, strict
+all-target/all-feature Clippy, and `cargo test --no-run` for every workspace
+test harness. The test executables compile and link; they were not executed.
+This adds compile-only Windows evidence. Native Windows runtime and
+current-revision remote Ubuntu CI remain unverified, and broad P18-V01 remains
+PARTIAL. No push or remote CI was run.
+
 ## Phase 18 property decoder fuzz seeds — 2026-10-24
 
 P18-V02 deterministic fuzz smoke now seeds the property decoder directly from
