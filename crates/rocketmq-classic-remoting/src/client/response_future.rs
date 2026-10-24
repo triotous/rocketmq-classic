@@ -703,7 +703,7 @@ impl fmt::Display for ResponseFuture {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let response = self
             .response_command()
-            .map_or_else(|| "null".to_owned(), |response| format!("{response:?}"));
+            .map_or_else(|| "null".to_owned(), |response| response.to_string());
         let cause = self
             .cause()
             .map_or_else(|| "null".to_owned(), |cause| cause.to_string());
@@ -731,6 +731,8 @@ impl fmt::Display for ResponseFuture {
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
+
+    use rocketmq_classic_protocol::codes::SerializeType;
 
     use super::{ChannelHandle, ResponseFuture, ResponseWaitInterrupt, SemaphoreReleaseOnlyOnce};
     use crate::{client::InvokeCallback, command::RemotingCommand, error::TransportError};
@@ -857,6 +859,21 @@ mod tests {
         )));
         assert_eq!(java["latchCount"], 1);
         assert!(display.contains("countDownLatch=CountDownLatch [Count = 1]"));
+
+        let mut response =
+            RemotingCommand::create_response_command(206, Some("fixture".into())).unwrap();
+        response.opaque = 42;
+        response.version = 0;
+        response.serialization = SerializeType::Json;
+        let java_rendering = java["responseCommandRendering"].as_str().unwrap();
+        assert_eq!(response.to_string(), java_rendering);
+        future.set_response_command(Some(response));
+        assert_eq!(java["responseCommandEmbedded"], true);
+        assert!(
+            future
+                .to_string()
+                .contains(&format!("responseCommand={java_rendering}, sendRequestOK="))
+        );
 
         future.put_response(Some(RemotingCommand::default()));
         assert_eq!(java["latchCountAfterResponse"], 0);

@@ -98,8 +98,25 @@ public final class RemotingApiSurfaceFixtures {
             if (turkish) Locale.setDefault(originalLocale);
         }
         if (verify) {
-            if (!Files.exists(path) || !json.equals(Files.readString(path))) {
-                throw new IllegalStateException("Java remoting API fixture drift: " + path);
+            if (!Files.exists(path)) {
+                throw new IllegalStateException("Java remoting API fixture missing: " + path);
+            }
+            String expected = Files.readString(path);
+            if (!json.equals(expected)) {
+                Map<String, Object> actualFixture = JSON.parseObject(json);
+                Map<String, Object> expectedFixture = JSON.parseObject(expected);
+                Set<String> keys = new HashSet<>(actualFixture.keySet());
+                keys.addAll(expectedFixture.keySet());
+                Map<String, Boolean> changedKeys = new TreeMap<>();
+                for (String key : keys) {
+                    if (!java.util.Objects.equals(actualFixture.get(key), expectedFixture.get(key))) {
+                        changedKeys.put(key, true);
+                    }
+                }
+                throw new IllegalStateException("Java remoting API fixture drift: " + path
+                    + "; differing keys=" + changedKeys.keySet()
+                    + "; actual responseFutureToStringBehavior="
+                    + actualFixture.get("responseFutureToStringBehavior"));
             }
         } else {
             Files.createDirectories(path.getParent());
@@ -516,6 +533,13 @@ public final class RemotingApiSurfaceFixtures {
         result.put("timeoutMillis", extractLong(value, "timeoutMillis="));
         result.put("beginTimestampPresent", extractLong(value, "beginTimestamp=") > 0);
         result.put("latchCount", extractLong(value.substring(value.lastIndexOf("countDownLatch=")), "Count = "));
+        RemotingCommand response = RemotingCommand.createResponseCommand(206, "fixture");
+        response.setOpaque(42);
+        response.setVersion(0);
+        response.setSerializeTypeCurrentRPC(SerializeType.JSON);
+        future.setResponseCommand(response);
+        result.put("responseCommandRendering", response.toString());
+        result.put("responseCommandEmbedded", future.toString().contains("responseCommand=" + response));
         future.putResponse(RemotingCommand.createResponseCommand(0, null));
         String completed = future.toString();
         result.put("latchCountAfterResponse",
