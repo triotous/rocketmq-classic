@@ -10,9 +10,11 @@ byte flips, truncation, U+0001/U+0002 separator changes, and control/invalid
 suffix bytes. On code commit `67ee9ec4`, the smoke passes with 163 frame seeds,
 11 message seeds, 11 property seeds, and 2,960 total mutations; it completes
 564 frame decodes, 192 message decodes, and 176 property decodes. The full
-Remoting all-feature suite, strict Remoting Clippy, formatter check, and diff
-check pass. This closes the direct property-seed corpus gap only; broad P18-V01
-reconciliation and P18-V04 native/remote evidence remain open.
+all-feature workspace tests/doctests and strict all-target/all-feature workspace
+Clippy pass on docs revision `1f9f1ce7`; formatter and diff checks pass as well.
+This also verifies the unit-only workspace without Docker or a Broker. It closes
+the direct property-seed corpus gap only; broad P18-V01 reconciliation and
+P18-V04 native/remote evidence remain open.
 
 ## Phase 18 Fastjson numeric-token continuation — 2026-10-24
 

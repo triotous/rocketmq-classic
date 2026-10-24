@@ -203,3 +203,19 @@ Detailed run records for the focused code and current-tree gate runs are in
 - Marked each finding as open at its original checkpoint and linked the later
   closure. Documentation-only; `git diff --check` passed. No code or tests
   changed, and Phase 19-owned worktree paths remain untouched and unstaged.
+
+## P18-V02 all-feature workspace rerun — 2026-10-24 (`1f9f1ce7`)
+
+- `cargo test --offline --all-features --locked --workspace` passed all
+  workspace tests and doctests. `cargo clippy --offline --locked --workspace
+  --all-targets --all-features -- -D warnings`, `cargo fmt --all -- --check`,
+  and `git diff --check` also passed. The property-seeded fuzz regression ran
+  as part of the workspace suite.
+- The first workspace-target launch stalled in the macOS dynamic loader before
+  executing Remoting `codec` tests; `sample` showed only `_dyld_start`. After
+  stopping that process, the same command passed with
+  `CARGO_TARGET_DIR=/tmp/rocketmq-phase18-allfeat-target`.
+- This verifies the current server-free unit-only all-feature workspace gate.
+  Native Windows runtime, current-revision remote Ubuntu CI, and Phase 19 live
+  handoff evidence remain open. No push or remote CI ran; Phase 19-owned
+  worktree paths remain untouched and unstaged.

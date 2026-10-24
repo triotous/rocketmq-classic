@@ -11,11 +11,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   from 11 unique invoked-Java encoded property strings and decoded message
   properties, and applies 16 deterministic mutations per seed. The result is
   163 frame seeds, 11 message seeds, 11 property seeds, 2,960 total mutations,
-  and 564/192/176 frame/message/property decoder calls. The full Remoting
-  all-feature suite, strict all-target/all-feature Remoting Clippy, formatting,
-  and diff checks pass. This closes direct property-seed coverage only; broad
-  P18-V01 remains PARTIAL and native Windows/current remote Ubuntu evidence
-  remains open.
+  and 564/192/176 frame/message/property decoder calls. Full all-feature
+  workspace tests/doctests, strict all-target/all-feature workspace
+  Clippy, formatting, and diff checks pass on revision `1f9f1ce7`, using an
+  isolated Cargo target after the repository target's codec process stalled in
+  the macOS dynamic loader before test execution. This closes direct
+  property-seed coverage only; broad P18-V01 remains PARTIAL and native
+  Windows/current remote Ubuntu evidence remains open.
 - [x] Keep the Java client and Broker baselines separate in docs and fixture
   provenance.
 - P18-V01 Fastjson leading-dot and incomplete-exponent follow-up (`9333cbc2`,
