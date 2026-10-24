@@ -1072,8 +1072,36 @@ public final class RuntimeHeartbeatFixtures {
             "{\"groupName\":123}"));
         cases.add(heartbeatDtoInputCase("subscription-leading-plus-zero-version", "subscription",
             "{\"subVersion\":+02}"));
+        cases.add(heartbeatDtoInputCase("subscription-number-long-suffix", "subscription",
+            "{\"subVersion\":1L}"));
+        cases.add(heartbeatDtoInputCase("subscription-number-double-suffix", "subscription",
+            "{\"subVersion\":1D}"));
+        cases.add(heartbeatDtoInputCase("subscription-number-float-suffix", "subscription",
+            "{\"subVersion\":1F}"));
+        cases.add(heartbeatDtoInputCase("subscription-number-byte-suffix", "subscription",
+            "{\"subVersion\":1B}"));
+        cases.add(heartbeatDtoInputCase("subscription-number-short-suffix", "subscription",
+            "{\"subVersion\":1S}"));
+        cases.add(heartbeatDtoInputCase("subscription-float-suffix-high-precision-to-string", "subscription",
+            "{\"subVersion\":0,\"topic\":1.23456789F}"));
+        cases.add(heartbeatDtoInputCase("subscription-float-suffix-exponent-to-string", "subscription",
+            "{\"subVersion\":0,\"topic\":1e7F}"));
+        cases.add(heartbeatDtoInputCase("subscription-double-suffix-exponent-to-string", "subscription",
+            "{\"subVersion\":0,\"topic\":1e7D}"));
+        cases.add(heartbeatDtoInputCase("subscription-long-suffix-to-string", "subscription",
+            "{\"subVersion\":0,\"topic\":9223372036854775807L}"));
+        cases.add(heartbeatDtoInputCase("subscription-lowercase-float-suffix-rejected", "subscription",
+            "{\"subVersion\":1f}"));
+        cases.add(heartbeatDtoInputCase("subscription-leading-dot-negative-version", "subscription",
+            "{\"subVersion\":-.5}"));
+        cases.add(heartbeatDtoInputCase("subscription-trailing-dot-version", "subscription",
+            "{\"subVersion\":1.}"));
+        cases.add(heartbeatDtoInputCase("subscription-trailing-dot-exponent-double-suffix", "subscription",
+            "{\"subVersion\":1.e2D}"));
         cases.add(heartbeatDtoInputCase("heartbeat-leading-plus-zero-fingerprint", "heartbeat",
             "{\"heartbeatFingerprint\":+02}"));
+        cases.add(heartbeatDtoInputCase("heartbeat-exponent-float-suffix-fingerprint", "heartbeat",
+            "{\"heartbeatFingerprint\":1e2F}"));
         cases.add(heartbeatDtoInputCase("consumer-form-feed-and-leading-zero", "consumer",
             String.valueOf((char) 0x0c) + "{\"unitMode\":\f01}"));
         cases.add(heartbeatDtoInputCase("heartbeat-bom-prefix", "heartbeat",

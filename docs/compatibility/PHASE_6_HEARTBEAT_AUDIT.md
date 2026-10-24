@@ -1,5 +1,21 @@
 # Phase 6 heartbeat branch audit
 
+Heartbeat DTO Fastjson numeric-token continuation (2026-10-24): expanded the
+invoked corpus from 1088 to 1102 cases. Pinned Java accepts uppercase `L`,
+`F`, `D`, `B`, and `S` numeric suffixes in integer DTO fields, exponent forms
+such as `1e2F`, and leading/trailing decimal points such as `-.5`, `1.`, and
+`1.e2D`; lowercase `1f` rejects. Four additional Java cases cover suffix
+coercion to the `SubscriptionData.topic` string field: Float rounding for
+`1.23456789F`, exponent notation for `1e7F` and `1e7D`, and exact Long string
+conversion. The Rust normalizer now preserves Java Float/Double text forms and
+integer DTO coercion. The focused normalizer regression and all 1102 Java/Rust
+heartbeat inputs pass. Current
+`heartbeat.json` SHA-256:
+`69ab7ea24c30ad628e6f2b519268edeebee9060d7013b6becdfad88adc658f49`.
+This closes these numeric token forms and the tested string-field coercions;
+broader Fastjson grammar and Phase 6 source/API/input reconciliation remain
+open.
+
 Heartbeat DTO trailing EOF-marker continuation (2026-10-24): two direct Java
 5.5.1 Fastjson inputs confirm that repeated U+001A document terminators are
 accepted both adjacently and with JSON whitespace between them. The former

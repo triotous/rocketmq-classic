@@ -7,6 +7,18 @@ It inventories 79 declared public instance methods against the Rust API and
 the invoked Java/Rust direct-consume evidence; the broader P18-V01 inventory
 remains in progress.
 
+Phase 18 Fastjson numeric-token continuation (2026-10-24): the pinned Java
+5.5.1 heartbeat DTO oracle accepts uppercase numeric suffixes `L`, `F`, `D`,
+`B`, and `S` in integer fields, exponent-plus-suffix values, and leading or
+trailing decimal points; lowercase `1f` rejects. Four additional cases cover
+suffix coercion to the `SubscriptionData.topic` string field, including Java
+Float rounding, Float/Double exponent strings, and Long string conversion. The
+native normalizer matches those observed forms and integer-field results. The
+expanded 1,102-case heartbeat DTO differential and focused parser regressions
+pass. The fixture SHA-256 is recorded in the heartbeat audit. This closes the
+tested numeric token forms only; broader Fastjson and P18-V01 reconciliation
+remain open.
+
 Phase 18 Fastjson trailing EOF-marker continuation (2026-10-24): the pinned
 Java 5.5.1 heartbeat DTO oracle accepts repeated U+001A document terminators,
 with or without intervening JSON whitespace. Two new invoked cases first

@@ -1,5 +1,19 @@
 # Phase 6 requirement and handoff audit
 
+## Phase 18 Fastjson numeric-token continuation — 2026-10-24
+
+Added fourteen pinned Java 5.5.1 heartbeat DTO inputs, covering accepted
+uppercase `L`/`F`/`D`/`B`/`S` suffixes, exponent-plus-suffix,
+leading/trailing decimal points, rejected lowercase `f`, and suffix coercion
+to a string field. The previous Rust differential failed on the nine accepted
+numeric forms; the expanded 1,102-case differential and focused numeric parser
+regressions now pass. The parser keeps the tested integer-field results,
+including truncation of `-.5` to zero and `1.e2D` to 100, and matches Java
+Float rounding and Float/Double exponent strings for the tested topic values.
+Fixture SHA-256 is recorded in the heartbeat audit. This closes these tested
+grammar and coercion forms only. Broad P18-V01 and Phase 6
+source/API/input/reverse-export reconciliation remain open.
+
 ## Phase 18 Fastjson trailing EOF-marker continuation — 2026-10-24
 
 Pinned Java 5.5.1 Fastjson accepts one or more trailing U+001A markers after

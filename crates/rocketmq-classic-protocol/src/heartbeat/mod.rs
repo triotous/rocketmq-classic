@@ -1276,8 +1276,8 @@ mod fastjson_dto_input_tests {
         let cases = fixture["heartbeatDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            1088,
-            "Java oracle includes DTO root shapes, scalar, numeric-boundary, collection-shape, syntax-grammar, per-field token-kind, systematic whitespace-position/string probes, and repeated EOF markers"
+            1102,
+            "Java oracle includes DTO root shapes, scalar, numeric-boundary, collection-shape, syntax-grammar, numeric suffix and decimal-point forms, per-field token-kind, systematic whitespace-position/string probes, and repeated EOF markers"
         );
         for dto in ["subscription", "producer", "consumer", "heartbeat"] {
             for shape in [
@@ -1324,7 +1324,21 @@ mod fastjson_dto_input_tests {
             "subscription-precision-exponent-number-to-string",
             "subscription-tags-high-precision-number-to-string",
             "subscription-leading-plus-zero-version",
+            "subscription-number-long-suffix",
+            "subscription-number-double-suffix",
+            "subscription-number-float-suffix",
+            "subscription-number-byte-suffix",
+            "subscription-number-short-suffix",
+            "subscription-float-suffix-high-precision-to-string",
+            "subscription-float-suffix-exponent-to-string",
+            "subscription-double-suffix-exponent-to-string",
+            "subscription-long-suffix-to-string",
+            "subscription-lowercase-float-suffix-rejected",
+            "subscription-leading-dot-negative-version",
+            "subscription-trailing-dot-version",
+            "subscription-trailing-dot-exponent-double-suffix",
             "heartbeat-leading-plus-zero-fingerprint",
+            "heartbeat-exponent-float-suffix-fingerprint",
             "consumer-form-feed-and-leading-zero",
             "heartbeat-bom-prefix",
             "heartbeat-eof-marker-repeated",

@@ -220,9 +220,10 @@ where
             let value = raw
                 .parse::<f64>()
                 .map_err(|_| E::custom("Fastjson numeric value is not representable"))?;
-            serde_json::Number::from_f64(value)
-                .ok_or_else(|| E::custom("Fastjson numeric value is not finite"))?
-                .to_string()
+            if !value.is_finite() {
+                return Err(E::custom("Fastjson numeric value is not finite"));
+            }
+            java_double_to_string(value)
         } else {
             raw.to_owned()
         };
@@ -810,7 +811,7 @@ fn normalize_fastjson_number_tokens(input: &str, quote_integer_keys: bool) -> St
             continue;
         }
 
-        if matches!(bytes[index], b'+' | b'-' | b'0'..=b'9') {
+        if matches!(bytes[index], b'+' | b'-' | b'.' | b'0'..=b'9') {
             let token_start = index;
             while bytes.get(index).is_some_and(|byte| {
                 !byte.is_ascii_whitespace()
@@ -854,6 +855,12 @@ fn is_fastjson_integer_key(token: &str) -> bool {
 }
 
 fn normalize_fastjson_number_token(token: &str) -> Option<String> {
+    let suffix = token
+        .as_bytes()
+        .last()
+        .copied()
+        .filter(|suffix| matches!(suffix, b'L' | b'F' | b'D' | b'B' | b'S'));
+    let token = suffix.map_or(token, |_| &token[..token.len() - 1]);
     let bytes = token.as_bytes();
     let mut index = 0;
     let negative = bytes.first() == Some(&b'-');
@@ -865,22 +872,31 @@ fn normalize_fastjson_number_token(token: &str) -> Option<String> {
     while bytes.get(index).is_some_and(u8::is_ascii_digit) {
         index += 1;
     }
-    if index == integer_start {
-        return None;
-    }
+    let has_integer = index != integer_start;
     let integer_end = index;
 
+    let mut decimal_point = None;
+    let mut fraction_start = None;
+    let mut fraction_end = None;
     if bytes.get(index) == Some(&b'.') {
+        decimal_point = Some(index);
         index += 1;
-        let fraction_start = index;
+        let start = index;
         while bytes.get(index).is_some_and(u8::is_ascii_digit) {
             index += 1;
         }
-        if index == fraction_start {
-            return None;
-        }
+        fraction_start = Some(start);
+        fraction_end = Some(index);
     }
+    if !has_integer && (decimal_point.is_none() || fraction_start == fraction_end) {
+        return None;
+    }
+    if fraction_start == fraction_end && !matches!(bytes.get(index), None | Some(b'e' | b'E')) {
+        return None;
+    }
+    let mut exponent_start = None;
     if matches!(bytes.get(index), Some(b'e' | b'E')) {
+        exponent_start = Some(index);
         index += 1;
         if matches!(bytes.get(index), Some(b'+' | b'-')) {
             index += 1;
@@ -898,21 +914,105 @@ fn normalize_fastjson_number_token(token: &str) -> Option<String> {
     }
 
     let leading_zeroes = integer_end - integer_start > 1 && bytes[integer_start] == b'0';
-    if !positive && !leading_zeroes {
+    let floating_suffix = matches!(suffix, Some(b'F' | b'D'));
+    let trailing_decimal_point = decimal_point.is_some() && fraction_start == fraction_end;
+    if !positive && !leading_zeroes && has_integer && !trailing_decimal_point && suffix.is_none() {
         return None;
     }
 
     let mut significant_start = integer_start;
-    while significant_start + 1 < integer_end && bytes[significant_start] == b'0' {
+    while has_integer && significant_start + 1 < integer_end && bytes[significant_start] == b'0' {
         significant_start += 1;
     }
     let mut normalized = String::with_capacity(token.len());
     if negative {
         normalized.push('-');
     }
-    normalized.push_str(&token[significant_start..integer_end]);
-    normalized.push_str(&token[integer_end..]);
-    Some(normalized)
+    if has_integer {
+        normalized.push_str(&token[significant_start..integer_end]);
+    } else {
+        normalized.push('0');
+    }
+    if let (Some(_), Some(start), Some(end)) = (decimal_point, fraction_start, fraction_end) {
+        normalized.push('.');
+        if start == end {
+            normalized.push('0');
+        } else {
+            normalized.push_str(&token[start..end]);
+        }
+    } else if floating_suffix && exponent_start.is_none() {
+        normalized.push_str(".0");
+    }
+    if let Some(exponent_start) = exponent_start {
+        normalized.push_str(&token[exponent_start..]);
+    }
+    match suffix {
+        Some(b'F') => normalized
+            .parse::<f32>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .map(java_float_to_string),
+        Some(b'D') => normalized
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .map(java_double_to_string),
+        _ => Some(normalized),
+    }
+}
+
+fn java_float_to_string(value: f32) -> String {
+    if value == 0.0 {
+        return if value.is_sign_negative() {
+            "-0.0".to_owned()
+        } else {
+            "0.0".to_owned()
+        };
+    }
+    java_floating_to_string(value.to_string(), f64::from(value).abs())
+}
+
+fn java_double_to_string(value: f64) -> String {
+    if value == 0.0 {
+        return if value.is_sign_negative() {
+            "-0.0".to_owned()
+        } else {
+            "0.0".to_owned()
+        };
+    }
+    java_floating_to_string(value.to_string(), value.abs())
+}
+
+fn java_floating_to_string(shortest: String, magnitude: f64) -> String {
+    let scientific = !(1.0e-3..1.0e7).contains(&magnitude);
+    if !scientific {
+        return if shortest.contains('.') {
+            shortest
+        } else {
+            format!("{shortest}.0")
+        };
+    }
+
+    let (sign, unsigned) = shortest
+        .strip_prefix('-')
+        .map_or(("", shortest.as_str()), |value| ("-", value));
+    let (integer, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    let digits = format!("{integer}{fraction}");
+    let first_nonzero = digits
+        .bytes()
+        .position(|digit| digit != b'0')
+        .expect("nonzero finite floating value has a significant digit");
+    let exponent = integer.len() as i32 - first_nonzero as i32 - 1;
+    let significant = digits[first_nonzero..].trim_end_matches('0');
+    let mut mantissa = String::with_capacity(significant.len() + 2);
+    mantissa.push(char::from(significant.as_bytes()[0]));
+    mantissa.push('.');
+    if significant.len() == 1 {
+        mantissa.push('0');
+    } else {
+        mantissa.push_str(&significant[1..]);
+    }
+    format!("{sign}{mantissa}E{exponent}")
 }
 
 pub fn deserialize_nullable_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
@@ -1586,5 +1686,29 @@ mod syntax_compat_tests {
         let decoded = from_fastjson_str::<Value>("{}\u{001a} \u{001a}").unwrap();
         assert_eq!(decoded, Value::Object(Default::default()));
         assert!(from_fastjson_str::<Value>("\u{001a}{}").is_err());
+    }
+
+    #[test]
+    fn parses_fastjson_numeric_suffix_and_decimal_point_forms() {
+        let decoded =
+            from_fastjson_str::<Value>("{\"values\":[1L,1D,1F,1B,1S,-.5,1.,1.e2D,1e2F]}").unwrap();
+        assert_eq!(
+            decoded,
+            serde_json::json!({"values": [1, 1.0, 1.0, 1, 1, -0.5, 1.0, 100.0, 100.0]})
+        );
+    }
+
+    #[test]
+    fn formats_fastjson_float_and_double_tokens_like_java() {
+        assert_eq!(
+            super::java_float_to_string("1.23456789".parse().unwrap()),
+            "1.2345679"
+        );
+        assert_eq!(super::java_float_to_string(10_000_000.0), "1.0E7");
+        assert_eq!(super::java_double_to_string(100.0), "100.0");
+        assert_eq!(super::java_double_to_string(10_000_000.0), "1.0E7");
+        assert_eq!(super::java_double_to_string(0.001), "0.001");
+        assert_eq!(super::java_double_to_string(0.0001), "1.0E-4");
+        assert_eq!(super::java_double_to_string(-0.0), "-0.0");
     }
 }
