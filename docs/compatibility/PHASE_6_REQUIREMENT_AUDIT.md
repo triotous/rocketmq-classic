@@ -4980,3 +4980,22 @@ hook cases, 37 differential scenarios, fixture drift, 11 message fixtures,
 106 typed headers, and 19 typed bodies. This closes the client write-flow
 deadline/completion slice only; queued-byte writability remains a documented
 framework difference and broad P18-V01 reconciliation remains `PARTIAL`.
+
+
+## P18-V02 current-tree server-free gate — 2026-10-24 (`719e5aa3`)
+
+On current code/test revision `719e5aa3`, locked default and all-feature
+workspace tests/doctests, strict all-target/all-feature workspace Clippy,
+release examples, benchmark Clippy, formatting, diff checks, comparator
+self-test and 37-scenario manifest validation passed. The deterministic
+race/leak suite passed all 20 cases × 3 repetitions. Bounded fuzz smoke passed
+163 frame seeds, 11 message seeds, and 2,784 mutations (564 frame decodes and
+192 message decodes). The offline benchmark ran and is recorded in
+`PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`. Workspace metadata/dependency/license
+checks and all seven product package listings with `LICENSE`/`NOTICE` passed.
+Windows GNU all-target/all-feature workspace check and strict Clippy passed as
+compile-only evidence. Pinned offline Maven `verify` passed fixture drift, 37
+scenarios, 11 message fixtures, 106 typed headers and 19 typed bodies. This
+closes the current-tree local P18-V02 gates only. P18-V01 remains PARTIAL;
+native Windows runtime and current-revision remote Ubuntu CI remain
+unverified, while Phase 19 Broker/Docker scenarios remain separate.

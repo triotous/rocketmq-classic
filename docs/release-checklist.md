@@ -9690,3 +9690,27 @@ owner-specific checks belong in the manual handoff.
   validation is separate. No push or remote CI was run. Protected Phase 19
   worktree items remain untouched and unstaged. Run record:
   `rlogs/2026/10/24-phase-18-remoting-write-flow-parity__20261024T075744Z.rlog`.
+
+
+## P18-V02 current-tree supplemental local gates — 2026-10-24 (`719e5aa3`)
+
+- [x] Current code revision `719e5aa3`: default/all-feature locked workspace
+  tests/doctests, strict all-target/all-feature Clippy, release examples,
+  benchmark Clippy, comparator self-test, 37-scenario manifest validation,
+  formatting and diff checks passed. Pinned Maven `verify` confirmed fixture
+  drift, 37 scenarios, 11 message fixtures, 106 typed headers and 19 typed
+  bodies.
+- [x] Deterministic race/leak smoke passed 20 cases × 3. Bounded fuzz smoke
+  passed 163 frame seeds, 11 message seeds, 2,784 mutations, 564 frame decodes
+  and 192 message decodes. Offline benchmark ran; workspace metadata/dependency
+  checks and `LICENSE`/`NOTICE` listings passed for all seven product crates.
+  Windows GNU all-target/all-feature check and strict Clippy passed as
+  compile-only evidence. Benchmark record is in
+  `compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+- [ ] P18-V01 bidirectional API/settings/input/error/control-flow and
+  reverse-export audit remains PARTIAL. Native Windows runtime and
+  current-revision remote Ubuntu CI remain unverified; Phase 19 Broker/Docker
+  validation is separate. No push or remote CI was run. The integration
+  workspace contains protected Phase 19 edits, so package listing was scoped
+  to the seven product crates and those edits remain untouched. Run record:
+  `rlogs/2026/10/24-phase-18-current-tree-final-server-free-gate__20261024T080301Z.rlog`.

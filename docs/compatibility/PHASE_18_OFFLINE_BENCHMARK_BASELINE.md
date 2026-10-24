@@ -1244,3 +1244,24 @@ threshold.
 
 Timing varies between runs and is not evidence of a regression or improvement;
 loopback time includes local TCP and Tokio scheduling.
+
+
+## Phase 18 current-tree outbound-write gate sample — 2026-10-24 (`719e5aa3`)
+
+Captured with `CARGO_TARGET_DIR=/tmp/rocketmq-phase18-target cargo bench
+--offline --locked -p rocketmq-classic --bench offline` on code/test revision
+`719e5aa3`, after the Remoting outbound write-flow change. Environment:
+macOS 26.6.1 AArch64, Apple M5 Max, 18 logical CPUs, release profile, Rust
+1.85.0. This general benchmark does not isolate the transport change and sets
+no performance threshold.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 6,079.4 ns | 62.00 (1,000 samples) | 6,787.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 2,583.9 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 2,618.4 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 36.6 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 71,769.8 ns | 121.00 (100 samples) | 12,779.0 (100 samples) |
+
+Timing varies between runs and is not evidence of a regression or improvement;
+loopback time includes local TCP and Tokio scheduling.
