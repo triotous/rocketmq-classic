@@ -45,6 +45,7 @@ import org.apache.rocketmq.client.common.ThreadLocalIndex;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.client.producer.MessageQueueSelector;
 import org.apache.rocketmq.client.producer.MQProducer;
+import org.apache.rocketmq.client.producer.ProduceAccumulator;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.ServiceState;
 import org.apache.rocketmq.common.TopicConfig;
@@ -739,6 +740,7 @@ public final class ProducerCoreFixtures {
         result.put("producerClientFactoryApi", publicApiSurface(MQClientInstance.class));
         result.put("mqFaultStrategyApi", publicApiSurface(MQFaultStrategy.class));
         result.put("mqFaultStrategyBrokerFilterApi", publicApiSurface(MQFaultStrategy.BrokerFilter.class));
+        result.put("produceAccumulatorApi", publicApiSurface(ProduceAccumulator.class));
 
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("producerGroup", producer.getProducerGroup());

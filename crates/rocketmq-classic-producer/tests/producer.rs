@@ -2621,6 +2621,28 @@ fn producer_runtime_accumulator_settings_match_java_fixture() {
 }
 
 #[test]
+fn pinned_java_produce_accumulator_declared_surface_is_constructor_only() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let api = &fixture["produceAccumulatorApi"];
+
+    assert_eq!(
+        api["className"],
+        "org.apache.rocketmq.client.producer.ProduceAccumulator"
+    );
+    assert_eq!(
+        api["publicConstructors"],
+        serde_json::json!([
+            "org.apache.rocketmq.client.producer.ProduceAccumulator(java.lang.String)"
+        ])
+    );
+    assert_eq!(api["declaredPublicMethods"], serde_json::json!([]));
+    assert_eq!(api["declaredPublicMethodCount"], 0);
+    assert_eq!(api["publicMethods"], serde_json::json!([]));
+    assert_eq!(api["publicMethodCount"], 0);
+}
+
+#[test]
 fn java_validation_boundaries_and_reserved_topics_are_preserved() {
     let config = ProducerConfig::new("producer-test").unwrap();
     assert!(validate_group(&"g".repeat(120)).is_ok());
