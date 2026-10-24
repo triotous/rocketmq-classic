@@ -122,7 +122,7 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
     let entries: Vec<_> = fs::read_dir(&dir).unwrap().collect();
     assert_eq!(
         entries.len(),
-        17,
+        18,
         "all pinned Java invoked cases must be compared"
     );
     for name in [
@@ -139,6 +139,7 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
         "offset-unknown",
         "offset-no-header",
         "reset-offset-cpp",
+        "reset-offset-explicit",
         "update-success",
         "update-error",
         "update-unknown",
@@ -275,6 +276,28 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
                         "ok".to_owned()
                     }
                     other => panic!("unexpected reset offset result: {other:?}"),
+                }
+            }
+            "reset-offset-explicit" => {
+                match api
+                    .invoke_broker_to_reset_offset_at_offset(
+                        &addr,
+                        "oracle-topic",
+                        "workers",
+                        1_712_345_678_901,
+                        3,
+                        Some(27),
+                        deadline,
+                    )
+                    .await
+                {
+                    Ok(Some(offsets)) => {
+                        let offsets = offsets.snapshot();
+                        assert_eq!(offsets.len(), 1);
+                        assert_eq!(offsets[0].1, Some(27));
+                        "offset=27".to_owned()
+                    }
+                    other => panic!("unexpected explicit reset offset result: {other:?}"),
                 }
             }
             _ => panic!("unexpected case {name}"),

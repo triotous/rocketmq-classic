@@ -259,6 +259,19 @@ public final class InvokedRpcFixtures {
         cases.add(new String[] {"reset-offset-cpp.json", fixtureWithRequestLanguage(
             "reset-offset-cpp", capture, RequestCode.INVOKE_BROKER_TO_RESET_OFFSET, "ok")});
 
+        ResetOffsetBody explicitResetBody = new ResetOffsetBody();
+        explicitResetBody.getOffsetTable().put(new org.apache.rocketmq.common.message.MessageQueue(
+            "oracle-topic", "broker-a", 3), 27L);
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        capture.response.setBody(RemotingSerializable.encode(explicitResetBody));
+        java.util.Map<org.apache.rocketmq.common.message.MessageQueue, Long> explicitOffsets =
+            api.invokeBrokerToResetOffset("broker:10911", "oracle-topic", "workers",
+                1712345678901L, 3, 27L, 10000);
+        check(explicitOffsets.size() == 1 && explicitOffsets.values().iterator().next() == 27L,
+            "explicit reset offset outcome");
+        cases.add(new String[] {"reset-offset-explicit.json", fixture("reset-offset-explicit",
+            capture, RequestCode.INVOKE_BROKER_TO_RESET_OFFSET, "offset=27")});
+
         capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, "no header");
         try {
             api.queryConsumerOffset("broker:10911", offset, 10000);

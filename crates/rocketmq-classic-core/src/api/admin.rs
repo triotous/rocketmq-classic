@@ -2964,6 +2964,33 @@ impl MQClientApi {
             .await
     }
 
+    /// Adapts Java `MQClientAPIImpl.invokeBrokerToResetOffset(addr, topic,
+    /// group, timestamp, queueId, offset, timeoutMillis)`.
+    pub async fn invoke_broker_to_reset_offset_at_offset(
+        &self,
+        addr: &str,
+        topic: &str,
+        group: &str,
+        timestamp: i64,
+        queue_id: i32,
+        offset: Option<i64>,
+        deadline: Instant,
+    ) -> Result<Option<SharedQueueOffsetEntries>, RpcError> {
+        let mut header = ResetOffsetRequestHeader::default();
+        header.set_topic(topic.to_owned());
+        header.set_group(group.to_owned());
+        header.set_queue_id(queue_id);
+        header.set_timestamp(timestamp);
+        header.set_offset(offset);
+        self.invoke_broker_to_reset_offset_with_language(
+            addr,
+            &header,
+            rocketmq_classic_protocol::codes::LanguageCode::Java,
+            deadline,
+        )
+        .await
+    }
+
     /// Queries one Broker using Java's `_UNIQUE_KEY_QUERY` extension field.
     /// The admin facade is responsible for route selection, fan-out and result
     /// merge; this method performs exactly one Broker request.
