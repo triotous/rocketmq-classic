@@ -1443,13 +1443,17 @@ public final class RuntimeLookupFixtures {
             org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.class,
             new String[][] { {"default", "{}"}, {"populated", "{\"messageQueueAssignments\":[{"
                 + "\"messageQueue\":{\"topic\":\"orders\",\"brokerName\":\"broker-a\","
-                + "\"queueId\":1},\"mode\":\"POP\"}]}"} });
+                + "\"queueId\":1},\"mode\":\"POP\"}]}"},
+                {"eof-trailing-text", "{}\u001atrailing"},
+                {"eof-trailing-json", "{}\u001a{\"ignored\":true}"} });
         addRemotingSerializableBodyCases(result,
             org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody.class,
             new String[][] { {"default", "{}"}, {"populated", "{\"consumeTimeSpanSet\":[{"
                 + "\"messageQueue\":{\"topic\":\"orders\",\"brokerName\":\"broker-a\","
                 + "\"queueId\":1},\"minTimeStamp\":10,\"maxTimeStamp\":20,"
-                + "\"consumeTimeStamp\":15,\"delayTime\":5}]}"} });
+                + "\"consumeTimeStamp\":15,\"delayTime\":5}]}"},
+                {"eof-trailing-text", "{}\u001atrailing"},
+                {"eof-trailing-json", "{}\u001a{\"ignored\":true}"} });
         addRemotingSerializableBodyCases(result,
             org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody.class,
             new String[][] { {"default", "{}"}, {"populated", "{\"topic\":\"orders\","
@@ -1476,7 +1480,9 @@ public final class RuntimeLookupFixtures {
         addRemotingSerializableBodyCases(result,
             org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody.class,
             new String[][] { {"default", "{}"}, {"populated", "{\"lockOKMQSet\":[{"
-                + "\"topic\":\"orders\",\"brokerName\":\"broker-a\",\"queueId\":1}]}"} });
+                + "\"topic\":\"orders\",\"brokerName\":\"broker-a\",\"queueId\":1}]}"},
+                {"eof-trailing-text", "{}\u001atrailing"},
+                {"eof-trailing-json", "{}\u001a{\"ignored\":true}"} });
         addRemotingSerializableBodyCases(result,
             org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody.class,
             new String[][] { {"default", "{}"}, {"populated", "{\"consumerIdList\":["
@@ -1486,10 +1492,47 @@ public final class RuntimeLookupFixtures {
             new String[][] { {"default", "{}"}, {"populated", "{\"order\":true,"
                 + "\"autoCommit\":false,\"consumeResult\":\"CR_SUCCESS\","
                 + "\"remark\":\"ok\",\"spentTimeMills\":19}"},
+                {"eof-trailing-text", "{}\u001atrailing"},
+                {"eof-trailing-json", "{}\u001a{\"ignored\":true}"},
                 {"browser-compatible-max-safe", "{\"spentTimeMills\":9007199254740991}"},
                 {"browser-compatible-above-max-safe", "{\"spentTimeMills\":9007199254740992}"},
                 {"browser-compatible-min-safe", "{\"spentTimeMills\":-9007199254740991}"},
                 {"browser-compatible-below-min-safe", "{\"spentTimeMills\":-9007199254740992}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.GroupList.class,
+            new String[][] { {"default", "{}"},
+                {"eof-trailing-text", "{}\u001atrailing"},
+                {"eof-trailing-json", "{}\u001a{\"ignored\":true}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.TopicList.class,
+            new String[][] { {"default", "{}"},
+                {"eof-trailing-text", "{}\u001atrailing"},
+                {"eof-trailing-json", "{}\u001a{\"ignored\":true}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.QuerySubscriptionResponseBody.class,
+            new String[][] { {"default", "{}"},
+                {"eof-trailing-text", "{}\u001atrailing"},
+                {"eof-trailing-json", "{}\u001a{\"ignored\":true}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.class,
+            new String[][] { {"populated", "{\"replicasInfoTable\":{\"broker-a\":{"
+                + "\"masterBrokerId\":0,\"masterAddress\":\"broker-a:10911\","
+                + "\"masterEpoch\":9,\"syncStateSetEpoch\":10,"
+                + "\"inSyncReplicas\":[],\"notInSyncReplicas\":[]}}}"},
+                {"eof-trailing-text", "{}\u001atrailing"},
+                {"eof-trailing-json", "{}\u001a{\"ignored\":true}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.EpochEntryCache.class,
+            new String[][] { {"populated", "{\"clusterName\":\"cluster-a\","
+                + "\"brokerName\":\"broker-a\",\"brokerId\":3,"
+                + "\"epochList\":[{\"epoch\":4,\"startOffset\":10}],\"maxOffset\":20}"},
+                {"eof-trailing-text", "{}\u001atrailing"},
+                {"eof-trailing-json", "{}\u001a{\"ignored\":true}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.BrokerMemberGroup.class,
+            new String[][] { {"default", "{}"},
+                {"eof-trailing-text", "{}\u001atrailing"},
+                {"eof-trailing-json", "{}\u001a{\"ignored\":true}"} });
         addRemotingSerializableBodyCases(result,
             org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody.class,
             new String[][] { {"default", "{}"}, {"populated", "{\"messageQueueTable\":"
@@ -1638,6 +1681,12 @@ public final class RuntimeLookupFixtures {
             org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody.class);
         addRemotingSerializableNullUtilities(result,
             org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.GroupList.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.TopicList.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.QuerySubscriptionResponseBody.class);
         addRemotingSerializableNullUtilities(result,
             org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody.class);
         addRemotingSerializableNullUtilities(result,

@@ -425,6 +425,43 @@ fn controller_dto_java_fixture_matches_rust_dto_methods_and_strings() {
     );
 }
 
+#[test]
+fn controller_fastjson_body_decoders_match_invoked_java_eof_cases() {
+    use rocketmq_classic_core::api::controller::{
+        BrokerMemberGroup, BrokerReplicasInfo, EpochEntryCache,
+    };
+
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+    macro_rules! assert_decode_cases {
+        ($dto:ty, $name:literal) => {{
+            let dto_cases = &fixture["remotingSerializableBodyCases"][$name]["cases"];
+            for case in dto_cases.as_array().unwrap() {
+                let decoded = rocketmq_classic_protocol::decode_java_remoting_serializable::<$dto>(
+                    case["rawInput"].as_str().unwrap().as_bytes(),
+                )
+                .unwrap();
+                let actual = serde_json::to_value(decoded).unwrap();
+                let expected =
+                    serde_json::from_str::<Value>(case["decodedJson"].as_str().unwrap()).unwrap();
+                for (field, expected_value) in expected.as_object().unwrap() {
+                    assert_eq!(
+                        actual.get(field),
+                        Some(expected_value),
+                        "{} {} field {field}",
+                        $name,
+                        case["id"]
+                    );
+                }
+            }
+        }};
+    }
+
+    assert_decode_cases!(BrokerReplicasInfo, "BrokerReplicasInfo");
+    assert_decode_cases!(EpochEntryCache, "EpochEntryCache");
+    assert_decode_cases!(BrokerMemberGroup, "BrokerMemberGroup");
+}
+
 #[tokio::test]
 async fn controller_metadata_and_epoch_cache_decode_java_results() {
     let fixture = java_controller_fixture();
@@ -444,9 +481,10 @@ async fn controller_metadata_and_epoch_cache_decode_java_results() {
     .await;
     let (epoch_addr, epoch_peer) = scripted_peer(vec![success(
         None,
-        Some(
+        Some(concat!(
             r#"{"clusterName":"cluster-a","brokerName":"broker-a","brokerId":3,"epochList":[{"epoch":4,"startOffset":10}],"maxOffset":20}"#,
-        ),
+            "\u{001a}trailing"
+        )),
     )])
     .await;
     let (client_api, client) = api().await;
@@ -509,9 +547,10 @@ async fn controller_sync_state_resolves_leader_and_encodes_nullable_broker_list(
         .clone();
     let (leader_addr, leader_peer) = scripted_peer(vec![success(
         None,
-        Some(
+        Some(concat!(
             r#"{"replicasInfoTable":{"broker-a":{"masterBrokerId":0,"masterAddress":"broker-a:10911","masterEpoch":9,"syncStateSetEpoch":10,"inSyncReplicas":[{"brokerName":"broker-a","brokerId":0,"brokerAddress":"broker-a:10911","alive":true}],"notInSyncReplicas":[]}}}"#,
-        ),
+            "\u{001a}trailing"
+        )),
     )])
     .await;
     let (controller_addr, controller_peer) = scripted_peer(vec![success(
@@ -596,7 +635,10 @@ async fn election_and_cleanup_use_controller_leader_and_encode_java_headers() {
             ("masterEpoch".into(), "11".into()),
             ("syncStateSetEpoch".into(), "12".into()),
         ])),
-        Some(r#"{"cluster":"cluster-a","brokerName":"broker-a","brokerAddrs":{"7":"broker-a:10911"}}"#),
+        Some(concat!(
+            r#"{"cluster":"cluster-a","brokerName":"broker-a","brokerAddrs":{"7":"broker-a:10911"}}"#,
+            "\u{001a}trailing"
+        )),
     )])
     .await;
     let (controller_addr, controller_peer) = scripted_peer(vec![success(

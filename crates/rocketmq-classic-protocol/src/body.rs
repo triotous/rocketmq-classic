@@ -4563,6 +4563,10 @@ impl<'de> Deserialize<'de> for QuerySubscriptionResponseBody {
 }
 
 impl QuerySubscriptionResponseBody {
+    pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice(data)
+    }
+
     pub fn get_subscription_data(&self) -> Option<SharedValue<SubscriptionData>> {
         self.subscription_data.clone()
     }
@@ -4851,6 +4855,10 @@ impl Default for GroupList {
 }
 
 impl GroupList {
+    pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice(data)
+    }
+
     pub fn get_group_list(&self) -> Option<SharedValue<std::collections::HashSet<Option<String>>>> {
         self.group_list.clone()
     }
@@ -16825,6 +16833,29 @@ mod tests {
         assert_body_serialization!(ConsumeMessageDirectlyResult, "ConsumeMessageDirectlyResult");
         assert_body_serialization!(GetConsumerStatusBody, "GetConsumerStatusBody");
         assert_body_serialization!(ResetOffsetBody, "ResetOffsetBody");
+
+        macro_rules! assert_decode_cases {
+            ($dto:ty, $name:literal) => {{
+                let dto_case = &fixture["remotingSerializableBodyCases"][$name];
+                for case in dto_case["cases"].as_array().unwrap() {
+                    let value =
+                        <$dto>::java_decode(case["rawInput"].as_str().unwrap().as_bytes()).unwrap();
+                    let actual = serde_json::to_value(value).unwrap();
+                    let expected = serde_json::from_str::<serde_json::Value>(
+                        case["decodedJson"].as_str().unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(actual, expected, "{} {}", $name, case["id"]);
+                }
+            }};
+        }
+
+        assert_decode_cases!(GroupList, "GroupList");
+        assert_decode_cases!(TopicList, "TopicList");
+        assert_decode_cases!(
+            QuerySubscriptionResponseBody,
+            "QuerySubscriptionResponseBody"
+        );
 
         let queue_api = &fixture["queueTimeSpanApiCase"];
         assert_eq!(

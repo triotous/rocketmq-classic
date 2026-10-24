@@ -11,7 +11,7 @@ use rocketmq_classic_protocol::{
 use rocketmq_classic_remoting::RemotingCommand;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
-    de::{DeserializeOwned, MapAccess, Visitor},
+    de::{MapAccess, Visitor},
     ser::SerializeMap,
 };
 use serde_json::value::RawValue;
@@ -846,15 +846,16 @@ fn malformed_response(code: i32, peer: &str, reason: impl Into<String>) -> RpcEr
     }
 }
 
-fn decode_nullable_body<T: DeserializeOwned>(
+fn decode_nullable_body<T>(
     body: Option<&[u8]>,
     code: i32,
     peer: &str,
+    decoder: impl FnOnce(&[u8]) -> Result<Option<T>, serde_json::Error>,
 ) -> Result<Option<T>, RpcError> {
     let Some(body) = body.filter(|body| !body.is_empty()) else {
         return Ok(None);
     };
-    serde_json::from_slice(body).map_err(|error| malformed_response(code, peer, error.to_string()))
+    decoder(body).map_err(|error| malformed_response(code, peer, error.to_string()))
 }
 
 impl MQClientApi {
@@ -906,6 +907,9 @@ impl MQClientApi {
             reply.body.as_deref(),
             request::CONTROLLER_GET_SYNC_STATE_DATA,
             leader,
+            rocketmq_classic_protocol::decode_java_remoting_serializable_nullable::<
+                BrokerReplicasInfo,
+            >,
         )
     }
 
@@ -921,7 +925,12 @@ impl MQClientApi {
             .invoke_controller(broker_address, code, None, None, 3000)
             .await?;
         let reply = classify(reply, code, broker_address)?;
-        decode_nullable_body(reply.body.as_deref(), code, broker_address)
+        decode_nullable_body(
+            reply.body.as_deref(),
+            code,
+            broker_address,
+            rocketmq_classic_protocol::decode_java_remoting_serializable_nullable::<EpochEntryCache>,
+        )
     }
 
     /// Reads Java `MQClientAPIImpl.getControllerConfig` from the supplied
@@ -1046,6 +1055,9 @@ impl MQClientApi {
             reply.body.as_deref(),
             request::CONTROLLER_ELECT_MASTER,
             leader,
+            rocketmq_classic_protocol::decode_java_remoting_serializable_nullable::<
+                BrokerMemberGroup,
+            >,
         )?;
         Ok((header, broker_member_group))
     }

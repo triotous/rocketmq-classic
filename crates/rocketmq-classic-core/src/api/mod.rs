@@ -12,7 +12,6 @@ use rocketmq_classic_protocol::codes::response;
 use rocketmq_classic_protocol::header::{CommandHeader, HeaderMap};
 use rocketmq_classic_remoting::RemotingCommand;
 use rocketmq_classic_remoting::client::RemotingClient;
-use serde::de::DeserializeOwned;
 use tokio::time::Instant;
 
 const JAVA_CLIENT_API_VERSION_5_5_1: i32 = 515;
@@ -338,10 +337,11 @@ fn decode_header<T: CommandHeader>(
     })
 }
 
-fn decode_body<T: DeserializeOwned>(
+fn decode_body<T>(
     reply: &RemotingCommand,
     code: i32,
     peer: &str,
+    decoder: impl FnOnce(&[u8]) -> Result<T, serde_json::Error>,
 ) -> Result<T, RpcError> {
     let body = reply
         .body
@@ -351,7 +351,7 @@ fn decode_body<T: DeserializeOwned>(
             peer: peer.to_owned(),
             reason: "missing response body".into(),
         })?;
-    serde_json::from_slice(body).map_err(|error| RpcError::MalformedResponse {
+    decoder(body).map_err(|error| RpcError::MalformedResponse {
         request_code: code,
         peer: peer.to_owned(),
         reason: error.to_string(),

@@ -1242,7 +1242,7 @@ impl MQClientApi {
         let code = request::QUERY_TOPIC_CONSUME_BY_WHO;
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
-        decode_body(&reply, code, addr)
+        decode_body(&reply, code, addr, GroupList::java_decode)
     }
 
     /// Queries one Broker for a group's subscription to a topic.
@@ -1255,7 +1255,12 @@ impl MQClientApi {
         let code = request::QUERY_SUBSCRIPTION_BY_CONSUMER;
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
-        let body: QuerySubscriptionResponseBody = decode_body(&reply, code, addr)?;
+        let body: QuerySubscriptionResponseBody = decode_body(
+            &reply,
+            code,
+            addr,
+            QuerySubscriptionResponseBody::java_decode,
+        )?;
         Ok(body.get_subscription_data())
     }
 
@@ -1269,7 +1274,7 @@ impl MQClientApi {
         let code = request::QUERY_TOPICS_BY_CONSUMER;
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
-        decode_body(&reply, code, addr)
+        decode_body(&reply, code, addr, TopicList::java_decode)
     }
 
     /// Fans one Java MQAdmin query out to the selected Brokers on a route.
@@ -3008,7 +3013,12 @@ impl MQClientApi {
             .request_future(addr, code, header, None, deadline)
             .await?;
         let reply = classify(reply, code, addr)?;
-        decode_body(&reply, code, addr)
+        decode_body(
+            &reply,
+            code,
+            addr,
+            ConsumeMessageDirectlyResult::java_decode,
+        )
     }
 }
 

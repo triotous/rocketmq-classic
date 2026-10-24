@@ -32,3 +32,19 @@ pub mod writer_feature;
 pub use namespace::NamespaceUtil;
 pub use shared::SharedValue;
 pub use writer_feature::JavaJsonWriterFeature;
+
+/// Decodes one Java `RemotingSerializable.decode(byte[], Class)` body with
+/// Fastjson input semantics, including EOF markers and permissive JSON syntax.
+pub fn decode_java_remoting_serializable<T: serde::de::DeserializeOwned>(
+    input: &[u8],
+) -> Result<T, serde_json::Error> {
+    serde_fastjson::from_fastjson_slice(input)
+}
+
+/// Decodes a nullable Java `RemotingSerializable.decode` result, preserving a
+/// JSON `null` root as `None`.
+pub fn decode_java_remoting_serializable_nullable<T: serde::de::DeserializeOwned>(
+    input: &[u8],
+) -> Result<Option<T>, serde_json::Error> {
+    serde_fastjson::from_fastjson_slice_nullable(Some(input))
+}

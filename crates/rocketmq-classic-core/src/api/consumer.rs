@@ -121,7 +121,8 @@ impl MQClientApi {
         let code = request::QUERY_CONSUME_TIME_SPAN;
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
-        let body: QueryConsumeTimeSpanBody = decode_body(&reply, code, addr)?;
+        let body: QueryConsumeTimeSpanBody =
+            decode_body(&reply, code, addr, QueryConsumeTimeSpanBody::java_decode)?;
         Ok(body.get_consume_time_span_set().map(|spans| {
             spans.with(|spans| {
                 spans
@@ -619,7 +620,8 @@ impl MQClientApi {
             )
             .await?;
         let reply = classify(reply, code, addr)?;
-        let body: LockBatchResponseBody = decode_body(&reply, code, addr)?;
+        let body: LockBatchResponseBody =
+            decode_body(&reply, code, addr, LockBatchResponseBody::java_decode)?;
         Ok(body.get_lock_okmq_set().map(|queues| {
             queues.with(|queues| {
                 queues
@@ -655,7 +657,8 @@ impl MQClientApi {
             code,
             addr,
         )?;
-        let body: LockBatchResponseBody = decode_body(&reply, code, addr)?;
+        let body: LockBatchResponseBody =
+            decode_body(&reply, code, addr, LockBatchResponseBody::java_decode)?;
         Ok(body.get_lock_okmq_set().map(|queues| {
             queues.with(|queues| {
                 queues

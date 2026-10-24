@@ -600,7 +600,12 @@ impl MQClientApi {
             request::QUERY_ASSIGNMENT,
             addr,
         )?;
-        decode_body(&reply, request::QUERY_ASSIGNMENT, addr)
+        decode_body(
+            &reply,
+            request::QUERY_ASSIGNMENT,
+            addr,
+            QueryAssignmentResponseBody::java_decode,
+        )
     }
 
     /// Uses the signed timeout passed by `MQClientInstance.queryAssignment`.
@@ -624,7 +629,12 @@ impl MQClientApi {
             request::QUERY_ASSIGNMENT,
             addr,
         )?;
-        decode_body(&reply, request::QUERY_ASSIGNMENT, addr)
+        decode_body(
+            &reply,
+            request::QUERY_ASSIGNMENT,
+            addr,
+            QueryAssignmentResponseBody::java_decode,
+        )
     }
 
     pub async fn set_message_request_mode(
