@@ -1163,6 +1163,8 @@ mod windows {
                     "x64 RtlVirtualUnwind start pc=0x{control_pc:x} rsp=0x{:x}",
                     context.Rsp
                 );
+                let mut handler_data = ptr::null_mut();
+                let mut establisher_frame = 0u64;
                 unsafe {
                     let _ = RtlVirtualUnwind(
                         UNW_FLAG_NHANDLER,
@@ -1170,8 +1172,8 @@ mod windows {
                         control_pc,
                         function,
                         context,
-                        ptr::null_mut(),
-                        ptr::null_mut(),
+                        &mut handler_data,
+                        &mut establisher_frame,
                         ptr::null_mut(),
                     );
                 }
@@ -1236,6 +1238,8 @@ mod windows {
                     "arm64 RtlVirtualUnwind start pc=0x{control_pc:x} sp=0x{:x}",
                     context.Sp
                 );
+                let mut handler_data = ptr::null_mut();
+                let mut establisher_frame = 0usize;
                 unsafe {
                     let _ = RtlVirtualUnwind(
                         UNW_FLAG_NHANDLER,
@@ -1243,8 +1247,8 @@ mod windows {
                         control_pc as usize,
                         function as *const IMAGE_ARM64_RUNTIME_FUNCTION_ENTRY,
                         context,
-                        ptr::null_mut(),
-                        ptr::null_mut(),
+                        &mut handler_data,
+                        &mut establisher_frame,
                         ptr::null_mut(),
                     );
                 }
