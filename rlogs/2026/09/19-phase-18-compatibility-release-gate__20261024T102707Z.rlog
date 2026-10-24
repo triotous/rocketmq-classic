@@ -175,3 +175,22 @@ Detailed run records for the focused code and current-tree gate runs are in
   PARTIAL status remain explicit.
 - Documentation-only; no code or tests changed. `git diff --check` passed.
 - Phase 19-owned paths were not staged or modified.
+
+## P18-V02 direct property decoder fuzz seeds — 2026-10-24
+
+- Code commit: `67ee9ec4 test(remoting): fuzz encoded property strings`.
+- The bounded deterministic smoke now collects unique encoded property
+  strings from the invoked Java message fixture and mutates each 16 ways,
+  including byte flips, truncation, U+0001/U+0002 separator edits, and
+  control/invalid suffixes. The regression requires nonzero property seed and
+  decoder counts; the example reports both counts.
+- Focused fuzz regression and smoke passed: 163 frame seeds, 11 message seeds,
+  11 property seeds, 2,960 total mutations, 564 frame decodes, 192 message
+  decodes, and 176 property decodes. The full Remoting all-feature suite
+  passed (147 unit, 9 codec, 1 fuzz-regression, 7 security, 109 transport,
+  and 20 doctests). Strict all-target/all-feature Remoting Clippy, formatting,
+  and diff checks passed.
+- This closes the direct property-seed coverage gap in P18-V02 only. Broad
+  P18-V01 reconciliation and native Windows/current remote Ubuntu evidence
+  remain open; no push or remote CI ran, and the Phase 19-owned worktree paths
+  remain untouched and unstaged.

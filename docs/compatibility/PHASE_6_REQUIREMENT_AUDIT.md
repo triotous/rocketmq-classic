@@ -1,5 +1,19 @@
 # Phase 6 requirement and handoff audit
 
+## Phase 18 property decoder fuzz seeds — 2026-10-24
+
+P18-V02 deterministic fuzz smoke now seeds the property decoder directly from
+invoked Java property-string inputs and decoded message properties, in addition
+to mutating complete Remoting frames and message records. The corpus has 11
+unique encoded property seeds, each receiving 16 deterministic mutations for
+byte flips, truncation, U+0001/U+0002 separator changes, and control/invalid
+suffix bytes. On code commit `67ee9ec4`, the smoke passes with 163 frame seeds,
+11 message seeds, 11 property seeds, and 2,960 total mutations; it completes
+564 frame decodes, 192 message decodes, and 176 property decodes. The full
+Remoting all-feature suite, strict Remoting Clippy, formatter check, and diff
+check pass. This closes the direct property-seed corpus gap only; broad P18-V01
+reconciliation and P18-V04 native/remote evidence remain open.
+
 ## Phase 18 Fastjson numeric-token continuation — 2026-10-24
 
 Added fourteen pinned Java 5.5.1 heartbeat DTO inputs, covering accepted
