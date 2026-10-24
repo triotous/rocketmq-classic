@@ -238,6 +238,13 @@ impl Hash for SubscriptionData {
     }
 }
 
+/// Failure cases from the pinned Java `SubscriptionData.compareTo` method.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum SubscriptionDataCompareError {
+    #[error("Java NullPointerException: null SubscriptionData compareTo argument")]
+    NullOther,
+}
+
 impl<T> PartialEq for SharedValue<HashSet<T>>
 where
     T: Clone + Eq + Hash,
@@ -434,6 +441,16 @@ impl SubscriptionData {
             java_nullable_string(&other.sub_string)
         );
         java_string_compare(&left, &right)
+    }
+
+    /// Compares with an optional value and maps Java's null-argument failure.
+    pub fn java_compare_to_nullable(
+        &self,
+        other: Option<&Self>,
+    ) -> Result<i32, SubscriptionDataCompareError> {
+        other
+            .map(|other| self.java_compare_to(other))
+            .ok_or(SubscriptionDataCompareError::NullOther)
     }
 }
 
@@ -2107,6 +2124,11 @@ mod tests {
                 case["case"]
             );
         }
+        assert_eq!(methods["compareNullOtherException"], "NullPointerException");
+        assert_eq!(
+            SubscriptionData::default().java_compare_to_nullable(None),
+            Err(SubscriptionDataCompareError::NullOther)
+        );
     }
 
     #[test]

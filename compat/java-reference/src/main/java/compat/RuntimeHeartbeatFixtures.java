@@ -182,6 +182,14 @@ public final class RuntimeHeartbeatFixtures {
             compareCases.add(item);
         }
         result.put("compareCases", compareCases);
+
+        SubscriptionData compareReceiver = new SubscriptionData("left", "tag");
+        try {
+            compareReceiver.compareTo(null);
+            result.put("compareNullOtherException", null);
+        } catch (Throwable error) {
+            result.put("compareNullOtherException", error.getClass().getSimpleName());
+        }
         return result;
     }
 
