@@ -31,15 +31,19 @@ const MUTATIONS_PER_SEED: usize = 16;
 pub struct SmokeSummary {
     pub frame_seeds: usize,
     pub message_seeds: usize,
+    pub property_seeds: usize,
     pub mutated_inputs: usize,
     pub frame_decodes: usize,
     pub message_decodes: usize,
+    pub property_decodes: usize,
 }
 
 pub fn run_fixed_seed_mutations() -> SmokeSummary {
     let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
     let frame_seeds = read_frame_seeds(&fixture_root.join("remoting"));
-    let message_seeds = read_message_seeds(&fixture_root.join("messages/records.json"));
+    let message_fixture = fixture_root.join("messages/records.json");
+    let message_seeds = read_message_seeds(&message_fixture);
+    let property_seeds = read_property_seeds(&message_fixture);
     assert!(
         !frame_seeds.is_empty(),
         "remoting corpus has no frame seeds"
@@ -48,9 +52,14 @@ pub fn run_fixed_seed_mutations() -> SmokeSummary {
         !message_seeds.is_empty(),
         "message corpus has no record seeds"
     );
+    assert!(
+        !property_seeds.is_empty(),
+        "message corpus has no encoded property seeds"
+    );
 
     let mut frame_decodes = 0;
     let mut message_decodes = 0;
+    let mut property_decodes = 0;
     let mut mutated_inputs = 0;
     for (seed_index, seed) in frame_seeds.iter().chain(&message_seeds).enumerate() {
         for mutation_index in 0..MUTATIONS_PER_SEED {
@@ -68,6 +77,22 @@ pub fn run_fixed_seed_mutations() -> SmokeSummary {
         }
     }
 
+    for (seed_index, seed) in property_seeds.iter().enumerate() {
+        for mutation_index in 0..MUTATIONS_PER_SEED {
+            let input = mutate_property(seed, seed_index, mutation_index);
+            assert!(input.len() <= MAX_SEED_BYTES);
+            catch_unwind(AssertUnwindSafe(|| {
+                let text = String::from_utf8_lossy(&input);
+                let _properties = decode_properties(&text);
+            }))
+            .unwrap_or_else(|_| {
+                panic!("property decoder panicked for fixture seed {seed_index}, mutation {mutation_index}")
+            });
+            property_decodes += 1;
+            mutated_inputs += 1;
+        }
+    }
+
     unknown_request_codes_round_trip();
     assert!(frame_decodes > 0, "smoke corpus decoded no Remoting frames");
     assert!(
@@ -77,9 +102,11 @@ pub fn run_fixed_seed_mutations() -> SmokeSummary {
     SmokeSummary {
         frame_seeds: frame_seeds.len(),
         message_seeds: message_seeds.len(),
+        property_seeds: property_seeds.len(),
         mutated_inputs,
         frame_decodes,
         message_decodes,
+        property_decodes,
     }
 }
 
@@ -122,6 +149,41 @@ fn read_message_seeds(path: &Path) -> Vec<Vec<u8>> {
         .collect()
 }
 
+fn read_property_seeds(path: &Path) -> Vec<Vec<u8>> {
+    let fixture: serde_json::Value = serde_json::from_slice(
+        &fs::read(path).unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display())),
+    )
+    .expect("message records fixture is valid JSON");
+    let mut seeds = Vec::new();
+    let api = &fixture["messageDecoderPropertiesApi"];
+    for field in [
+        "encodedInput",
+        "emptyMapEncoded",
+        "nullKeyEncoded",
+        "nullValueEncoded",
+    ] {
+        if let Some(value) = api[field].as_str() {
+            push_property_seed(&mut seeds, value);
+        }
+    }
+    for case in fixture["cases"]
+        .as_array()
+        .expect("message fixture has cases")
+    {
+        if let Some(value) = case["decoded"]["propertiesWithString"]["propertiesString"].as_str() {
+            push_property_seed(&mut seeds, value);
+        }
+    }
+    seeds
+}
+
+fn push_property_seed(seeds: &mut Vec<Vec<u8>>, value: &str) {
+    let bytes = value.as_bytes();
+    if bytes.len() <= MAX_SEED_BYTES && !seeds.iter().any(|seed| seed == bytes) {
+        seeds.push(bytes.to_vec());
+    }
+}
+
 fn mutate(seed: &[u8], seed_index: usize, mutation_index: usize) -> Vec<u8> {
     let mut state = 0x9e37_79b9_7f4a_7c15_u64
         ^ (seed_index as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9)
@@ -154,6 +216,51 @@ fn mutate(seed: &[u8], seed_index: usize, mutation_index: usize) -> Vec<u8> {
                 let index = next_u32(&mut state) as usize % bytes.len();
                 bytes[index] ^= (next_u32(&mut state) as u8) | 1;
             }
+        }
+        _ => {}
+    }
+    bytes
+}
+
+fn mutate_property(seed: &[u8], seed_index: usize, mutation_index: usize) -> Vec<u8> {
+    let mut state = 0xd1b5_4a32_d192_ed03_u64
+        ^ (seed_index as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        ^ (mutation_index as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    let mut bytes = seed.to_vec();
+    match mutation_index % 5 {
+        0 if !bytes.is_empty() => {
+            let index = next_u32(&mut state) as usize % bytes.len();
+            bytes[index] ^= (next_u32(&mut state) as u8) | 1;
+        }
+        1 => {
+            let length = if bytes.is_empty() {
+                0
+            } else {
+                next_u32(&mut state) as usize % (bytes.len() + 1)
+            };
+            bytes.truncate(length);
+        }
+        2 if bytes.len() < MAX_SEED_BYTES => {
+            let index = next_u32(&mut state) as usize % (bytes.len() + 1);
+            let separator = if next_u32(&mut state) & 1 == 0 {
+                0x01
+            } else {
+                0x02
+            };
+            bytes.insert(index, separator);
+        }
+        3 if !bytes.is_empty() => {
+            let index = next_u32(&mut state) as usize % bytes.len();
+            bytes[index] = match bytes[index] {
+                0x01 => 0x02,
+                0x02 => 0x01,
+                _ if next_u32(&mut state) & 1 == 0 => 0x01,
+                _ => 0x02,
+            };
+        }
+        _ if bytes.len() < MAX_SEED_BYTES => {
+            let suffix = [0x00, 0x01, 0x02, 0xff][next_u32(&mut state) as usize % 4];
+            bytes.push(suffix);
         }
         _ => {}
     }
