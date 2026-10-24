@@ -16,6 +16,22 @@ This also verifies the unit-only workspace without Docker or a Broker. It closes
 the direct property-seed corpus gap only; broad P18-V01 reconciliation and
 P18-V04 native/remote evidence remain open.
 
+## Phase 18 PULL assignment expiry and retention — 2026-10-24
+
+The invoked Java `RebalanceImpl.updateMessageQueueAssignment` fixture now
+records four PULL assignment outcomes: an expired assigned queue is dropped
+and replaced, an active assigned queue remains the same object, a dropped
+assigned queue remains present, and an empty assignment drops and removes the
+queue. Rust regression
+`assigned_pull_queue_expiry_matches_java_replacement_and_retention` compares
+the same states while driving an authoritative route assignment. The combined
+`fixtures/runtime/consumer-operations.json` SHA-256 is
+`892956f5ef65b5418bf637a5065f4697f4342a7926d9e04d69cdd657a7d3a911`.
+Focused Rust coverage, pinned Java Maven `verify`, formatter, and diff checks
+pass. This closes the assigned PULL expiry/retention slice only; broad P18-V01
+source/API/input/error/control-flow/reverse-export reconciliation and current
+native/remote platform evidence remain open.
+
 ## Phase 18 Fastjson numeric-token continuation — 2026-10-24
 
 Added fourteen pinned Java 5.5.1 heartbeat DTO inputs, covering accepted
@@ -266,8 +282,9 @@ retention, dropped-assigned retention and empty-assignment removal
 `a8d82baca384b9b7932b4961b051902336155543428047d891eb9f84052d166d`). Rust's
 owner-flow regression checks all four states, including retention of the active
 worker after an assignment error. This closes these recorded transition cases
-only; other assignment expiry/retention dimensions and the broader
-inherited/source audit remain open.
+only. Assigned PULL expiry and retention are covered by the 2026-10-24
+follow-up above; remaining assignment expiry/retention dimensions and the
+broader inherited/source audit remain open.
 
 P18-V01 direct-consume runtime subtype slice (2026-10-21): `MessageClientExt`
 can be supplied through Java's `MessageExt` direct-consume parameter and remains

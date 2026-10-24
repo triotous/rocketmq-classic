@@ -219,3 +219,21 @@ Detailed run records for the focused code and current-tree gate runs are in
   Native Windows runtime, current-revision remote Ubuntu CI, and Phase 19 live
   handoff evidence remain open. No push or remote CI ran; Phase 19-owned
   worktree paths remain untouched and unstaged.
+
+## P18-V01 PULL assignment expiry and retention — 2026-10-24 12:07 UTC
+
+- Code commit `33c57f09 test(consumer): cover expired pull assignments` adds
+  an invoked Java `RebalanceImpl.updateMessageQueueAssignment` fixture and a
+  Rust regression comparing expired replacement, active/dropped retention,
+  and empty-assignment removal. Combined runtime fixture SHA-256:
+  `892956f5ef65b5418bf637a5065f4697f4342a7926d9e04d69cdd657a7d3a911`.
+- Focused Rust test
+  `assigned_pull_queue_expiry_matches_java_replacement_and_retention` passed.
+  Offline pinned Maven `verify` passed with 37 scenarios, 11 message fixtures,
+  106 typed headers and 19 typed bodies; `cargo fmt --all -- --check` and
+  `git diff --check` passed.
+- This closes the assigned PULL expiry/retention slice only. The full workspace
+  gate has not yet been rerun at this code revision. Broad P18-V01, current
+  native Windows/current remote Ubuntu evidence, and Phase 19 Broker/Docker
+  validation remain open. No push or remote CI ran; Phase 19-owned worktree
+  paths remain untouched and unstaged.

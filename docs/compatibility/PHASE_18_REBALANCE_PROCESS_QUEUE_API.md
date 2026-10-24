@@ -254,6 +254,19 @@ consume request exits on the dropped queue without calling the listener or
 ACKing it. Pull statistics and the remaining callback handling continue to
 follow Java's FOUND path.
 
+### PULL assignment expiry and retention
+
+The invoked Java `RebalanceImpl.updateMessageQueueAssignment` fixture records
+four PULL table outcomes: expired-assigned replacement, active-assigned
+same-object retention, dropped-assigned retention, and empty-assignment
+removal. Rust regression
+`assigned_pull_queue_expiry_matches_java_replacement_and_retention` compares
+the same states through the authoritative queue-assignment transition. The
+combined `fixtures/runtime/consumer-operations.json` SHA-256 at this checkpoint
+is `892956f5ef65b5418bf637a5065f4697f4342a7926d9e04d69cdd657a7d3a911`.
+This closes the PULL assigned-expiry slice only; broader Phase 18
+source/API/input/error/control-flow reconciliation remains open.
+
 ## Local rebalance route selection and lookup order
 
 Pinned `RebalanceImpl.doRebalance(isOrder)` selects broker or local assignment

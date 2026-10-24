@@ -18,6 +18,15 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   the macOS dynamic loader before test execution. This closes direct
   property-seed coverage only; broad P18-V01 remains PARTIAL and native
   Windows/current remote Ubuntu evidence remains open.
+- [x] P18-V01 assigned PULL queue expiry/retention (`33c57f09`, 2026-10-24):
+  the invoked Java fixture and Rust owner regression compare expired-assigned
+  replacement, active and dropped assignment retention, and empty-assignment
+  removal. Focused Rust coverage, offline Maven `verify` (37 scenarios, 106
+  typed headers and 19 typed bodies), formatting, and diff checks pass. The
+  combined `consumer-operations.json` SHA-256 is
+  `892956f5ef65b5418bf637a5065f4697f4342a7926d9e04d69cdd657a7d3a911`. This
+  closes this assignment slice only; broad P18-V01 and current native/remote
+  platform evidence remain open.
 - [x] Keep the Java client and Broker baselines separate in docs and fixture
   provenance.
 - P18-V01 Fastjson leading-dot and incomplete-exponent follow-up (`9333cbc2`,
