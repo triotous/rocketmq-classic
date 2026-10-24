@@ -38,6 +38,28 @@ the inventory. The implementation source SHA-256 is
 This records the constructor-only internal type without exporting a Rust
 wrapper; broad P18-V01 remains `PARTIAL`.
 
+## P18-V01 `ResponseFuture.toString()` nested response rendering — 2026-10-24 (`669d8a0c`)
+
+The pinned Java `ResponseFuture.toString()` embeds the populated command through
+`RemotingCommand.toString()`. Rust `ResponseFuture` previously embedded the
+command's `Debug` output; its `Display` implementation now uses the command's
+Java-compatible display format. The invoked `response-future-api.json` fixture
+records a deterministic response command rendering with its version, opaque
+ID and serialization mode pinned; fixture SHA-256 is
+`afdd50f4a3410b74e7f641bd89f6b9627a7509f99f13efc6bc680657d1df6656`. The
+updated fixture generator SHA-256 is
+`f76653a22f69143d52f87c8355a09c7c684e4e7761654c08dfe4c9975a623066`.
+`response_future_display_preserves_java_to_string_state_fields` checks the
+nested command string against the Java value and its embedding. Implementation
+commit: `669d8a0c`; strict Remoting Clippy, the focused test and pinned offline
+Maven `verify` pass.
+
+This closes nested response-command rendering only. For a non-null callback,
+Java includes the callback object's runtime identity string while Rust uses a
+Rust-native callback marker; non-null Java `Throwable.toString()` class/message
+formatting also has no universal equivalent for Rust `TransportError`. Those
+runtime-dependent details remain open along with the broad P18-V01 audit.
+
 ## P18-V01 `ConsumeMessagePopOrderlyService` public surface disposition — 2026-10-24 (`43ab1572`)
 
 The pinned Java 5.5.1 class has one public constructor and 15 declared public
