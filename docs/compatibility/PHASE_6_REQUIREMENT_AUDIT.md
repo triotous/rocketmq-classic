@@ -28,12 +28,13 @@ and start-timestamp setters, and `equals`, `hashCode`, and `toString`. The
 enclosing implementation retains items only in private `faultItemTable`; its
 public `LatencyFaultTolerance` operations do not return item objects. The
 production source has no `compareTo` call site; `pickOneAtLeast` shuffles the
-private values. Producer maps the operational fault-selection flow through its
-owner and keeps its fault records private. The directly constructible nested
-Java helper is therefore recorded as a low-level API reverse-surface item, not
-mistaken for an unimplemented Producer selection branch. Its standalone object
-surface has no direct Rust API mapping; broad P18-V01 remains `PARTIAL` pending
-final reconciliation of this disposition and the rest of the reverse scan.
+private values. Producer maps the operational fault-selection flow through
+its owner and keeps its fault records private. The directly constructible
+nested Java helper is scoped with the raw strategy/filter handles as an
+implementation-detail disposition because it exposes no returned value or
+client selection branch. This closes the helper inventory disposition only;
+broad P18-V01 remains `PARTIAL` for the wider
+source/API/settings/input/error/control-flow and reverse-export reconciliation.
 
 ## Phase 18 `MessageQueueForC` public value API — 2026-10-24 (`a460d966`)
 

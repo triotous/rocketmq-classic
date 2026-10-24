@@ -15,18 +15,18 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   564/192/176 decoder calls; comparator self-test and 37-scenario manifest
   validation pass. Pinned offline Maven `verify` passes 37 scenarios, 11
   message fixtures, 106 typed headers, and 19 typed bodies. Formatting and diff
-  checks pass. Broad P18-V01 remains PARTIAL, including the nested `FaultItem`
-  reverse-surface disposition; native Windows runtime and current-revision
-  remote Ubuntu CI remain unverified. Phase 19-owned worktree paths remain
-  untouched.
+  checks pass. Broad P18-V01 source/settings/input/error/reverse-export audit
+  remains PARTIAL; native Windows runtime and current-revision remote Ubuntu CI
+  remain unverified. Phase 19-owned worktree paths remain untouched.
 
-- [ ] P18-V01 direct `LatencyFaultToleranceImpl.FaultItem` nested-type API
-  disposition: Java exposes a public constructor and methods, while Rust keeps
-  producer fault records private and does not return raw items. Source confirms
-  the type is retained only in a private table and its comparator has no
-  production call site. The operational fault-selection flow maps through the
-  Producer owner; resolve whether the directly constructible helper surface
-  belongs in the Rust public API before closing P18-V01.
+- [x] P18-V01 `LatencyFaultToleranceImpl.FaultItem` scope disposition
+  (2026-10-24): Java exposes a public nested helper, but instances stay in the
+  enclosing implementation's private table, public fault-tolerance methods do
+  not return them, and production source never invokes `compareTo`. Rust maps
+  the operational Producer selection/settings flow through its owner and keeps
+  fault records private, following the documented raw `MQFaultStrategy`/
+  filter-handle disposition. This closes the helper's inventory disposition
+  only; broad P18-V01 remains PARTIAL.
 
 - [x] P18-V01 `MessageQueueForC` public value API (`a460d966`, 2026-10-24):
   Common exports the Java 5.5.1 four-argument constructor, getter/setter

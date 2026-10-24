@@ -80,9 +80,10 @@ returns one, and source search finds no production call to `FaultItem.compareTo`
 (`pickOneAtLeast` shuffles the private values). Rust keeps the corresponding
 fault state inside Producer and exposes the operational selection/settings
 surface through `Producer`; it does not expose a standalone raw fault-record
-handle. This documents the lower-level nested helper in the reverse inventory;
-the broader P18-V01 audit remains open until the direct nested-type surface is
-explicitly resolved.
+handle. This confirms the nested helper's scope disposition alongside the raw
+strategy/filter handles; it does not expose a new Producer capability. The
+broader P18-V01 audit remains open for other source/API/settings/input/error
+and reverse-export rows.
 
 ## Rust publish-info reverse crosswalk
 

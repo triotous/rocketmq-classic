@@ -429,3 +429,15 @@ Detailed run records for the focused code and current-tree gate runs are in
   response DTO API, and reverse-export audit. Broad P18-V01 remains PARTIAL.
 - Documentation-only correction; current Phase 19-owned worktree paths remain
   untouched.
+
+## P18-V01 nested producer FaultItem scope disposition — 2026-10-24 13:26 UTC
+
+- Source audit confirms Java declares `LatencyFaultToleranceImpl.FaultItem`
+  public, but only retains instances in a private table; no public
+  `LatencyFaultTolerance` method returns them, and production source has no
+  `compareTo` call site. `pickOneAtLeast` shuffles the private values.
+- Closed the direct helper inventory disposition with the existing Phase 7
+  raw strategy/filter ownership mapping: Rust preserves the observable
+  Producer fault-selection/settings flow through its owner without exposing a
+  standalone internal record handle. This closes the helper disposition only;
+  broad P18-V01 remains PARTIAL. No code changed.
