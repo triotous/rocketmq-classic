@@ -993,3 +993,17 @@ trailing text and a second JSON document after raw U+001A, plus single-quoted
 fields with a trailing comma. Fixture SHA-256:
 `f0b5433e0c7c9f4566dee85048196860c47b948e4204cb08aa09b062bb628c0c`. This
 closes these JSON-header input cases only; broad P18-V01 remains open.
+
+Phase 18 `LatencyFaultToleranceImpl.FaultItem` public API follow-up (2026-10-24):
+Rust now exports the public nested Java helper as `FaultItem`, with Java-compatible
+latency/start/check/reachability state, availability updates, signed comparison,
+value equality/hash, wrong-type and null behavior, UTF-16 name hashing, and
+`toString`. The invoked Java fixture inventories all 15 declared public methods
+including the erased `Comparable` bridge. Rust omits only the implicit outer
+strategy reference, which no helper method reads. Producer/facade tests and
+pinned offline Maven verification cover the mapping. Fixture SHA-256:
+`d6c23e4c1d213f02fd257abd0526b525d18f33167f1f26bda8510b75d189f398`. This
+closes this public nested value API row only; broad P18-V01 reconciliation
+remains open.
+Code commit: `62f67cbb`. The full local verification and remaining audit status
+are recorded in `../../rlogs/2026/10/24-phase-18-fault-item-public-api__20261024T153809Z.rlog`.

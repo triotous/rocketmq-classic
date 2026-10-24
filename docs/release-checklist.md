@@ -26,11 +26,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 - [x] P18-V01 Java `Comparable` declaration inventory (`2026-10-24`): the
   pinned client/common/remoting source scan found `MessageQueue`,
   `MessageQueueForC`, `TraceContext`, `SubscriptionData`, `BrokerData`,
-  `QueueData`, and nested `LatencyFaultToleranceImpl.FaultItem`. The six value
-  types have Rust Java-compatible comparison methods and invoked fixture
-  coverage; `FaultItem` follows the recorded private strategy-owner
-  disposition. This closes the declared-comparator scan only; broad P18-V01
-  remains PARTIAL.
+  `QueueData`, and nested `LatencyFaultToleranceImpl.FaultItem`. All seven have
+  Rust Java-compatible comparison methods and invoked fixture coverage. The
+  direct `FaultItem` API mapping is recorded in the 2026-10-24 follow-up below.
+  This closes the declared-comparator scan only; broad P18-V01 remains PARTIAL.
 
 - [x] P18-V01 assignment DTO mode accessor assertion (`88061e7a`, 2026-10-24):
   corrected `assignment_methods_match_invoked_java_public_api`, whose previous
@@ -41,13 +40,8 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   P18-V01 remains PARTIAL.
 
 - [x] P18-V01 `LatencyFaultToleranceImpl.FaultItem` scope disposition
-  (2026-10-24): Java exposes a public nested helper, but instances stay in the
-  enclosing implementation's private table, public fault-tolerance methods do
-  not return them, and production source never invokes `compareTo`. Rust maps
-  the operational Producer selection/settings flow through its owner and keeps
-  fault records private, following the documented raw `MQFaultStrategy`/
-  filter-handle disposition. This closes the helper's inventory disposition
-  only; broad P18-V01 remains PARTIAL.
+  (2026-10-24): this historical helper-only disposition is superseded by the
+  public API implementation and fixture recorded in the current follow-up.
 
 - [x] P18-V01 `MessageQueueForC` public value API (`a460d966`, 2026-10-24):
   Common exports the Java 5.5.1 four-argument constructor, getter/setter
@@ -10163,3 +10157,25 @@ owner-specific checks belong in the manual handoff.
   remote CI was run. Phase 19 user-owned paths remain unchanged and unstaged.
   Run record:
   `rlogs/2026/10/24-phase-18-assignment-stable-hash-buckets__20261024T151417Z.rlog`.
+
+## P18-V01 public `LatencyFaultToleranceImpl.FaultItem` API — 2026-10-24 (`62f67cbb`)
+
+- [x] Producer exports the public nested Java value as `FaultItem` and maps
+  all 15 public methods, including the erased `Comparable.compareTo(Object)`
+  bridge. The invoked Java fixture compares constructor/method signatures,
+  duration arithmetic and overflow, availability and signed comparison,
+  equality/hash fields, null and wrong-type exceptions, Unicode hashing, and
+  text. The facade re-export is covered.
+- [x] Focused Producer/facade tests, default and all-feature locked workspace
+  tests/doctests, strict workspace all-target/all-feature Clippy, release
+  examples, differential self-test, 37-scenario manifest validation,
+  20-case × 3 offline stress smoke, bounded fuzz smoke, pinned offline Maven
+  verification, Windows GNU workspace check/Clippy/test compile-link, format,
+  and diff checks pass on `62f67cbb`.
+- [ ] This closes the public `FaultItem` API row only. Broad P18-V01
+  method/overload/input/error/control-flow and reverse-export reconciliation
+  remains PARTIAL. Different-mode assignment hash collisions remain dependent
+  on JVM-process-local enum identity hashes. Native Windows runtime and
+  current-revision remote Ubuntu CI remain unverified; no push or remote CI
+  was run. Phase 19 user-owned paths remain unchanged and unstaged. Run record:
+  `rlogs/2026/10/24-phase-18-fault-item-public-api__20261024T153809Z.rlog`.

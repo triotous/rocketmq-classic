@@ -1,18 +1,13 @@
 # Known differences and evidence gaps
 
-## P18 nested producer `FaultItem` implementation detail
+## P18 producer `FaultItem` owner representation
 
-- Java 5.5.1 declares `LatencyFaultToleranceImpl.FaultItem` public with a
-  constructor, mutable/accessor methods, `equals`/`hashCode`/`toString`, and
-  `Comparable`. Rust keeps producer fault records inside its owner and does
-  not expose a standalone raw record type. Java's enclosing implementation
-  retains those values only in a private table; its public fault-tolerance
-  methods do not return them, and the production selection path does not call
-  `compareTo`. The operational Producer fault-selection and settings flows are
-  mapped in [the Phase 7 producer matrix](PHASE_7_PRODUCER_MATRIX.md). This is
-  scoped with the raw strategy/filter handles as an implementation-detail
-  disposition; it does not waive any client feature, setting, or observable
-  Producer flow. The broader P18-V01 audit remains open.
+- Rust now exports `FaultItem` with the Java constructor's nullable name,
+  mutable latency/start/check/reachability state, availability update,
+  comparison, equality, hash, and text behavior. Its methods do not inspect the
+  enclosing Java `LatencyFaultToleranceImpl`, so the Rust value does not retain
+  a strategy-owner reference. The complete callable mapping and invoked
+  behavior fixture are recorded in [the Phase 7 producer matrix](PHASE_7_PRODUCER_MATRIX.md).
 
 ## P18 `MessageQueueAssignment` collection-hash boundary
 

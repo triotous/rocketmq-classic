@@ -3411,3 +3411,28 @@ input layer. Invoked Java and Rust cases cover both raw U+001A EOF suffix forms
 and single-quoted fields with a trailing comma. Fixture SHA-256:
 `f0b5433e0c7c9f4566dee85048196860c47b948e4204cb08aa09b062bb628c0c`. This
 closes these JSON-header syntax inputs only; broad P18-V01 remains open.
+
+## P18 public nested `LatencyFaultToleranceImpl.FaultItem` API
+
+Pinned Java 5.5.1 exposes `LatencyFaultToleranceImpl.FaultItem` with an inner
+constructor and 15 public methods, including both the typed `compareTo(FaultItem)`
+method and compiler-generated `compareTo(Object)` bridge. Producer exports the
+Rust-native `FaultItem` and `FaultItemCompareError` from its crate and facade.
+The constructor accepts a nullable name; methods map `updateNotAvailableDuration`,
+`setReachable`, `setCheckStamp`, availability/reachability accessors, name and
+latency/timestamp accessors, `equals(Object)`, `hashCode`, `toString`, and both
+comparison paths. Atomic fields preserve Java's volatile visibility. Java's
+implicit outer-strategy reference is omitted because none of the helper's
+methods read it.
+
+The invoked Java fixture and `latency_fault_item_public_surface_and_behavior_match_invoked_java`
+cover constructor/method signatures, initial state, positive/zero/negative and
+overflow duration updates, availability precedence, signed latency/timestamp
+comparison, equality/hash field selection, `Comparable` null/cast errors,
+nullable and supplementary-Unicode names, and text output. The facade test
+checks the type re-export. Current `fixtures/producer/core.json` SHA-256:
+`d6c23e4c1d213f02fd257abd0526b525d18f33167f1f26bda8510b75d189f398`. This
+closes this nested value API row only; broad P18-V01 source/API/settings/input/
+error/control-flow and reverse-export reconciliation remains open.
+Code commit: `62f67cbb`. Execution record:
+`../../rlogs/2026/10/24-phase-18-fault-item-public-api__20261024T153809Z.rlog`.

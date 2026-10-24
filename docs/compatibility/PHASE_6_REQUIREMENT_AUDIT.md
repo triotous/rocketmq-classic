@@ -22,13 +22,13 @@ Phase 19-owned worktree paths were left untouched.
 A source scan of the pinned Java 5.5.1 client/common/remoting modules found
 seven declared `Comparable` implementations: `MessageQueue`,
 `MessageQueueForC`, `TraceContext`, `SubscriptionData`, `BrokerData`,
-`QueueData`, and nested `LatencyFaultToleranceImpl.FaultItem`. The six value
-types map to Rust Java-compatible comparison methods with invoked fixture
-coverage, including null argument/field failures, UTF-16 ordering, and numeric
-boundaries where applicable. `FaultItem` remains private producer state and
-uses the internal strategy-owner disposition documented below. This closes
-the declaration-level comparator inventory for those modules only; inherited
-enum comparison, other public API surfaces, and broad P18-V01
+`QueueData`, and nested `LatencyFaultToleranceImpl.FaultItem`. All seven map to
+Rust Java-compatible comparison methods with invoked fixture coverage,
+including null argument/field failures, UTF-16 ordering, availability
+precedence, and numeric boundaries where applicable. The direct nested helper
+API is closed in the 2026-10-24 follow-up below. This closes the
+declaration-level comparator inventory for those modules only; inherited enum
+comparison, other public API surfaces, and broad P18-V01
 source/settings/input/error/control-flow/reverse-export reconciliation remain
 separate.
 
@@ -76,6 +76,20 @@ implementation-detail disposition because it exposes no returned value or
 client selection branch. This closes the helper inventory disposition only;
 broad P18-V01 remains `PARTIAL` for the wider
 source/API/settings/input/error/control-flow and reverse-export reconciliation.
+
+## Phase 18 nested producer `FaultItem` public API parity — 2026-10-24
+
+The earlier strategy-owner disposition above is superseded. Rust now exports
+`FaultItem` and `FaultItemCompareError` from Producer and the facade. The Java
+fixture records the nested class constructor and all 15 declared public
+methods, including its erased `Comparable.compareTo(Object)` bridge. Direct
+behavior coverage matches defaults, mutable latency/start/check/reachability
+state, availability updates and wrapping, signed comparison, equality and
+hash fields, UTF-16 String hashing, null/wrong-type failures, and `toString`.
+Rust omits only the implicit enclosing-instance reference; no `FaultItem`
+method reads it. `latency_fault_item_public_surface_and_behavior_match_invoked_java`
+and the facade public-type test cover the mapping. This closes the nested
+`FaultItem` API row only; broad P18-V01 remains `PARTIAL`.
 
 ## Phase 18 `MessageQueueForC` public value API — 2026-10-24 (`a460d966`)
 
@@ -5344,3 +5358,31 @@ This closes that subtype alias slice only. P18-V01 remains PARTIAL for the
 remaining source/API/settings/input/error/control-flow and reverse-export
 reconciliation; P18-V04 remains open for native Windows runtime and current
 revision remote Ubuntu CI evidence.
+
+## P18-V01 public `LatencyFaultToleranceImpl.FaultItem` API — 2026-10-24 (`62f67cbb`)
+
+The pinned Producer source exposes `LatencyFaultToleranceImpl.FaultItem` as a
+public nested value class with one public inner constructor and 15 declared
+public methods, including typed `compareTo(FaultItem)` and the compiler
+bridge `compareTo(Object)`. Rust now exports `FaultItem` and
+`FaultItemCompareError` from Producer and the facade. Its invoked Java fixture
+checks the public signatures and behavior for initial values, nullable names,
+positive/zero/negative and wrapping duration arithmetic, availability order,
+signed latency/timestamp comparison, mutable value equality/hash fields,
+UTF-16 String hashing, null/cast errors, reachability text, and the constructor's
+implicit owner disposition. No helper method reads the enclosing strategy, so
+the Rust value carries no unused owner reference.
+
+Code commit: `62f67cbb`. `fixtures/producer/core.json` SHA-256:
+`d6c23e4c1d213f02fd257abd0526b525d18f33167f1f26bda8510b75d189f398`.
+Focused Producer/facade tests, default and all-feature locked workspace
+tests/doctests, strict workspace Clippy, release examples, differential
+self-test and 37-scenario manifest validation, all 20 offline stress cases × 3,
+bounded fuzz smoke (2,960 mutations), pinned offline Maven `verify`, Windows
+GNU workspace check/Clippy/test compile-link, formatting, and diff checks pass.
+This closes the public nested value API row only. Broad P18-V01 method,
+overload, input, error, control-flow, and reverse-export reconciliation remains
+PARTIAL. Different-mode `MessageQueueAssignment` equal-hash outcomes remain
+JVM-process-local; native Windows runtime and current-revision remote Ubuntu CI
+remain unverified. Phase 19 paths are unchanged and unstaged. Run record:
+`../../rlogs/2026/10/24-phase-18-fault-item-public-api__20261024T153809Z.rlog`.
