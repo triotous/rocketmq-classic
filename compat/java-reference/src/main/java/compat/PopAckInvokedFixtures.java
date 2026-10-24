@@ -151,6 +151,43 @@ public final class PopAckInvokedFixtures {
                 }
             }
         }
+
+        List<String> extraInfoList = Arrays.asList(
+            "10 123 456 2 0 broker-a 1 10",
+            "10 123 456 2 0 broker-a 1 12",
+            "20 200 300 3 2 broker-a 2 21",
+            "10 1 456 2 0 broker-a 1 10",
+            "9223372036854775807 123 456 2 1 broker-a 4 -9223372036854775808");
+        String[] batchOutcome = new String[1];
+        Throwable[] batchError = new Throwable[1];
+        api.batchAckMessageAsync("broker:10911", 10000, new AckCallback() {
+            public void onSuccess(AckResult result) {
+                batchOutcome[0] = "status=" + result.getStatus();
+            }
+            public void onException(Throwable value) { batchError[0] = value; }
+        }, "orders", "workers", extraInfoList);
+        RemotingCommand batchResponse = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        completion[0].operationSucceed(batchResponse);
+        if (batchError[0] != null || !"status=OK".equals(batchOutcome[0])) {
+            throw new IllegalStateException("batch ACK extra-info outcome " + batchError[0]);
+        }
+        Map<String, Object> batchFixture = new TreeMap<>();
+        batchFixture.put("case", "batch-ack-extra-info");
+        batchFixture.put("family", "batch-ack-extra-info");
+        batchFixture.put("mode", "ASYNC");
+        batchFixture.put("provenance", new TreeMap<>(Map.of("client", "org.apache.rocketmq:rocketmq-client:5.5.1",
+            "entrypoint", "MQClientAPIImpl", "transport", "mock RemotingClient", "serverBaselineContacted", false)));
+        batchFixture.put("input", new TreeMap<>(Map.of("topic", "orders", "consumerGroup", "workers",
+            "extraInfoList", extraInfoList)));
+        batchFixture.put("request", command(request[0]));
+        batchFixture.put("response", command(batchResponse));
+        batchFixture.put("outcome", batchOutcome[0]);
+        String batchJson = JSON.toJSONString(batchFixture) + "\n";
+        Path batchFile = dir.resolve("batch-ack-extra-info.json");
+        if (verify) check(Files.exists(batchFile) && Files.readString(batchFile).equals(batchJson),
+            "fixture drift batch-ack-extra-info");
+        else { Files.createDirectories(dir); Files.writeString(batchFile, batchJson); }
+
         for (String topic : new String[] {"oracle-topic", "%RETRY%consumer", "%RETRY%consumer+P1"}) {
             change.setTopic(topic);
             AckResult[] ackResult = new AckResult[1];

@@ -56,6 +56,10 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
     let mut files: Vec<_> = fs::read_dir(dir)
         .unwrap()
         .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name != "batch-ack-extra-info.json")
+        })
         .collect();
     files.sort();
     assert_eq!(files.len(), 29);

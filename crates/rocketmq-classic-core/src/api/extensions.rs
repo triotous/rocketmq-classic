@@ -852,7 +852,13 @@ impl MQClientApi {
                 addr,
                 request::BATCH_ACK_MESSAGE,
                 &LiteSubscriptionCtlRequestHeader::default(),
-                Some(json_body(body, request::BATCH_ACK_MESSAGE)?),
+                Some(
+                    body.java_encode()
+                        .map_err(|source| RpcError::RequestSerialization {
+                            request_code: request::BATCH_ACK_MESSAGE,
+                            source,
+                        })?,
+                ),
                 deadline,
             )
             .await?;

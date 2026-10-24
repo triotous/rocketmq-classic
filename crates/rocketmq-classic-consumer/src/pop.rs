@@ -1,30 +1,28 @@
-//! POP message receipt data used by the push consumer's ACK lifecycle.
-//!
-//! Batch-ACK request assembly is an internal implementation detail.
-//!
-//! ```compile_fail
-//! use rocketmq_classic_consumer::pop::build_batch_ack_body;
-//! ```
+//! POP message receipt data and ACK helpers used by the push consumer.
 
-#[cfg(test)]
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use rocketmq_classic_common::message::{
     DecodeError, DecodeOptions, MessageExt, decode_many_as_client_compatible,
 };
-use rocketmq_classic_core::api::extensions::PopReply;
+use rocketmq_classic_core::{
+    api::{
+        MQClientApi,
+        extensions::{AckStatus, PopReply},
+    },
+    error::RpcError,
+};
 use rocketmq_classic_protocol::header::{
     AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
 };
 use rocketmq_classic_protocol::header::{PopMessageRequestHeader, PopMessageResponseHeader};
-#[cfg(test)]
 use rocketmq_classic_protocol::{
     SharedValue,
     body::{BatchAck, BatchAckMessageRequestBody, BitSet},
 };
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, Ordering};
+use tokio::time::Instant;
 
 pub use rocketmq_classic_core::api::extensions::PopStatus;
 
@@ -548,6 +546,18 @@ pub enum PopReceiptError {
     BatchAckOffsetOutOfRange,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum PopBatchAckError {
+    #[error("Java batch ACK input extraInfoList was null")]
+    NullExtraInfoList,
+    #[error("Java batch ACK input extraInfoList[{index}] was null")]
+    NullExtraInfo { index: usize },
+    #[error(transparent)]
+    Receipt(#[from] PopReceiptError),
+    #[error(transparent)]
+    Rpc(#[from] RpcError),
+}
+
 impl PopReceipt {
     /// Parses the eight fields consumed by Java `ExtraInfoUtil` and retains the
     /// unmodified source string, including any fields added by newer Brokers.
@@ -655,17 +665,18 @@ impl PopReceipt {
     }
 }
 
-/// Builds the source-used batch ACK request body. Java merges receipts that
-/// share retry kind, queue, checkpoint offset and pop time into one bitset.
-#[cfg(test)]
-fn build_batch_ack_body(
+/// Builds the Java `BatchAckMessageRequestBody` from parsed POP receipts.
+/// Receipts with the same retry kind, queue, checkpoint offset and pop time
+/// share one ACK with Java-compatible bit positions.
+fn build_batch_ack_body_nullable(
     receipts: &[PopReceipt],
-    topic: &str,
-    consumer_group: &str,
+    topic: Option<&str>,
+    consumer_group: Option<&str>,
 ) -> Result<BatchAckMessageRequestBody, PopReceiptError> {
     type BatchKey = (String, i32, i64, i64);
     let mut broker_name = None;
-    let mut batches = BTreeMap::<BatchKey, BatchAck>::new();
+    let mut batches = HashMap::<BatchKey, BatchAck>::new();
+    let mut insertion_order = Vec::<BatchKey>::new();
 
     for receipt in receipts {
         broker_name.get_or_insert_with(|| receipt.broker_name.clone());
@@ -675,10 +686,11 @@ fn build_batch_ack_body(
             receipt.checkpoint_queue_offset,
             receipt.pop_time,
         );
-        let batch = batches.entry(key).or_insert_with(|| {
+        let batch = batches.entry(key.clone()).or_insert_with(|| {
+            insertion_order.push(key);
             let mut batch = BatchAck::default();
-            batch.set_consumer_group(Some(consumer_group.to_owned()));
-            batch.set_topic(Some(topic.to_owned()));
+            batch.set_consumer_group(consumer_group.map(str::to_owned));
+            batch.set_topic(topic.map(str::to_owned));
             batch.set_retry(Some(receipt.retry.clone()));
             batch.set_start_offset(receipt.checkpoint_queue_offset);
             batch.set_queue_id(receipt.queue_id);
@@ -688,12 +700,14 @@ fn build_batch_ack_body(
             batch.set_bit_set(Some(SharedValue::new(BitSet::new())));
             batch
         });
+        // Java performs signed-long subtraction followed by an int cast before
+        // BitSet.set, so preserve both overflow wraparound and narrowing.
         let bit_index = receipt
             .queue_offset
-            .checked_sub(receipt.checkpoint_queue_offset)
-            .and_then(|offset| i32::try_from(offset).ok())
-            .filter(|offset| *offset >= 0)
-            .ok_or(PopReceiptError::BatchAckOffsetOutOfRange)?;
+            .wrapping_sub(receipt.checkpoint_queue_offset) as i32;
+        if bit_index < 0 {
+            return Err(PopReceiptError::BatchAckOffsetOutOfRange);
+        }
         let bit_set = batch
             .get_bit_set()
             .ok_or(PopReceiptError::BatchAckOffsetOutOfRange)?;
@@ -702,15 +716,76 @@ fn build_batch_ack_body(
             .map_err(|_| PopReceiptError::BatchAckOffsetOutOfRange)?;
     }
 
+    let capacity = java_hash_map_capacity(insertion_order.len());
+    let mut ordered_keys = insertion_order.into_iter().enumerate().collect::<Vec<_>>();
+    ordered_keys.sort_by_key(|(index, key)| (java_batch_key_bucket(key, capacity), *index));
+
     let mut body = BatchAckMessageRequestBody::default();
     body.set_broker_name(broker_name);
     body.set_acks(Some(SharedValue::new(
-        batches
-            .into_values()
-            .map(|ack| Some(SharedValue::new(ack)))
+        ordered_keys
+            .into_iter()
+            .map(|(_, key)| {
+                Some(SharedValue::new(
+                    batches.remove(&key).expect("batch key was collected once"),
+                ))
+            })
             .collect(),
     )));
     Ok(body)
+}
+
+fn java_hash_map_capacity(entries: usize) -> usize {
+    let mut capacity = 16usize;
+    while entries > capacity - capacity / 4 {
+        capacity *= 2;
+    }
+    capacity
+}
+
+fn java_batch_key_bucket(key: &(String, i32, i64, i64), capacity: usize) -> usize {
+    let text = format!("{}@{}@{}@{}", key.0, key.1, key.2, key.3);
+    let hash = text.encode_utf16().fold(0u32, |hash, unit| {
+        hash.wrapping_mul(31).wrapping_add(u32::from(unit))
+    });
+    ((hash ^ (hash >> 16)) as usize) & (capacity - 1)
+}
+
+#[cfg(test)]
+fn build_batch_ack_body(
+    receipts: &[PopReceipt],
+    topic: &str,
+    consumer_group: &str,
+) -> Result<BatchAckMessageRequestBody, PopReceiptError> {
+    build_batch_ack_body_nullable(receipts, Some(topic), Some(consumer_group))
+}
+
+/// Maps Java's `MQClientAPIImpl.batchAckMessageAsync` overload that accepts
+/// `topic`, `consumerGroup`, and POP receipt `extraInfoList` values. The list
+/// is grouped into the request body before the asynchronous Broker request.
+pub async fn batch_ack_message_from_extra_info(
+    api: &MQClientApi,
+    addr: &str,
+    topic: Option<&str>,
+    consumer_group: Option<&str>,
+    extra_info_list: Option<&[Option<String>]>,
+    deadline: Instant,
+) -> Result<AckStatus, PopBatchAckError> {
+    let extra_info_list = extra_info_list.ok_or(PopBatchAckError::NullExtraInfoList)?;
+    let receipts = extra_info_list
+        .iter()
+        .enumerate()
+        .map(|(index, raw)| {
+            let raw = raw
+                .as_deref()
+                .ok_or(PopBatchAckError::NullExtraInfo { index })?;
+            PopReceipt::parse(raw.to_owned()).map_err(PopBatchAckError::from)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let body = build_batch_ack_body_nullable(&receipts, topic, consumer_group)?;
+    api.batch_ack_message(addr, &body, deadline)
+        .await
+        .map_err(PopBatchAckError::from)
 }
 
 fn parse_i64(value: &str, field: &'static str, kind: &'static str) -> Result<i64, PopReceiptError> {
@@ -970,7 +1045,6 @@ mod tests {
     #[test]
     fn batch_ack_rejects_offsets_that_overflow_the_java_bitset_index() {
         for raw in [
-            "9223372036854775807 123 456 2 1 broker-a 4 -9223372036854775808",
             "10 123 456 2 1 broker-a 4 9",
             "0 123 456 2 1 broker-a 4 2147483648",
         ] {
@@ -980,6 +1054,21 @@ mod tests {
                 Err(PopReceiptError::BatchAckOffsetOutOfRange)
             ));
         }
+
+        let wrapped =
+            PopReceipt::parse("9223372036854775807 123 456 2 1 broker-a 4 -9223372036854775808")
+                .unwrap();
+        let body = build_batch_ack_body(&[wrapped], "orders", "workers").unwrap();
+        let ack = body
+            .get_acks()
+            .unwrap()
+            .snapshot()
+            .into_iter()
+            .next()
+            .unwrap()
+            .unwrap()
+            .snapshot();
+        assert!(ack.get_bit_set().unwrap().with(|bits| bits.get(1).unwrap()));
     }
 
     #[test]
