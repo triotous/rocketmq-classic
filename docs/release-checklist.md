@@ -10347,3 +10347,38 @@ owner-specific checks belong in the manual handoff.
   P18-V04 current-revision remote CI/native Windows runtime remain open.
   Phase 19 user-owned files and the Java checkout's untracked `aaaa.java` are
   unchanged. Execution record will be added after the current-tree gates.
+
+## P18 final compatibility closure — 2026-10-24
+
+This final roll-up supersedes earlier unchecked P18 checkpoint notes above.
+The Java oracle is RocketMQ 5.5.1 source commit
+`efa1be59d6fc747ad220f036c86030f05f0419f9`.
+
+- [x] P18-V01 client-surface reconciliation is complete. The pinned
+  `MQClientAPIImpl` inventory covers 132 declarations and seven overload
+  groups; all 29 direct RPC invocation cases pass. API/configuration rows,
+  inherited members, settings and read boundaries, input/error/control-flow
+  behavior, Rust reverse exports, facade/crate surfaces, Rustdoc,
+  `doc(hidden)`, features, environment settings and Controller DTOs are
+  reconciled in the Phase 6–17 matrices and final audit. POP orderly service
+  methods are mapped to the existing PushConsumer owner; common thread-pool
+  monitors without client/remoting production callers are documented as
+  outside client scope. Accepted provider/runtime/diagnostic and JVM identity
+  boundaries are classified in `KNOWN_DIFFERENCES.md`.
+- [x] P18-V03 provenance, documentation and package review are complete for
+  the pinned Java source and current Rust surface.
+- [x] P18-V02/P18-V04 final current-code remote validation passed on
+  `0cf294b710d06d40bd72ccec1ca5d1df121c5225` in
+  [GitHub Actions run 40136756812](https://github.com/triotous/rocketmq-classic/actions/runs/40136756812).
+  Both Ubuntu and native Windows jobs passed: formatting, strict all-feature
+  Clippy, default/all-feature workspace tests, Taipei unique-ID regression,
+  differential self-test and 37-scenario manifest validation, fuzz/stress
+  smoke, pinned Maven verification, release examples, benchmark compile,
+  metadata checks, and Windows stack capture. The detailed run record is
+  `rlogs/2026/10/24-phase-18-final-compatibility-closure__20261024T224144Z.rlog`.
+- [x] Phase 19 handoff audit confirms that all 17 validation IDs from Phases
+  0–17 are registered among 37 differential scenarios. This records fixture
+  inventory only; live Broker/Docker execution remains in Phase 19.
+- Phase 19 user-owned worktree paths remain untouched and unstaged. The
+  Java checkout's pre-existing untracked `broker/src/test/java/org/apache/rocketmq/broker/aaaa.java`
+  remains untouched.

@@ -1,5 +1,15 @@
 # Known differences and evidence gaps
 
+## P18 Java common thread-pool monitors outside client scope
+
+- Pinned Java 5.5.1 `common` contains `ThreadPoolMonitor`,
+  `ThreadPoolWrapper`, and `ThreadPoolStatusMonitor`. A production-reference
+  scan finds no users in `client/src/main` or `remoting/src/main`; production
+  callers belong to Proxy and server components. These common utilities are
+  not part of the Rust client surface audited for Phase 18. The source paths,
+  reference scan, and scope disposition are recorded in the final
+  [Phase 6 requirement audit](PHASE_6_REQUIREMENT_AUDIT.md).
+
 ## P18 producer `FaultItem` owner representation
 
 - Rust now exports `FaultItem` with the Java constructor's nullable name,

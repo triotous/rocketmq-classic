@@ -404,3 +404,29 @@ test/doctest runs each passed 93 suites and 2,019 tests; strict workspace
 Clippy, release examples, Windows GNU all-target/all-feature check and Clippy
 (compile-only), and offline Maven `verify` also passed. Native Windows runtime
 and current-revision remote Ubuntu CI remain unverified.
+
+## P18-V01 final `ConsumeMessagePopOrderlyService` owner mapping — 2026-10-24
+
+The pinned Java class and its 15 declared public methods remain inventoried by
+`PushImplementationAccessorFixtures`. The Java field holding the service is
+private and has no getter, so Rust does not create a second standalone service
+object. Its client operations map to the existing `PushConsumer` owner:
+
+- `start`, `shutdown`, pool-size access/update, and direct consume go through
+  the built-in `ConsumeMessageService` implementation and the owner lifecycle.
+- `lockMQPeriodically` and `unlockAllMessageQueues` use the owner's orderly
+  lock-renewal task and `PushConsumer::{lock_all,unlock_all}` rebalance paths.
+- `submitPopConsumeRequest` is handled by the owner's POP loop, queue state,
+  listener dispatch, and POP worker lifecycle.
+- `getConsumerStatsManager`, `sendMessageBack`, and `resetNamespace` map to
+  the runtime-owned statistics manager, `PushConsumer` send-back helpers, and
+  its retry/namespace reset path.
+
+The pinned Java `submitConsumeRequest` throws `UnsupportedOperationException`,
+`processConsumeResult` returns `true` without processing, and nested
+`ConsumeRequest.run` does not invoke a listener. Those source stubs are not
+treated as separate active operations; the implemented POP owner flow is
+covered by the Phase 13 POP fixtures and the Phase 10 direct-consume,
+send-back, namespace, lifecycle, and orderly-lock tests. This closes the
+implementation-class disposition; direct Java-object construction is not
+claimed as a Rust type-level match.

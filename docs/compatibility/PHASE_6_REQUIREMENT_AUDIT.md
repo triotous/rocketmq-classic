@@ -5610,3 +5610,42 @@ server-free P18-V02 gates pass; see
 This closes the manager cache and cross-Producer batching ownership slice
 only. Broad P18-V01 method/overload/input/error/control-flow and
 reverse-export reconciliation remains `PARTIAL`.
+
+## P18-V01 final client-surface reconciliation — 2026-10-24
+
+This section supersedes the earlier checkpoint notes in this append-only
+audit. The oracle is RocketMQ Java 5.5.1 source commit
+`efa1be59d6fc747ad220f036c86030f05f0419f9`; the separate Java checkout's
+current worktree was not used as the source of truth.
+
+The Phase 6 API/configuration crosswalk and the Phase 7–17 method matrices now
+account for the scoped client methods, inherited and overloaded members,
+settings and their Java read boundaries, input/error branches, and owner
+control flows. The pinned `MQClientAPIImpl` scan covers all 132 public
+declarations, 121 distinct names, and seven overloaded groups; every overload
+member is crosswalked, and all 29 direct invocation fixtures pass. Reverse
+Rust-surface review includes facade/crate exports, Rustdoc JSON,
+`doc(hidden)` items, Cargo feature flags, environment inputs, and controller
+DTOs. No unexplained client capability or setting remains in the audited
+surface. Exact-name and export counts are inventories; behavior evidence is
+linked from the rows that map those names.
+
+`ConsumeMessagePopOrderlyService` is mapped through `PushConsumer`'s
+`ConsumeMessageService` owner, orderly lock task and internal POP workers; the
+method-by-method disposition is appended to
+[`PHASE_10_OFFLINE_METHOD_MATRIX.md`](PHASE_10_OFFLINE_METHOD_MATRIX.md).
+The three generic `ThreadPoolMonitor`, `ThreadPoolWrapper`, and
+`ThreadPoolStatusMonitor` types live in Java `common`, but pinned-source search
+finds no production references in `client/src/main` or `remoting/src/main`.
+Their production callers are in Proxy/server components. They are outside the
+Rust client API scope, not missing client operations.
+
+Remaining documented boundaries are classified in
+[`KNOWN_DIFFERENCES.md`](KNOWN_DIFFERENCES.md): Tokio/Netty and Rust/JVM
+representation differences, provider-specific RustCrypto/rustls algorithms
+that the user accepted, diagnostic stack/exception/object-identity rendering,
+and JVM-process-local enum identity hashes for deliberately engineered raw
+`MessageQueueAssignment` bucket collisions. They are not omitted client
+capabilities or unexplained setting differences. No live Broker/Docker result
+is inferred from offline fixtures; those execution obligations remain in
+Phase 19.
