@@ -10104,3 +10104,23 @@ owner-specific checks belong in the manual handoff.
   Ubuntu CI remain unverified; no push or remote CI was run. The four protected
   Phase 19 paths remain unchanged and unstaged. Run record:
   `rlogs/2026/10/24-phase-18-post-assignment-accessor-gates__20261024T135900Z.rlog`.
+
+## P18-V01 `MessageQueueAssignment.equals(Object)` type input — 2026-10-24 (`455110fc`)
+
+- [x] `MessageQueueAssignment::java_equals` now accepts Java-object-shaped input
+  via `Any`, returns false for a non-assignment value before queue dereference,
+  and preserves Java's null, same-instance, and null-queue behavior. The invoked
+  Java fixture's wrong-type result is now compared directly in the Rust test.
+- [x] The focused assignment API fixture test and current strict workspace
+  all-target/all-feature Clippy, formatting, and diff checks pass. Default and
+  all-feature workspace tests passed after the adapter change; the focused test
+  was rerun after it was tightened to consume the fixture value. Windows GNU
+  workspace check, strict Clippy, and all-target `cargo test --no-run` passed
+  after the adapter change as compile/link-only evidence.
+- [ ] This closes the wrong-type `equals(Object)` input branch only. The
+  process-local assignment HashSet collision behavior, broad P18-V01
+  API/overload/input/error/control-flow and reverse-export reconciliation,
+  native Windows runtime, and current-revision remote Ubuntu CI remain open.
+  No push or remote CI was run; protected Phase 19 paths remain untouched. Run
+  record:
+  `rlogs/2026/10/24-phase-18-assignment-equals-object-inputs__20261024T141418Z.rlog`.
