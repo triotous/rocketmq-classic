@@ -9645,3 +9645,23 @@ owner-specific checks belong in the manual handoff.
   remote Ubuntu CI remain unverified. No push or remote CI was run. The four
   protected Phase 19 worktree paths remain unchanged and unstaged. Run record:
   `rlogs/2026/10/24-phase-18-fastjson-eof-termination__20261024T020248Z.rlog`.
+
+## P18-V02 current-tree workspace gate continuation — 2026-10-24 (`d897a9e2`)
+
+- [x] The bounded `fuzz_regressions` test passed when the same binary was
+  copied to `/tmp`, confirming the earlier launch stall was tied to its
+  repository target path. Clean-target locked default and all-feature
+  workspace tests both passed, including all package tests and doctests.
+  Strict all-target/all-feature workspace Clippy and `cargo fmt --all --
+  --check` passed.
+- [x] The differential comparator and manifest self-test passed. Facade
+  release examples built. Pinned offline Maven `verify` on this source revision
+  passed fixture-drift validation, all 37 scenarios, 11 message fixtures,
+  106 typed headers, and 19 typed bodies. `response-future-api.json` remains
+  SHA-256 `f0b5433e0c7c9f4566dee85048196860c47b948e4204cb08aa09b062bb628c0c`.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and
+  reverse-export reconciliation remains PARTIAL. Native Windows runtime and
+  current-revision remote Ubuntu CI are unverified; Phase 19 Broker/Docker
+  evidence remains separate. No push or remote CI was run. The four protected
+  Phase 19 worktree paths remain unchanged and unstaged. Run record:
+  `rlogs/2026/10/24-phase-18-current-tree-clean-target-gate__20261024T072654Z.rlog`.
