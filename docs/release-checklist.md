@@ -9625,3 +9625,23 @@ owner-specific checks belong in the manual handoff.
   CI was run; the four protected Phase 19 worktree paths remain unchanged and
   unstaged. Run record:
   `rlogs/2026/10/24-phase-18-fastjson-eof-termination__20261024T020248Z.rlog`.
+
+## P18-V01 JSON remoting header Fastjson input — 2026-10-24 (`d897a9e2`)
+
+- [x] `json_header::decode` now uses the shared Fastjson-compatible decoder.
+  Pinned Java `RemotingCommand.decode` fixture cases cover trailing text and a
+  second JSON document after raw U+001A, plus single quotes with a trailing
+  comma. Fixture SHA-256:
+  `f0b5433e0c7c9f4566dee85048196860c47b948e4204cb08aa09b062bb628c0c`.
+- [x] Remoting unit tests passed 143/143 and codec integration tests passed
+  9/9. Maven `verify` passed with fixture drift, 37 scenarios, 11 message
+  fixtures, 106 typed headers, and 19 typed bodies. Direct rustfmt checks and
+  `git diff --check` passed.
+- [ ] The full Remoting package run stopped at the existing `fuzz_regressions`
+  binary, which remained in macOS `dyld` startup; that regression test is
+  unverified. Strict all-target/all-feature Clippy is unverified on this
+  revision because rustc stalled enumerating its dependency search directory.
+  Broad P18-V01 remains PARTIAL; native Windows runtime and current-revision
+  remote Ubuntu CI remain unverified. No push or remote CI was run. The four
+  protected Phase 19 worktree paths remain unchanged and unstaged. Run record:
+  `rlogs/2026/10/24-phase-18-fastjson-eof-termination__20261024T020248Z.rlog`.

@@ -191,3 +191,35 @@ raw U+001A; Java returns the same populated DTO for both.
   current-revision remote Ubuntu CI remain unverified. Phase 19 Broker/Docker
   validation is separate; no push or remote CI was run. The four protected
   Phase 19 paths remain unchanged and unstaged.
+
+## Phase 18 JSON remoting header Fastjson input continuation
+
+- Recorded: 2026-10-24 07:10 UTC
+- Code revision: `d897a9e2`
+- Fixture: `fixtures/remoting/response-future-api.json`, SHA-256
+  `f0b5433e0c7c9f4566dee85048196860c47b948e4204cb08aa09b062bb628c0c`
+
+The pinned 5.5.1 `RemotingCommand.headerDecode` source delegates JSON header
+bytes to `RemotingSerializable.decode`. Rust `json_header::decode` now uses
+the shared Fastjson-compatible `Value` decoder. The Java fixture invokes
+`RemotingCommand.decode` for EOF trailing text, a second JSON document after
+raw U+001A, and single-quoted fields with a trailing comma; Rust codec tests
+compare decoded code, opaque ID, and remark.
+
+## Verification
+
+- `cargo test --offline --locked -p rocketmq-classic-remoting --test codec` passed: 9 tests.
+- `cargo test --offline --locked -p rocketmq-classic-remoting` passed 143 unit
+  tests and the 9 codec tests, then stalled launching `fuzz_regressions` at
+  macOS `_dyld_start`; that process was interrupted, leaving later package
+  tests unverified.
+- `mvn -o -f compat/java-reference/pom.xml verify` passed: 37 scenarios,
+  response-future API fixture drift, 11 message fixtures, 106 typed headers,
+  and 19 typed bodies.
+- Direct rustfmt checks and `git diff --check` passed. Workspace and
+  package-level Clippy attempts stalled while rustc enumerated its dependency
+  search directory (`getdirentries64`); Clippy is unverified on this revision.
+- Native Windows runtime, current-revision remote Ubuntu CI, and the full
+  all-features workspace test gate remain unverified. No push or remote CI was
+  run; the four protected Phase 19 worktree paths remain unchanged and
+  unstaged.

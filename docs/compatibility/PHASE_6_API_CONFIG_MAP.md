@@ -3402,3 +3402,11 @@ the public hidden fields and bridge methods. It found no additional client
 setting or wire operation in this set. Rust `pub` accessibility remains part
 of the API surface even where Rustdoc hides the name; the table records its
 adapter role rather than waiving the broader P18-V01 reverse-export review.
+
+Phase 18 JSON remoting header input follow-up (2026-10-24, `d897a9e2`): the
+5.5.1 `RemotingCommand.headerDecode` path calls `RemotingSerializable.decode`
+for JSON headers. Rust `json_header::decode` now uses the shared Fastjson
+input layer. Invoked Java and Rust cases cover both raw U+001A EOF suffix forms
+and single-quoted fields with a trailing comma. Fixture SHA-256:
+`f0b5433e0c7c9f4566dee85048196860c47b948e4204cb08aa09b062bb628c0c`. This
+closes these JSON-header syntax inputs only; broad P18-V01 remains open.

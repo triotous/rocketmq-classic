@@ -4940,3 +4940,19 @@ and the focused Core differential passes all ten cases. Producer core fixture
 SHA-256 is
 `ac4d435472279c6cdfefadf2811422359bc927223733c3521484c1c533d31f36`. This
 closes this response-input slice only; broad P18-V01 remains `PARTIAL`.
+
+## Phase 18 JSON remoting header Fastjson input — 2026-10-24 (`d897a9e2`)
+
+Pinned 5.5.1 `RemotingCommand.headerDecode` delegates JSON headers to
+`RemotingSerializable.decode`. Rust `json_header::decode` now parses through
+the shared Fastjson-compatible `Value` decoder. Direct Java
+`RemotingCommand.decode` fixture cases and Rust codec tests cover trailing
+text and a second JSON document after raw U+001A, plus single-quoted fields
+with a trailing comma. `response-future-api.json` SHA-256 is
+`f0b5433e0c7c9f4566dee85048196860c47b948e4204cb08aa09b062bb628c0c`. The
+Remoting unit suite passed 143 tests and the codec integration suite passed
+nine tests. The package run remained unverified after macOS `dyld` stalled
+while launching `fuzz_regressions`; strict Clippy also stalled in rustc
+dependency-directory enumeration. Maven `verify` and focused formatting checks
+pass. This closes these JSON-header inputs only; broad P18-V01 remains
+`PARTIAL`.
