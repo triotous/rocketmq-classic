@@ -303,6 +303,40 @@ async fn consume_message_service_accessor_and_extension_methods_match_java() {
 }
 
 #[test]
+fn pinned_java_pop_orderly_service_surface_is_recorded() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/consumer/push-implementation-accessor.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        fixture["consumeMessagePopOrderlyServicePublicConstructors"],
+        serde_json::json!([
+            "ConsumeMessagePopOrderlyService(DefaultMQPushConsumerImpl,MessageListenerOrderly)"
+        ])
+    );
+    assert_eq!(
+        fixture["consumeMessagePopOrderlyServicePublicMethods"],
+        serde_json::json!([
+            "consumeMessageDirectly(MessageExt,String)",
+            "decCorePoolSize()",
+            "getConsumerStatsManager()",
+            "getCorePoolSize()",
+            "incCorePoolSize()",
+            "lockMQPeriodically()",
+            "processConsumeResult(List,ConsumeOrderlyStatus,ConsumeOrderlyContext,ConsumeRequest)",
+            "resetNamespace(List)",
+            "sendMessageBack(MessageExt)",
+            "shutdown(long)",
+            "start()",
+            "submitConsumeRequest(List,ProcessQueue,MessageQueue,boolean)",
+            "submitPopConsumeRequest(List,PopProcessQueue,MessageQueue)",
+            "unlockAllMessageQueues()",
+            "updateCorePoolSize(int)"
+        ])
+    );
+}
+
+#[test]
 fn pinned_java_nested_rebalance_and_process_queue_api_denominator_is_recorded() {
     let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
     assert_eq!(

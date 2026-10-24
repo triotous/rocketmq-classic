@@ -324,6 +324,10 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("consumeMessageServiceInitiallyNull", consumeMessageServiceInitiallyNull);
         fixture.put("consumeMessageServiceSetterPreservesIdentity", consumeMessageServiceSetterPreservesIdentity);
         fixture.put("consumeMessageServicePublicMethods", consumeMessageServicePublicMethods());
+        fixture.put("consumeMessagePopOrderlyServicePublicConstructors",
+            publicConstructorSignatures(ConsumeMessagePopOrderlyService.class));
+        fixture.put("consumeMessagePopOrderlyServicePublicMethods",
+            declaredPublicMethodSignatures(ConsumeMessagePopOrderlyService.class));
         fixture.put("messageQueueListenerInitiallyNull", messageQueueListenerInitiallyNull);
         fixture.put("rawMessageListenerInitiallyNull", rawMessageListenerInitiallyNull);
         fixture.put("rawMessageListenerGetterPreservesIdentity", rawMessageListenerGetterPreservesIdentity);
@@ -484,10 +488,25 @@ public final class PushImplementationAccessorFixtures {
     }
 
     private static List<String> publicMethodSignatures() {
-        return Arrays.stream(DefaultMQPushConsumerImpl.class.getDeclaredMethods())
+        return declaredPublicMethodSignatures(DefaultMQPushConsumerImpl.class);
+    }
+
+    private static List<String> declaredPublicMethodSignatures(Class<?> type) {
+        return Arrays.stream(type.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> !method.isBridge() && !method.isSynthetic())
             .map(PushImplementationAccessorFixtures::signature)
+            .sorted()
+            .collect(Collectors.toList());
+    }
+
+    private static List<String> publicConstructorSignatures(Class<?> type) {
+        return Arrays.stream(type.getConstructors())
+            .map(constructor -> type.getSimpleName() + "("
+                + Arrays.stream(constructor.getParameterTypes())
+                    .map(Class::getSimpleName)
+                    .collect(Collectors.joining(","))
+                + ")")
             .sorted()
             .collect(Collectors.toList());
     }
@@ -543,12 +562,7 @@ public final class PushImplementationAccessorFixtures {
     }
 
     private static List<String> consumeMessageServicePublicMethods() {
-        return Arrays.stream(ConsumeMessageService.class.getDeclaredMethods())
-            .filter(method -> Modifier.isPublic(method.getModifiers()))
-            .filter(method -> !method.isBridge() && !method.isSynthetic())
-            .map(PushImplementationAccessorFixtures::signature)
-            .sorted()
-            .collect(Collectors.toList());
+        return declaredPublicMethodSignatures(ConsumeMessageService.class);
     }
 
     private static String signature(Method method) {
