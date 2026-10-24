@@ -10084,3 +10084,23 @@ owner-specific checks belong in the manual handoff.
   error/control-flow semantics, and Java-side omission review remain P18-V01
   work. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261024T102707Z.rlog`.
+
+## P18-V02 post-assignment-accessor current-tree refresh — 2026-10-24 (`88061e7a`)
+
+- [x] Locked default and all-feature workspace tests/doctests pass on code/test
+  revision `88061e7a`. Strict workspace all-target/all-feature Clippy, formatting,
+  diff checks, differential comparator self-test, and 37-scenario manifest
+  validation pass.
+- [x] Pinned offline Maven `verify` passes on the same tree with 37 scenarios,
+  11 message fixtures, 106 typed headers, 19 typed bodies, fixture-drift checks,
+  and Java/Rust cross-decodes.
+- [x] Windows GNU all-feature workspace check, strict all-target/all-feature
+  Clippy, and `cargo test --no-run` pass as compile/link-only evidence. No Windows
+  runtime is available in this environment.
+- [ ] Broad P18-V01 method/overload/input/error/control-flow and reverse-export
+  reconciliation remains PARTIAL. The Java `MessageQueueAssignment` equal-hash
+  fixture depends on the JVM's process-local enum identity hash and has no stable
+  cross-process bucket outcome. Native Windows runtime and current-revision remote
+  Ubuntu CI remain unverified; no push or remote CI was run. The four protected
+  Phase 19 paths remain unchanged and unstaged. Run record:
+  `rlogs/2026/10/24-phase-18-post-assignment-accessor-gates__20261024T135900Z.rlog`.
