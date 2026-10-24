@@ -9846,3 +9846,28 @@ owner-specific checks belong in the manual handoff.
   code revision; native Windows runtime and current-revision remote Ubuntu CI
   remain unverified, and Phase 19 Broker/Docker evidence remains separate. No
   push or remote CI was run.
+
+## P18-V02 current-tree server-free gates after ErrorSource identity parity — 2026-10-24 (`1e928372`)
+
+- [x] On code/test revision `1e928372`, locked offline default and all-feature
+  workspace tests/doctests passed: 93 test suites, 2,019 passed and none
+  failed in each configuration. Strict all-target/all-feature workspace
+  Clippy, formatting, and `git diff --check` passed.
+- [x] Differential comparator self-test and the 37-scenario manifest passed.
+  Pinned offline Maven `verify` passed with 37 scenarios, 11 message fixtures,
+  106 typed headers, 19 typed bodies, fixture-drift checks, and Java/Rust
+  cross-decodes. Workspace metadata, dependency direction, package licenses,
+  and all seven product package listings passed; each includes `LICENSE` and
+  `NOTICE`.
+- [x] Deterministic race/leak smoke passed 20 cases × 3; bounded fuzz smoke
+  passed 163 frame seeds, 11 message seeds, 2,784 mutations, 564 frame decodes,
+  and 192 message decodes. Release facade examples built. Windows GNU
+  all-target/all-feature workspace check and strict Clippy passed as
+  compile-only evidence. The offline benchmark sample is recorded in
+  `compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+- [ ] Broad P18-V01 API/settings/input/error/control-flow and reverse-export
+  reconciliation remains PARTIAL. Native Windows runtime and current-revision
+  remote Ubuntu CI remain unverified; Phase 19 Broker/Docker evidence remains
+  separate. No push or remote CI was run. The four protected Phase 19 worktree
+  paths remain untouched and unstaged. Run record:
+  `rlogs/2026/10/24-phase-18-current-tree-error-identity-gates__20261024T102143Z.rlog`.
