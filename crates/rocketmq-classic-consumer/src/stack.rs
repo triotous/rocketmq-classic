@@ -847,13 +847,6 @@ mod windows {
     const MAX_FRAMES: usize = 128;
     const MAX_THREAD_NAME_UNITS: usize = 4096;
     const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(5);
-    macro_rules! stack_debug {
-        ($($argument:tt)*) => {{
-            if cfg!(test) && std::env::var_os("ROCKETMQ_WINDOWS_STACK_DEBUG").is_some() {
-                eprintln!($($argument)*);
-            }
-        }};
-    }
     const KERNEL32_WIDE: [u16; 13] = [
         b'k' as u16,
         b'e' as u16,
@@ -922,18 +915,15 @@ mod windows {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let threads = enumerate_threads().map_err(|error| error.to_string())?;
-        stack_debug!("enumerated {} process threads", threads.len());
         if threads.is_empty() {
             return Err("Toolhelp returned no process threads".into());
         }
         let process = unsafe { GetCurrentProcess() };
         let current_id = unsafe { GetCurrentThreadId() };
-        stack_debug!("current thread id={current_id}");
         let deadline = Instant::now() + SNAPSHOT_TIMEOUT;
         let mut dumps = Vec::with_capacity(threads.len());
 
         for (index, id) in threads.iter().copied().enumerate() {
-            stack_debug!("capturing thread id={id}");
             if Instant::now() >= deadline {
                 dumps.extend(threads[index..].iter().copied().map(|id| ThreadDump {
                     id,
@@ -968,10 +958,6 @@ mod windows {
                 )
             };
             if handle.is_null() {
-                stack_debug!(
-                    "OpenThread failed id={id}: {}",
-                    std::io::Error::last_os_error()
-                );
                 dumps.push(ThreadDump {
                     id,
                     name: format!("thread-{id}"),
@@ -982,17 +968,9 @@ mod windows {
             }
             let handle = Handle(handle);
             let name = thread_name(handle.0, id);
-            stack_debug!("opened thread id={id} name={name:?}");
             let frames = if let Some(_suspended) = SuspendedThread::new(handle.0) {
-                stack_debug!("suspended thread id={id}");
-                let frames = unsafe { capture_stack(process, handle.0, deadline) };
-                stack_debug!("captured thread id={id} frames={}", frames.len());
-                frames
+                unsafe { capture_stack(process, handle.0, deadline) }
             } else {
-                stack_debug!(
-                    "SuspendThread failed id={id}: {}",
-                    std::io::Error::last_os_error()
-                );
                 Vec::new()
             };
             dumps.push(ThreadDump {
@@ -1013,11 +991,6 @@ mod windows {
         let mut output = String::new();
         for dump in dumps {
             use std::fmt::Write as _;
-            stack_debug!(
-                "formatting thread id={} frames={}",
-                dump.id,
-                dump.frames.len()
-            );
             let _ = writeln!(output, "\"{}\" tid={}", dump.name, dump.id);
             if let Some(backtrace) = dump.current_backtrace {
                 for line in backtrace.lines() {
@@ -1103,25 +1076,14 @@ mod windows {
 
     #[cfg(target_arch = "x86_64")]
     unsafe fn capture_stack(process: HANDLE, thread: HANDLE, deadline: Instant) -> Vec<u64> {
-        stack_debug!("GetThreadContext x64 start thread={thread:p}");
         let mut context = AlignedContext(CONTEXT {
             ContextFlags: CONTEXT_FULL_AMD64,
             ..Default::default()
         });
         if unsafe { GetThreadContext(thread, &mut context.0) } == 0 {
-            stack_debug!(
-                "GetThreadContext x64 failed: {}",
-                std::io::Error::last_os_error()
-            );
             return Vec::new();
         }
         let context = &mut context.0;
-        stack_debug!(
-            "GetThreadContext x64 rip=0x{:x} rsp=0x{:x} rbp=0x{:x}",
-            context.Rip,
-            context.Rsp,
-            context.Rbp
-        );
         let mut frames = vec![context.Rip];
         let mut history = UNWIND_HISTORY_TABLE::default();
         while frames.len() < MAX_FRAMES && Instant::now() < deadline {
@@ -1132,11 +1094,6 @@ mod windows {
             let mut image_base = 0u64;
             let function =
                 unsafe { RtlLookupFunctionEntry(control_pc, &mut image_base, &mut history) };
-            stack_debug!(
-                "x64 frame={} pc=0x{control_pc:x} rsp=0x{:x} function={function:p} base=0x{image_base:x}",
-                frames.len(),
-                context.Rsp
-            );
             if function.is_null() {
                 let mut return_address = 0u64;
                 let mut bytes_read = 0usize;
@@ -1149,20 +1106,12 @@ mod windows {
                         &mut bytes_read,
                     )
                 };
-                stack_debug!(
-                    "x64 leaf read rsp=0x{:x} result={read} bytes={bytes_read}",
-                    context.Rsp
-                );
                 if read == 0 || bytes_read != size_of::<u64>() {
                     break;
                 }
                 context.Rsp = context.Rsp.saturating_add(size_of::<u64>() as u64);
                 context.Rip = return_address;
             } else {
-                stack_debug!(
-                    "x64 RtlVirtualUnwind start pc=0x{control_pc:x} rsp=0x{:x}",
-                    context.Rsp
-                );
                 let mut handler_data = ptr::null_mut();
                 let mut establisher_frame = 0u64;
                 unsafe {
@@ -1177,12 +1126,6 @@ mod windows {
                         ptr::null_mut(),
                     );
                 }
-                stack_debug!(
-                    "x64 RtlVirtualUnwind end rip=0x{:x} rsp=0x{:x} rbp=0x{:x}",
-                    context.Rip,
-                    context.Rsp,
-                    context.Rbp
-                );
             }
             if context.Rip == 0 || context.Rip == control_pc {
                 break;
@@ -1195,22 +1138,12 @@ mod windows {
 
     #[cfg(target_arch = "aarch64")]
     unsafe fn capture_stack(_process: HANDLE, thread: HANDLE, deadline: Instant) -> Vec<u64> {
-        stack_debug!("GetThreadContext arm64 start thread={thread:p}");
         let mut context = AlignedContext(CONTEXT::default());
         context.0.ContextFlags = CONTEXT_FULL_ARM64;
         if unsafe { GetThreadContext(thread, &mut context.0) } == 0 {
-            stack_debug!(
-                "GetThreadContext arm64 failed: {}",
-                std::io::Error::last_os_error()
-            );
             return Vec::new();
         }
         let context = &mut context.0;
-        stack_debug!(
-            "GetThreadContext arm64 pc=0x{:x} sp=0x{:x}",
-            context.Pc,
-            context.Sp
-        );
         let mut frames = vec![context.Pc];
         let mut history = UNWIND_HISTORY_TABLE::default();
         while frames.len() < MAX_FRAMES && Instant::now() < deadline {
@@ -1222,11 +1155,6 @@ mod windows {
             let function = unsafe {
                 RtlLookupFunctionEntry(control_pc as usize, &mut image_base, &mut history)
             };
-            stack_debug!(
-                "arm64 frame={} pc=0x{control_pc:x} sp=0x{:x} function={function:p} base=0x{image_base:x}",
-                frames.len(),
-                context.Sp
-            );
             if function.is_null() {
                 let return_address = unsafe { context.Anonymous.X[30] };
                 if return_address == 0 {
@@ -1234,10 +1162,6 @@ mod windows {
                 }
                 context.Pc = return_address;
             } else {
-                stack_debug!(
-                    "arm64 RtlVirtualUnwind start pc=0x{control_pc:x} sp=0x{:x}",
-                    context.Sp
-                );
                 let mut handler_data = ptr::null_mut();
                 let mut establisher_frame = 0usize;
                 unsafe {
@@ -1252,11 +1176,6 @@ mod windows {
                         ptr::null_mut(),
                     );
                 }
-                stack_debug!(
-                    "arm64 RtlVirtualUnwind end pc=0x{:x} sp=0x{:x}",
-                    context.Pc,
-                    context.Sp
-                );
             }
             if context.Pc == 0 || context.Pc == control_pc {
                 break;
@@ -1271,7 +1190,6 @@ mod windows {
     }
 
     fn format_frame(address: u64) -> String {
-        stack_debug!("symbolizing frame 0x{address:x}");
         let mut module_base = ptr::null_mut();
         if unsafe { RtlPcToFileHeader(address as usize as *const c_void, &mut module_base) }
             .is_null()
@@ -1292,7 +1210,6 @@ mod windows {
         }
         let module_path = String::from_utf16_lossy(&module_path[..path_length]);
         let offset = address.saturating_sub(module_base as usize as u64);
-        stack_debug!("symbolized frame 0x{address:x} in {module_path:?}");
         format!("{module_path}+0x{offset:x}")
     }
 }

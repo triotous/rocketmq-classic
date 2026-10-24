@@ -48,8 +48,6 @@ jobs:
   windows-stack-runtime:
     runs-on: windows-latest
     timeout-minutes: 20
-    env:
-      ROCKETMQ_WINDOWS_STACK_DEBUG: 1
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -58,7 +56,7 @@ jobs:
       - name: Run the native Windows stack capture regression
         shell: bash
         run: |
-          output="$(cargo test --locked -p rocketmq-classic-consumer --lib stack::tests::jstack_includes_current_and_other_named_threads -- --exact --nocapture 2>&1)" || {
+          output="$(cargo test --locked -p rocketmq-classic-consumer --lib stack::tests::jstack_includes_current_and_other_named_threads -- --exact 2>&1)" || {
             printf '%s\n' "$output"
             exit 1
           }
