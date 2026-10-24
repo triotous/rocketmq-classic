@@ -1276,8 +1276,8 @@ mod fastjson_dto_input_tests {
         let cases = fixture["heartbeatDtoInputCases"].as_array().unwrap();
         assert_eq!(
             cases.len(),
-            1111,
-            "Java oracle includes DTO root shapes, scalar, numeric-boundary, collection-shape, syntax-grammar, numeric suffix and decimal-point forms, per-field token-kind, systematic whitespace-position/string probes, and repeated EOF markers"
+            1221,
+            "Java oracle includes DTO root shapes, scalar, numeric-boundary, collection-shape, syntax-grammar, numeric suffix and decimal-point forms, per-field token-kind, systematic whitespace-position/string probes, and exhaustive EOF-marker separators"
         );
         for dto in ["subscription", "producer", "consumer", "heartbeat"] {
             for shape in [
@@ -1352,6 +1352,12 @@ mod fastjson_dto_input_tests {
             "heartbeat-bom-prefix",
             "heartbeat-eof-marker-repeated",
             "heartbeat-eof-marker-separated",
+            "heartbeat-eof-marker-before-trailing-text",
+            "heartbeat-eof-marker-before-trailing-json",
+            "heartbeat-eof-marker-between-0001",
+            "heartbeat-eof-marker-after-0001",
+            "heartbeat-eof-marker-between-00a0",
+            "heartbeat-eof-marker-after-00a0",
             "subscription-form-feed-before-version",
             "consumer-vertical-tab-prefix",
             "heartbeat-embedded-bom",

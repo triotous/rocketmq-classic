@@ -1128,6 +1128,10 @@ public final class RuntimeHeartbeatFixtures {
             "{\"clientID\":\"eof\"}\u001a\u001a"));
         cases.add(heartbeatDtoInputCase("heartbeat-eof-marker-separated", "heartbeat",
             "{\"clientID\":\"eof\"}\u001a \u001a"));
+        cases.add(heartbeatDtoInputCase("heartbeat-eof-marker-before-trailing-text", "heartbeat",
+            "{\"clientID\":\"eof\"}\u001a ignored"));
+        cases.add(heartbeatDtoInputCase("heartbeat-eof-marker-before-trailing-json", "heartbeat",
+            "{\"clientID\":\"eof\"}\u001a{\"clientID\":\"ignored\"}"));
         cases.add(heartbeatDtoInputCase("subscription-form-feed-before-version", "subscription",
             "{\"subVersion\":" + String.valueOf((char) 0x0c) + "+02}"));
         cases.add(heartbeatDtoInputCase("consumer-vertical-tab-prefix", "consumer",
@@ -1293,6 +1297,19 @@ public final class RuntimeHeartbeatFixtures {
         }
         for (int codePoint : unicodeWhitespace) {
             addHeartbeatWhitespaceCases(cases, codePoint, positions);
+        }
+        int[] eofSeparators = new int[0x21 + unicodeWhitespace.length];
+        for (int codePoint = 0; codePoint <= 0x20; codePoint++) {
+            eofSeparators[codePoint] = codePoint;
+        }
+        System.arraycopy(unicodeWhitespace, 0, eofSeparators, 0x21, unicodeWhitespace.length);
+        for (int codePoint : eofSeparators) {
+            String separator = new String(Character.toChars(codePoint));
+            String hex = String.format(java.util.Locale.ROOT, "%04x", codePoint);
+            cases.add(heartbeatDtoInputCase("heartbeat-eof-marker-between-" + hex, "heartbeat",
+                "{\"clientID\":\"eof\"}\u001a" + separator + "\u001a"));
+            cases.add(heartbeatDtoInputCase("heartbeat-eof-marker-after-" + hex, "heartbeat",
+                "{\"clientID\":\"eof\"}\u001a" + separator));
         }
         return cases;
     }

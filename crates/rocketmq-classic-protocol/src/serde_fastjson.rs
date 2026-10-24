@@ -298,29 +298,21 @@ fn normalize_json_input_with_marker(input: &str, preserve_leading_dot_tokens: bo
     let input = input.strip_prefix('\u{feff}').unwrap_or(input);
     let syntax_normalized = normalize_fastjson_syntax(input);
     let whitespace_normalized = normalize_fastjson_whitespace(&syntax_normalized);
-    let eof_normalized = normalize_fastjson_trailing_eof_markers(&whitespace_normalized);
+    let eof_normalized = truncate_at_fastjson_eof_marker(&whitespace_normalized);
     let comma_normalized = normalize_fastjson_trailing_commas(&eof_normalized);
     normalize_fastjson_number_tokens(&comma_normalized, false, preserve_leading_dot_tokens)
 }
 
-fn normalize_fastjson_trailing_eof_markers(input: &str) -> String {
-    let bytes = input.as_bytes();
-    let mut suffix_start = bytes.len();
-    while suffix_start > 0 && matches!(bytes[suffix_start - 1], b' ' | 0x1a) {
-        suffix_start -= 1;
-    }
-    if !bytes[suffix_start..].contains(&0x1a) {
-        return input.to_owned();
-    }
-
-    let mut normalized = String::with_capacity(input.len());
-    normalized.push_str(&input[..suffix_start]);
-    for byte in &bytes[suffix_start..] {
-        if *byte != 0x1a {
-            normalized.push(char::from(*byte));
-        }
-    }
-    normalized
+fn truncate_at_fastjson_eof_marker(input: &str) -> String {
+    // Fastjson treats U+001A as the end of the input once it has read a
+    // complete value. It ignores all following bytes, not only more EOF
+    // markers and whitespace. Raw controls inside strings have already been
+    // escaped by `normalize_fastjson_whitespace`.
+    input
+        .as_bytes()
+        .iter()
+        .position(|byte| *byte == 0x1a)
+        .map_or_else(|| input.to_owned(), |end| input[..end].to_owned())
 }
 
 pub(crate) fn normalize_fastjson_integer_map_keys(input: &str) -> String {
@@ -1826,10 +1818,16 @@ mod syntax_compat_tests {
     }
 
     #[test]
-    fn removes_repeated_fastjson_eof_markers_after_the_document() {
+    fn fastjson_eof_marker_ends_the_document_and_ignores_the_suffix() {
         let decoded = from_fastjson_str::<Value>("{}\u{001a} \u{001a}").unwrap();
         assert_eq!(decoded, Value::Object(Default::default()));
+        let decoded = from_fastjson_str::<Value>("{}\u{001a} ignored {\"trailing\":true}").unwrap();
+        assert_eq!(decoded, Value::Object(Default::default()));
+        let input = "{\"topic\":\"inside\u{001a}string\"}\u{001a}ignored".to_owned();
+        let decoded = from_fastjson_str::<Value>(&input).unwrap();
+        assert_eq!(decoded["topic"], "inside\u{001a}string");
         assert!(from_fastjson_str::<Value>("\u{001a}{}").is_err());
+        assert!(from_fastjson_str::<Value>("{\u{001a}}").is_err());
     }
 
     #[test]
