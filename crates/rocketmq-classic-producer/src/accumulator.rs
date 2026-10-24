@@ -13,6 +13,27 @@ use tokio::{
 
 use crate::ProducerError;
 
+/// Constructor-only public counterpart of Java `ProduceAccumulator`.
+///
+/// RocketMQ 5.5.1 declares a public `ProduceAccumulator(String)` constructor
+/// but no public methods. The Producer owns and operates its batching engine;
+/// this value preserves the separately constructible Java API surface without
+/// exposing that private engine.
+pub struct ProduceAccumulator {
+    _instance_name: Option<String>,
+}
+
+impl ProduceAccumulator {
+    /// Constructs the Java `ProduceAccumulator(String)` counterpart.
+    ///
+    /// `None` represents a Java null constructor argument.
+    pub fn new(instance_name: Option<String>) -> Self {
+        Self {
+            _instance_name: instance_name,
+        }
+    }
+}
+
 pub(crate) type BatchResponse = Result<SendResult, String>;
 pub(crate) type BatchReceiver = oneshot::Receiver<BatchResponse>;
 

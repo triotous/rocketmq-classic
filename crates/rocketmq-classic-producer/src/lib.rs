@@ -34,6 +34,7 @@ mod trace;
 mod transaction;
 pub mod validation;
 
+pub use accumulator::ProduceAccumulator;
 pub use backpressure::BackpressureReadGuard;
 pub use batch::MessageBatch;
 pub use compressor::ProducerCompressor;

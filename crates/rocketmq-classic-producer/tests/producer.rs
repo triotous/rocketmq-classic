@@ -10,10 +10,11 @@ use rocketmq_classic_common::{
 use rocketmq_classic_core::route::TopicRouteDataHandle;
 use rocketmq_classic_producer::{
     AsyncSenderExecutor, AsyncSenderTask, CheckForbiddenContext, CheckForbiddenHook,
-    CommunicationMode, DEFAULT_PRODUCER_GROUP, FaultItem, FaultItemCompareError, Producer,
-    ProducerConfig, ProducerError, ProducerPublishQueueList, ProducerQueueIndex,
-    ProducerServiceState, ProducerTopicList, PublishInfoQueueFilter, SendMessageContext,
-    SendMessageHook, SendMessageType, TopicPublishInfo, TopicPublishInfoTableError,
+    CommunicationMode, DEFAULT_PRODUCER_GROUP, FaultItem, FaultItemCompareError,
+    ProduceAccumulator, Producer, ProducerConfig, ProducerError, ProducerPublishQueueList,
+    ProducerQueueIndex, ProducerServiceState, ProducerTopicList, PublishInfoQueueFilter,
+    SendMessageContext, SendMessageHook, SendMessageType, TopicPublishInfo,
+    TopicPublishInfoTableError,
     validation::{
         check_broker_config, check_topic_config, validate_group, validate_message,
         validate_send_topic, validate_system_topic, validate_topic,
@@ -2640,6 +2641,11 @@ fn pinned_java_produce_accumulator_declared_surface_is_constructor_only() {
     assert_eq!(api["declaredPublicMethodCount"], 0);
     assert_eq!(api["publicMethods"], serde_json::json!([]));
     assert_eq!(api["publicMethodCount"], 0);
+
+    drop(ProduceAccumulator::new(Some(
+        "producer-instance".to_owned(),
+    )));
+    drop(ProduceAccumulator::new(None));
 }
 
 #[test]

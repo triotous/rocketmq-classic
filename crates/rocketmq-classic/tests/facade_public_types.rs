@@ -3,12 +3,12 @@ use rocketmq_classic::{
     DEFAULT_PRODUCER_GROUP, EndTransactionContext, EndTransactionHook, FaultItem,
     FaultItemCompareError, Message, MessageBatch, MessageExtSubtype, MqHelper, NotifyResult,
     NullablePublishInfoQueueFilters, OrderlyListenerFuture, PermName, PermissionParseError,
-    PopProcessQueue, PopRequest, PopResult, PopStatus, Producer, ProducerConfig,
-    ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState, ProducerTopicList,
-    PublishInfoQueueFilter, PullRequest, QueryResult, SharedMessageBody, SharedMessageProperties,
-    TopicPublishInfo, TopicPublishInfoEntryHandle, TopicPublishInfoEntrySetView,
-    TopicPublishInfoKeySetView, TopicPublishInfoTable, TopicPublishInfoTableError,
-    TopicPublishInfoValuesView, TopicRouteData, TopicRouteDataHandle,
+    PopProcessQueue, PopRequest, PopResult, PopStatus, ProduceAccumulator, Producer,
+    ProducerConfig, ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState,
+    ProducerTopicList, PublishInfoQueueFilter, PullRequest, QueryResult, SharedMessageBody,
+    SharedMessageProperties, TopicPublishInfo, TopicPublishInfoEntryHandle,
+    TopicPublishInfoEntrySetView, TopicPublishInfoKeySetView, TopicPublishInfoTable,
+    TopicPublishInfoTableError, TopicPublishInfoValuesView, TopicRouteData, TopicRouteDataHandle,
 };
 use rocketmq_classic_core::runtime::ClientRuntimeManager;
 
@@ -102,6 +102,9 @@ async fn phase_owned_public_types_are_available_from_the_facade_crate() {
     assert_eq!(fault_item.get_current_latency(), 12);
     assert_public_type::<FaultItem>();
     assert_public_type::<FaultItemCompareError>();
+    drop(ProduceAccumulator::new(Some("facade-producer".to_owned())));
+    drop(ProduceAccumulator::new(None));
+    assert_public_type::<ProduceAccumulator>();
     assert_public_type::<NullablePublishInfoQueueFilters<'static>>();
     assert_public_type::<ProducerPublishQueueList>();
     assert_public_type::<ProducerQueueIndex>();
