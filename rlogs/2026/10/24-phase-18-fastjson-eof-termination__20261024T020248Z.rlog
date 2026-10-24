@@ -86,3 +86,39 @@ without imposing iteration order.
   leaving that test gate unverified. Native Windows runtime and current-
   revision remote Ubuntu CI remain unverified. No push or remote CI was run.
   Four protected Phase 19 worktree paths remain unchanged and unstaged.
+
+## Phase 18 consumer-list response Fastjson decoder continuation
+
+- Recorded: 2026-10-24
+- Code revision: `99f12b9832c3ebca0f9e570c57055cebc375ffd9`
+- Fixture: `fixtures/runtime/lookup.json`, SHA-256
+  `b3b2efa341e83f40d9b18f345ee175796d8891d84208b2f396f6cf8da162ee33`
+
+The three Core consumer-list response variants previously decoded the DTO via
+generic Serde, bypassing the DTO's Java Fastjson adapter. They now call
+`ConsumerListByGroupResponseBody::java_decode`, which applies the pinned
+`RemotingSerializable.decode` input rules. The invoked DTO differential covers
+18 raw inputs plus seven root-shape inputs (25 total). Two Java cases exercise
+ordinary trailing text and a second JSON document after raw U+001A. Core sync
+and future loopback calls both accept these suffixes and return the prefix
+consumer list.
+
+## Verification
+
+- The focused `consumer_list_inputs_match_invoked_java_fastjson` Protocol
+  differential passed.
+- The focused
+  `consumer_list_reply_uses_pinned_java_fastjson_eof_rules` Core loopback test
+  passed for the sync and future APIs.
+- Full locked Protocol and Core package tests passed, including doctests.
+- `cargo clippy --offline --locked --workspace --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+- `mvn -o -f compat/java-reference/pom.xml verify` passed: 37 scenarios,
+  fixture-drift checks, 11 message fixtures, 106 typed headers, and 19 typed
+  bodies.
+- The current revision's all-features workspace test was not rerun. The prior
+  attempt stalled during macOS `dyld` launch of the Remoting `codec` binary,
+  leaving that test gate unverified. Native Windows runtime and current-revision
+  remote Ubuntu CI remain unverified. Phase 19 Broker/Docker validation is
+  separate. No push or remote CI was run. The four protected Phase 19 worktree
+  paths remain unchanged and unstaged.
