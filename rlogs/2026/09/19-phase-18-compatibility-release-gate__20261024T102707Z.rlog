@@ -1,0 +1,82 @@
+# Phase 18 compatibility release-gate execution session
+
+- Recorded: 2026-10-24 10:27:07 UTC
+- Workspace: `/Users/bruce.tsai/Projects/trio/rocketmq-classic`
+- Branch: `phase/18-phase-18-compatibility-closure`
+- Plan: `plan/2026/09/19-phase-18-compatibility-release-gate.md`
+- Java reference: RocketMQ client 5.5.1, source commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`; Broker 5.3.4 is reserved for
+  Phase 19.
+- Rust toolchain: 1.85.0; workspace edition 2024.
+
+## Implementation and commits
+
+- `1e928372 fix(remoting): match Java throwable identity equality` changes
+  `ErrorSource` equality from display-chain comparison to shared wrapped-error
+  identity. Its regression proves clones compare equal and distinct causes
+  with the same text compare unequal. The request-classification test now
+  checks mapped variant/address/cause text without comparing fresh cause
+  identities.
+- `dcd00304 docs(compatibility): record remoting error identity parity`
+  updates the Remoting inventory, Known Differences, release checklist, and a
+  focused run record.
+- `cdf5efcb docs(compatibility): record current error identity gates` records
+  the refreshed server-free gates and benchmark sample.
+- `e83a9e85 docs(compatibility): refresh cross inventory review` removes an
+  obsolete Phase 0 Known Differences statement and records the remaining
+  GO_AWAY interleaving boundary.
+- This session also updates the top-level README's P18-V02 date and records
+  the P18-V03 review. Its changes are included in the final documentation
+  commit for this session.
+
+## Validation
+
+- Remoting package: `cargo test --offline --locked
+  -p rocketmq-classic-remoting` — PASS (146 unit, 9 codec, 1 fuzz-regression,
+  7 security, 109 transport tests, and 20 doctests). Strict all-target/all-
+  feature Remoting Clippy passed.
+- Workspace default and all-features tests/doctests — PASS in both modes;
+  each run had 93 test suites, 2,019 passed and 0 failed. Strict all-target/
+  all-feature workspace Clippy passed.
+- CI timezone-specific test
+  `TZ=Asia/Taipei cargo test --offline --locked -p rocketmq-classic-core
+  --lib unique_id::tests::public_unique_id_helpers_match_the_pinned_java_fixture
+  -- --exact` — PASS.
+- `cargo fmt --all -- --check` and `git diff --check` — PASS.
+- Differential comparator self-test and 37-scenario manifest validation —
+  PASS. Offline Maven `verify` — PASS with 37 scenarios, 11 message fixtures,
+  106 typed headers, 19 typed bodies, fixture-drift checks, and Java/Rust
+  cross-decodes.
+- Deterministic race/leak smoke — PASS, 20 cases × 3. Bounded fuzz smoke —
+  PASS, 163 frame seeds, 11 message seeds, 2,784 mutations, 564 frame
+  decodes, 192 message decodes.
+- Windows GNU all-target/all-feature workspace `cargo check` and strict
+  Clippy — PASS as compile-only checks. Release facade examples built.
+- Offline benchmark ran; current sample is recorded in
+  `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md` and has no
+  threshold. Workspace metadata/dependency direction/license checks and all
+  seven product package listings passed; each listing includes `LICENSE` and
+  `NOTICE`.
+
+## Audit status and limits
+
+- Phase 3 Remoting inventory has no `NOT MAPPED` row after `ErrorSource`
+  identity parity. The source-recorded Java `ChannelWrapper.reconnect()`
+  `tryLock` race remains: deterministic coverage verifies post-swap retry but
+  not every simultaneous lock-contention order. Rust's global connection-map
+  mutex is not a faithful equivalent of Java's per-wrapper lock; no
+  superficial locking change was made.
+- The Phase 6 map still calls for complete method/overload,
+  input/default/error/control-flow and reverse-export reconciliation across
+  DTO, route, heartbeat, enum, configuration and subscription surfaces. Broad
+  P18-V01 remains PARTIAL.
+- P18-V03 local docs/provenance/package review is complete. P18-V02 local
+  server-free gates pass on code revision `1e928372`. Native Windows runtime
+  and current-revision remote Ubuntu CI remain unverified; P18-V04 remains
+  open. Phase 19 Broker/Docker validation remains separate.
+- No push or remote CI was run. The protected Phase 19 worktree files were
+  not modified or staged.
+
+Detailed run records for the focused code and current-tree gate runs are in
+`rlogs/2026/10/24-phase-18-remoting-error-identity__20261024T100726Z.rlog` and
+`rlogs/2026/10/24-phase-18-current-tree-error-identity-gates__20261024T102143Z.rlog`.

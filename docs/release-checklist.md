@@ -9890,3 +9890,18 @@ owner-specific checks belong in the manual handoff.
   P18-V01 remains PARTIAL; the documented GO_AWAY race is still open.
   Run record:
   `rlogs/2026/10/24-phase-18-cross-inventory-review__20261024T102515Z.rlog`.
+
+## P18-V03 documentation, provenance, and package review — 2026-10-24 (`1e928372`)
+
+- [x] Reviewed the Java reference README and workspace metadata/provenance;
+  the oracle remains pinned to client 5.5.1/source commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`, with Broker 5.3.4 reserved for
+  Phase 19. The README continues to make no full-compatibility or release
+  readiness claim and now points to the 2026-10-24 P18-V02 refresh.
+- [x] `scripts/check-workspace-metadata.py`, offline Cargo metadata, and all
+  seven locked product `cargo package --list` checks passed. Every product
+  listing contains `LICENSE` and `NOTICE`; workspace dependency direction and
+  unpublished-package metadata passed. Release facade examples built.
+- [x] This closes P18-V03 documentation/package review on code revision
+  `1e928372`. P18-V01 and P18-V04 remain open. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261024T102707Z.rlog`.
