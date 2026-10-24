@@ -388,6 +388,26 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static Map<String, Object> compareToNullOtherCases() {
+        Map<String, Object> cases = new TreeMap<>();
+        cases.put("messageQueue", compareToNullOutcome(
+            () -> new MessageQueue("topic", "broker", 0).compareTo(null)));
+        cases.put("queueData", compareToNullOutcome(
+            () -> queueData("broker", 1, 1, 1, 1).compareTo(null)));
+        cases.put("brokerData", compareToNullOutcome(
+            () -> brokerData("cluster", "broker", null, false, "zone").compareTo(null)));
+        return cases;
+    }
+
+    private static String compareToNullOutcome(java.util.function.IntSupplier comparison) {
+        try {
+            comparison.getAsInt();
+            return "NONE";
+        } catch (Throwable error) {
+            return error.getClass().getSimpleName();
+        }
+    }
+
     private static List<Object> messageQueueMethodCases() {
         MessageQueue[] queues = new MessageQueue[] {
             new MessageQueue(),
@@ -4441,6 +4461,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("nullableNestedRouteFields", nullableNestedRouteFields());
         fixture.put("nullableMessageQueueFields", nullableMessageQueueFields());
         fixture.put("messageQueueCompareTo", messageQueueCompareToCases());
+        fixture.put("compareToNullOther", compareToNullOtherCases());
         fixture.put("messageQueueMethods", messageQueueMethodCases());
         fixture.put("nullableStaticMappingFields", nullableStaticMappingFields());
         fixture.put("staticMappingMapEntryCases", staticMappingMapEntryCases());

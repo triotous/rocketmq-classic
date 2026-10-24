@@ -2650,6 +2650,8 @@ impl<'de> Deserialize<'de> for QueueData {
 /// Failure cases from the pinned Java `QueueData.compareTo` method.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum QueueDataCompareError {
+    #[error("Java NullPointerException: null QueueData compareTo argument")]
+    NullOther,
     #[error("QueueData broker name is null")]
     NullBrokerName,
 }
@@ -2684,6 +2686,16 @@ impl QueueData {
             .as_deref()
             .ok_or(QueueDataCompareError::NullBrokerName)?;
         Ok(java_string_compare_to(name, other_name))
+    }
+
+    /// Compares with an optional value and maps Java's null-argument failure.
+    pub fn java_compare_to_nullable(
+        &self,
+        other: Option<&Self>,
+    ) -> Result<i32, QueueDataCompareError> {
+        other
+            .map(|other| self.java_compare_to(other))
+            .unwrap_or(Err(QueueDataCompareError::NullOther))
     }
 
     /// Returns the pinned Java 5.5.1 `QueueData.toString` text.
@@ -2801,6 +2813,8 @@ impl Eq for BrokerData {}
 /// Failure cases from the pinned Java `BrokerData.compareTo` method.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum BrokerDataCompareError {
+    #[error("Java NullPointerException: null BrokerData compareTo argument")]
+    NullOther,
     #[error("BrokerData broker name is null")]
     NullBrokerName,
 }
@@ -2904,6 +2918,16 @@ impl BrokerData {
         Ok(java_string_compare_to(name, other_name))
     }
 
+    /// Compares with an optional value and maps Java's null-argument failure.
+    pub fn java_compare_to_nullable(
+        &self,
+        other: Option<&Self>,
+    ) -> Result<i32, BrokerDataCompareError> {
+        other
+            .map(|other| self.java_compare_to(other))
+            .unwrap_or(Err(BrokerDataCompareError::NullOther))
+    }
+
     /// Returns the pinned Java 5.5.1 `BrokerData.toString` text.
     ///
     /// Address entries use deterministic Rust key order. Java's `HashMap`
@@ -2994,6 +3018,14 @@ mod queue_data_method_tests {
                 assert_eq!(result.unwrap_err(), QueueDataCompareError::NullBrokerName);
             }
         }
+        assert_eq!(
+            fixture["compareToNullOther"]["queueData"],
+            "NullPointerException"
+        );
+        assert_eq!(
+            QueueData::default().java_compare_to_nullable(None),
+            Err(QueueDataCompareError::NullOther)
+        );
     }
 }
 
@@ -3122,6 +3154,14 @@ mod broker_data_compare_to_tests {
                 assert_eq!(result.unwrap_err(), BrokerDataCompareError::NullBrokerName);
             }
         }
+        assert_eq!(
+            fixture["compareToNullOther"]["brokerData"],
+            "NullPointerException"
+        );
+        assert_eq!(
+            BrokerData::default().java_compare_to_nullable(None),
+            Err(BrokerDataCompareError::NullOther)
+        );
     }
 }
 
@@ -3257,6 +3297,15 @@ mod nullable_message_queue_tests {
                 assert!(result.is_err());
             }
         }
+        assert_eq!(
+            fixture["compareToNullOther"]["messageQueue"],
+            "NullPointerException"
+        );
+        assert_eq!(
+            rocketmq_classic_common::message::MessageQueue::new("topic", "broker", 0)
+                .java_compare_to_nullable(None),
+            Err(rocketmq_classic_common::message::MessageQueueCompareError::NullOther)
+        );
     }
 
     #[test]

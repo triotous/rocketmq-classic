@@ -3638,6 +3638,8 @@ impl<'de> Deserialize<'de> for MessageQueue {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum MessageQueueCompareError {
+    #[error("Java NullPointerException: null MessageQueue compareTo argument")]
+    NullOther,
     #[error("MessageQueue topic is null")]
     NullTopic,
     #[error("MessageQueue broker name is null")]
@@ -3719,6 +3721,16 @@ impl MessageQueue {
             Ordering::Equal => 0,
             Ordering::Greater => 1,
         })
+    }
+
+    /// Compares with an optional value and maps Java's null-argument failure.
+    pub fn java_compare_to_nullable(
+        &self,
+        other: Option<&Self>,
+    ) -> Result<i32, MessageQueueCompareError> {
+        other
+            .map(|other| self.java_compare_to(other))
+            .unwrap_or(Err(MessageQueueCompareError::NullOther))
     }
 }
 
