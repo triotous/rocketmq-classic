@@ -9746,3 +9746,23 @@ owner-specific checks belong in the manual handoff.
 - [ ] Zero-size and cyclic count inputs remain intentional bounded Rust
   outcomes; broad P18-V01, native Windows runtime, current-revision remote CI,
   and Phase 19 Broker/Docker evidence remain open or separate.
+
+## P18-V02 current-tree server-free gate after message cursor changes — 2026-10-24 (`924466d6`)
+
+- [x] Current code/test revision `924466d6`: locked default workspace tests
+  and doctests passed. Deterministic race/leak smoke passed 20 cases × 3;
+  bounded fuzz smoke passed 163 frame seeds, 11 message seeds, 2,784
+  mutations, 564 frame decodes and 192 message decodes. The release offline
+  benchmark ran and is recorded in
+  `compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+- [x] All-feature workspace tests/doctests, strict workspace Clippy, release
+  examples, Windows GNU all-target/all-feature compile-only checks, pinned
+  offline Maven `verify`, comparator/manifest validation, formatting and diff
+  checks passed on the same code revision in the earlier decoder verification
+  run. The latest stress, fuzz, default workspace and benchmark commands also
+  passed. Protected Phase 19 worktree paths remain unchanged and unstaged.
+- [ ] Broad P18-V01 API/settings/input/error/control-flow and reverse-export
+  reconciliation remains PARTIAL. Native Windows runtime and current-revision
+  remote Ubuntu CI remain unverified; Phase 19 Broker/Docker evidence remains
+  separate. No push or remote CI was run. Run record:
+  `rlogs/2026/10/24-phase-18-current-tree-supplemental-gates__20261024T090226Z.rlog`.
