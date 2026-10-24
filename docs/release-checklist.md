@@ -9937,3 +9937,16 @@ owner-specific checks belong in the manual handoff.
   remote Ubuntu CI remain unverified; no push or remote CI was run. Phase 19
   Broker/Docker evidence remains separate. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261024T102707Z.rlog`.
+
+## P18-V01 scoped Rustdoc name-crosswalk review — 2026-10-24
+
+- [x] Corrected the historical 2026-10-13 Rustdoc candidate counts in the
+  Phase 6 audit: the later Producer/Consumer crosswalk comparison found zero
+  unmatched exact method identifiers. The current Core, Producer, Consumer,
+  Common, Protocol, Remoting, and facade inventories account for the scoped
+  export names; the earlier 137/157 candidates were mapping-format false
+  positives.
+- [ ] This closes exact-name inventory only. Method behavior, overload/input,
+  error/control-flow semantics, and Java-side omission review remain P18-V01
+  work. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261024T102707Z.rlog`.

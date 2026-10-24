@@ -155,3 +155,14 @@ Detailed run records for the focused code and current-tree gate runs are in
   current-revision remote Ubuntu CI remain unverified. No push or remote CI
   was run. The four pre-existing Phase 19-owned worktree paths remain
   untouched and unstaged.
+
+## P18-V01 Rustdoc name-crosswalk status correction — 2026-10-24
+
+- The Phase 6 audit's initial 2026-10-13 counts of 137 Producer and 157
+  Consumer exact-token candidates were superseded by a follow-up Rustdoc
+  crosswalk that found zero unmatched exact method identifiers. The 2026-10-23
+  declaration review likewise reports no declaration-name discrepancy.
+- Updated the Phase 6 audit and Known Differences summary so they distinguish
+  the closed scoped name inventory from still-open method behavior,
+  overload/input/error/control-flow and Java-side omission reconciliation.
+- Docs-only; no source or tests changed. `git diff --check` passed.
