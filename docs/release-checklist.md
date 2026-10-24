@@ -12,6 +12,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   test harnesses link, but no Windows binary was run. Native Windows runtime and
   current-revision remote Ubuntu CI remain open; this does not close P18-V04.
 
+- [x] P18-V02 current-revision supplemental smoke (`33c57f09`, 2026-10-24):
+  offline deterministic race/leak smoke passed 20 cases × 3; fixed-seed fuzz
+  passed 163 frame, 11 message, and 11 property seeds with 2,960 mutations and
+  564/192/176 decoder calls; comparator self-test and 37-scenario manifest
+  validation passed. Together with the all-feature workspace suite above, this
+  refreshes the local P18-V02 gate. Native Windows runtime, current remote
+  Ubuntu CI, and broad P18-V01 remain open.
 - [x] P18-V02 Remoting property-decoder fuzz follow-up (`67ee9ec4`,
   2026-10-24): the deterministic smoke now seeds the property parser directly
   from 11 unique invoked-Java encoded property strings and decoded message

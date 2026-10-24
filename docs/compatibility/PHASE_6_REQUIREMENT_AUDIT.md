@@ -1,5 +1,17 @@
 # Phase 6 requirement and handoff audit
 
+## Phase 18 current-revision race, fuzz, and handoff smoke — 2026-10-24
+
+On code commit `33c57f09`, the offline deterministic race/leak suite passes 20
+cases × 3 repetitions, including the 2,000 concurrent-send case. The fixed-seed
+fuzz smoke passes with 163 frame seeds, 11 message seeds, 11 property seeds,
+2,960 mutations, and 564/192/176 frame/message/property decodes. The
+differential comparator self-test passes and the handoff manifest validates all
+37 scenarios. Together with the full all-feature workspace test/Clippy run
+recorded above, this refreshes the local P18-V02 gate. P18-V01 remains PARTIAL;
+native Windows runtime and current-revision remote Ubuntu CI remain unverified.
+No push or remote CI was run.
+
 ## Phase 18 Windows GNU all-feature workspace compile/link — 2026-10-24
 
 On macOS ARM64 with Rust 1.85.0 and the installed MinGW linker, the current

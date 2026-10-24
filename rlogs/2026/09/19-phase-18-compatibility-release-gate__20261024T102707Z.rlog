@@ -268,3 +268,20 @@ Detailed run records for the focused code and current-tree gate runs are in
 - This is compile-only platform evidence. Native Windows runtime and
   current-revision remote Ubuntu CI remain unverified. Broad P18-V01 remains
   PARTIAL. No push, remote CI, or Phase 19 file changes.
+
+
+## Current-revision P18-V02 race/fuzz/manifest refresh — 2026-10-24 12:20 UTC
+
+- Source code revision: `33c57f09`; documentation HEAD: `d0033845`.
+- PASS: `CARGO_TARGET_DIR=/tmp/rocketmq-phase18-allfeat-target bash
+  tests/stress/run-offline-smoke.sh` — 20 cases × 3 repetitions, including
+  2,000 concurrent async sends per scripted-peer repetition.
+- PASS: `CARGO_TARGET_DIR=/tmp/rocketmq-phase18-allfeat-target cargo run
+  --offline --locked -p rocketmq-classic-remoting --example fuzz_smoke` — 163
+  frame seeds, 11 message seeds, 11 property seeds, 2,960 mutations, and
+  564/192/176 frame/message/property decoder calls.
+- PASS: `python3 tests/differential/compare.py --self-test` and
+  `python3 tests/differential/compare.py --validate-manifest` (37 scenarios).
+- These checks refresh the local P18-V02 smoke gates. Native Windows runtime,
+  current-revision remote Ubuntu CI, and broad P18-V01 remain open. No push or
+  remote CI was run; Phase 19-owned worktree files were left untouched.
