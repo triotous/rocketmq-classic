@@ -15,8 +15,8 @@ use rocketmq_classic_remoting::{
     client::{
         CallbackExecutor, ChannelEvent, ChannelEventListener, ChannelHandle, ClientConfig,
         InvokeCallback, NettyEventType, RemotingClient, RequestContext, RequestExecutor,
-        RequestPipeline, RequestPipelineError, RequestProcessor, RpcHook, RpcHookError,
-        TransportMode, tls::TlsConfig,
+        RequestPipeline, RequestPipelineError, RequestProcessor, ResponseWaitError,
+        ResponseWaitInterrupt, RpcHook, RpcHookError, TransportMode, tls::TlsConfig,
     },
     codec::frame,
     error::TransportError,
@@ -56,6 +56,16 @@ async fn try_read_command<S: AsyncRead + Unpin>(stream: &mut S) -> Option<Remoti
 
 fn config_is_accepted(config: ClientConfig) -> Result<(), TransportError> {
     RemotingClient::with_config(config).map(drop)
+}
+
+#[test]
+fn response_future_wait_interrupt_types_are_public() {
+    let interrupt = ResponseWaitInterrupt::new();
+    interrupt.interrupt();
+    assert_eq!(
+        ResponseWaitError::Interrupted.java_exception_name(),
+        "java.lang.InterruptedException"
+    );
 }
 
 #[tokio::test]

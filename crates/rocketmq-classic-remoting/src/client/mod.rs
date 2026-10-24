@@ -31,7 +31,10 @@ use crate::{command::RemotingCommand, error::TransportError, metrics::RemotingMe
 pub use config::{ClientConfig, SocksProxyConfig};
 pub use connection::TransportMode;
 pub use processor::{RequestContext, RequestProcessor};
-pub use response_future::{ChannelHandle, ResponseFuture, SemaphoreReleaseOnlyOnce};
+pub use response_future::{
+    ChannelHandle, ResponseFuture, ResponseWaitError, ResponseWaitInterrupt,
+    SemaphoreReleaseOnlyOnce,
+};
 pub use tls::{PrivateKeyDecryptionStrategy, TlsConfig, TlsMode, register_decryption_strategy};
 
 #[cfg(test)]

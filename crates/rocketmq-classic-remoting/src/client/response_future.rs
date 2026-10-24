@@ -4,7 +4,7 @@ use std::{
         Arc, Condvar, Mutex, Weak,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use tokio::{sync::OwnedSemaphorePermit, time::Instant as TokioInstant};
@@ -201,8 +201,89 @@ pub struct ResponseFuture {
     interrupted: AtomicBool,
     callback_executed: AtomicBool,
     released: Mutex<Option<PermitRelease>>,
-    response_latch: (Mutex<bool>, Condvar),
+    response_latch: Arc<ResponseLatch>,
 }
+
+#[derive(Default)]
+struct ResponseLatch {
+    complete: Mutex<bool>,
+    changed: Condvar,
+}
+
+/// A Rust-native interrupt signal for one blocking response wait.
+///
+/// Pass a clone to the thread that calls `wait_response_interruptible`; calling
+/// `interrupt` wakes that wait and causes it to return `ResponseWaitError::Interrupted`.
+/// The interruption is consumed by that return, matching Java's clearing of the
+/// waiting thread's interrupt flag when `CountDownLatch.await` throws.
+#[derive(Clone, Default)]
+pub struct ResponseWaitInterrupt {
+    state: Arc<ResponseWaitInterruptState>,
+}
+
+#[derive(Default)]
+struct ResponseWaitInterruptState {
+    interrupted: AtomicBool,
+    latch: Mutex<Option<Weak<ResponseLatch>>>,
+}
+
+impl ResponseWaitInterrupt {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Interrupts the currently registered wait, or the next wait if none has started.
+    pub fn interrupt(&self) {
+        self.state.interrupted.store(true, Ordering::Release);
+        if let Some(latch) = self
+            .state
+            .latch
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(Weak::upgrade)
+        {
+            let _complete = latch.complete.lock().unwrap();
+            latch.changed.notify_all();
+        }
+    }
+
+    fn register(&self, latch: &Arc<ResponseLatch>) {
+        *self.state.latch.lock().unwrap() = Some(Arc::downgrade(latch));
+        if self.state.interrupted.load(Ordering::Acquire) {
+            let _complete = latch.complete.lock().unwrap();
+            latch.changed.notify_all();
+        }
+    }
+
+    fn consume_interrupt(&self) -> bool {
+        self.state.interrupted.swap(false, Ordering::AcqRel)
+    }
+}
+
+/// Failure returned when a blocking `ResponseFuture` wait is interrupted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResponseWaitError {
+    Interrupted,
+}
+
+impl ResponseWaitError {
+    pub fn java_exception_name(self) -> &'static str {
+        match self {
+            Self::Interrupted => "java.lang.InterruptedException",
+        }
+    }
+}
+
+impl fmt::Display for ResponseWaitError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Interrupted => "InterruptedException",
+        })
+    }
+}
+
+impl std::error::Error for ResponseWaitError {}
 
 /// Java-compatible release-once wrapper for a semaphore.
 ///
@@ -324,7 +405,7 @@ impl ResponseFuture {
             interrupted: AtomicBool::new(false),
             callback_executed: AtomicBool::new(false),
             released: Mutex::new(permit),
-            response_latch: (Mutex::new(false), Condvar::new()),
+            response_latch: Arc::new(ResponseLatch::default()),
         }
     }
 
@@ -359,7 +440,7 @@ impl ResponseFuture {
             interrupted: AtomicBool::new(false),
             callback_executed: AtomicBool::new(false),
             released: Mutex::new(permit.map(|permit| PermitRelease::Owned(Some(permit)))),
-            response_latch: (Mutex::new(false), Condvar::new()),
+            response_latch: Arc::new(ResponseLatch::default()),
         })
     }
 
@@ -445,23 +526,58 @@ impl ResponseFuture {
     /// Stores the response and releases threads waiting in `wait_response`.
     pub fn put_response(&self, response: Option<RemotingCommand>) {
         self.set_response_command(response);
-        *self.response_latch.0.lock().unwrap() = true;
-        self.response_latch.1.notify_all();
+        *self.response_latch.complete.lock().unwrap() = true;
+        self.response_latch.changed.notify_all();
     }
 
     /// Waits up to `timeout` for `put_response`, then returns the current response value.
     pub fn wait_response(&self, timeout_millis: i64) -> Option<RemotingCommand> {
-        let complete = self.response_latch.0.lock().unwrap();
-        let _ = self
-            .response_latch
-            .1
-            .wait_timeout_while(
-                complete,
-                Duration::from_millis(timeout_millis.max(0) as u64),
-                |complete| !*complete,
-            )
-            .unwrap();
-        self.response_command()
+        self.wait_response_inner(timeout_millis, None)
+            .expect("an uninterruptible response wait cannot be interrupted")
+    }
+
+    /// Waits for a response with a Rust-native external interruption signal.
+    ///
+    /// The timeout result matches `wait_response`: it returns the current response,
+    /// which is `None` when no response arrived. An interruption returns an error
+    /// and is consumed by the wait.
+    pub fn wait_response_interruptible(
+        &self,
+        timeout_millis: i64,
+        interrupt: &ResponseWaitInterrupt,
+    ) -> Result<Option<RemotingCommand>, ResponseWaitError> {
+        self.wait_response_inner(timeout_millis, Some(interrupt))
+    }
+
+    fn wait_response_inner(
+        &self,
+        timeout_millis: i64,
+        interrupt: Option<&ResponseWaitInterrupt>,
+    ) -> Result<Option<RemotingCommand>, ResponseWaitError> {
+        if let Some(interrupt) = interrupt {
+            interrupt.register(&self.response_latch);
+        }
+        let timeout = Duration::from_millis(timeout_millis.max(0) as u64);
+        let mut complete = self.response_latch.complete.lock().unwrap();
+        let started = Instant::now();
+        loop {
+            if interrupt.is_some_and(ResponseWaitInterrupt::consume_interrupt) {
+                return Err(ResponseWaitError::Interrupted);
+            }
+            if *complete {
+                return Ok(self.response_command());
+            }
+            let remaining = timeout.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                return Ok(self.response_command());
+            }
+            let (next, _) = self
+                .response_latch
+                .changed
+                .wait_timeout(complete, remaining)
+                .unwrap();
+            complete = next;
+        }
     }
 
     /// Runs the callback once, following Java `ResponseFuture.executeInvokeCallback` ordering.
@@ -596,7 +712,7 @@ impl fmt::Display for ResponseFuture {
         } else {
             "null"
         };
-        let latch_count = if *self.response_latch.0.lock().unwrap() {
+        let latch_count = if *self.response_latch.complete.lock().unwrap() {
             0
         } else {
             1
@@ -616,7 +732,7 @@ impl fmt::Display for ResponseFuture {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use super::{ChannelHandle, ResponseFuture, SemaphoreReleaseOnlyOnce};
+    use super::{ChannelHandle, ResponseFuture, ResponseWaitInterrupt, SemaphoreReleaseOnlyOnce};
     use crate::{client::InvokeCallback, command::RemotingCommand, error::TransportError};
 
     struct RecordingCallback(Arc<Mutex<Vec<&'static str>>>);
@@ -752,7 +868,7 @@ mod tests {
     }
 
     #[test]
-    fn wait_response_timeout_and_internal_interrupt_match_rust_mapping() {
+    fn wait_response_timeout_and_external_interrupt_match_java_mapping() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../fixtures/remoting/response-future-api.json"
         ))
@@ -767,6 +883,52 @@ mod tests {
         assert!(!future.is_interrupted());
         future.interrupt();
         assert!(future.is_interrupted());
+
+        let future = Arc::new(ResponseFuture::new(None, 55, None, 5000, None));
+        let interrupt = ResponseWaitInterrupt::new();
+        let waiter_interrupt = interrupt.clone();
+        let wait_future = future.clone();
+        let waiter = std::thread::spawn(move || {
+            wait_future.wait_response_interruptible(5000, &waiter_interrupt)
+        });
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        interrupt.interrupt();
+        let error = waiter
+            .join()
+            .unwrap()
+            .expect_err("external interruption must terminate the response wait");
+        assert_eq!(
+            error.java_exception_name(),
+            java["exceptionClass"].as_str().unwrap()
+        );
+        assert!(
+            future
+                .wait_response_interruptible(1, &interrupt)
+                .expect("the interruption is consumed when the wait returns")
+                .is_none()
+        );
+
+        let completed = ResponseFuture::new(None, 56, None, 5000, None);
+        completed.put_response(Some(RemotingCommand {
+            code: 17,
+            ..Default::default()
+        }));
+        let already_interrupted = ResponseWaitInterrupt::new();
+        already_interrupted.interrupt();
+        assert_eq!(
+            completed
+                .wait_response_interruptible(5000, &already_interrupted)
+                .unwrap_err(),
+            super::ResponseWaitError::Interrupted
+        );
+        assert_eq!(
+            completed
+                .wait_response_interruptible(0, &already_interrupted)
+                .unwrap()
+                .unwrap()
+                .code,
+            17
+        );
     }
 
     #[test]
