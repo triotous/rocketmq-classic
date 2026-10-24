@@ -306,3 +306,21 @@ Detailed run records for the focused code and current-tree gate runs are in
   Protocol Clippy; `cargo fmt --all -- --check`; `git diff --check`.
 - Code commit: `fdfdbaea`. This closes the null argument branch only; broad
   P18-V01 remains PARTIAL. Phase 19-owned worktree files remain untouched.
+
+## P18-V01 route DTO compareTo null-input parity — 2026-10-24 12:36 UTC
+
+- Code commit `80acf42f` adds nullable comparison adapters and typed
+  `NullOther` errors for `MessageQueue`, `QueueData`, and `BrokerData`. The
+  pinned Java runtime fixture records `NullPointerException` for all three;
+  current `fixtures/runtime/route.json` SHA-256:
+  `fa4ee2e7b22496a561998501ca464455ebe0fc489a005868c96521e20efb4732`.
+- PASS: focused invoked-Java comparison regressions; all-feature locked Common
+  and Protocol tests/doctests; strict all-target/all-feature Clippy for both
+  crates; `cargo fmt --all -- --check`; `git diff --check`.
+- PASS: `mvn -o -q -f compat/java-reference/pom.xml verify` — 37 scenarios,
+  11 message fixtures, 106 typed headers, 19 typed bodies, and 36 invoked
+  runtime route/VIP cases.
+- This closes the null-argument branch for these three comparators only.
+  Broad P18-V01 remains PARTIAL. Native Windows runtime and current-revision
+  remote Ubuntu CI remain unverified; Phase 19 Broker/Docker validation remains
+  separate. No push or remote CI ran; Phase 19-owned files remain untouched.

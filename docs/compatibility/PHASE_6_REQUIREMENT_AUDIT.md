@@ -1,5 +1,19 @@
 # Phase 6 requirement and handoff audit
 
+## Phase 18 route DTO `compareTo(null)` input parity — 2026-10-24 (`80acf42f`)
+
+Pinned Java 5.5.1 `MessageQueue.compareTo(null)`, `QueueData.compareTo(null)`,
+and `BrokerData.compareTo(null)` each throw `NullPointerException`. Rust now
+exposes `java_compare_to_nullable` with typed `NullOther` errors for all three
+types, while retaining their existing non-null comparison methods. Invoked
+`RuntimeRouteFixtures` records each Java exception; `route.json` SHA-256 is
+`fa4ee2e7b22496a561998501ca464455ebe0fc489a005868c96521e20efb4732`.
+Common and Protocol all-feature package tests/doctests, strict all-target /
+all-feature Common and Protocol Clippy, pinned offline Maven `verify` (37
+scenarios, 11 message fixtures, 106 typed headers and 19 typed bodies),
+formatting, and diff checks pass. This closes the null argument branch for
+these three comparators only; broad P18-V01 remains PARTIAL.
+
 ## Phase 18 `SubscriptionData.compareTo(null)` input parity — 2026-10-24 (`fdfdbaea`)
 
 Pinned Java 5.5.1 `SubscriptionData.compareTo(null)` throws
