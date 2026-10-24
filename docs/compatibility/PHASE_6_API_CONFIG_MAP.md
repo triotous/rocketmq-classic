@@ -792,7 +792,7 @@ implementation object.
 | `ConsumerRuntime::is_subscribe_topic_need_update`, `update_topic_subscribe_info`, `persist_consumer_offset`, `try_rebalance` | `MQConsumerInner.isSubscribeTopicNeedUpdate`, `updateTopicSubscribeInfo`, `persistConsumerOffset`, and `tryRebalance` | The Phase 10 Push fixture checks route-update and pause behavior; Phase 11 tests cover active Push/Pull rebalance, assignment updates, and offset persistence. |
 | `ConsumerRuntime::adjust_thread_pool` | `DefaultMQPushConsumerImpl.adjustThreadPool`; built-in Java consume services leave `incCorePoolSize` / `decCorePoolSize` as no-ops, and a replacement service receives the hook calls. | Phase 10 invoked fixture verifies the built-in no-op; the replacement-service owner regression verifies a custom decrease hook; explicit `updateCorePoolSize` remains mapped on the Push facade. |
 | `PushConsumer::{get_consume_message_service,set_consume_message_service}`; `ConsumeMessageService` | `DefaultMQPushConsumerImpl.get/setConsumeMessageService` and all nine public methods of `impl.consumer.ConsumeMessageService`. Rust exposes a nullable `Arc<dyn ConsumeMessageService>` binding; primary-service replacement receives direct-consume, normal Pull submission, pool adjustment/update and shutdown calls. POP consumption remains on Java's separate private POP service. | Phase 10 Java signature fixture and Rust owner/API regressions cover identity/null accessors, direct and Pull routing, custom pool hooks, shutdown, and POP separation. |
-| `ConsumerRuntime::pull_message`, `pop_message`; `MessageRequest::{consumer_group,mode}` | `PullMessageService` chooses `PullRequest` or `PopRequest` by `MessageRequest.getMessageRequestMode()` and invokes the registered consumer implementation; group selects the current runtime owner. | `runtime/pull.rs` maps FIFO, delayed scheduling, mode and group dispatch; `tests/pull_dispatch.rs::fifo_mode_dispatch_delay_and_group_selection_use_current_registration` checks the owner boundary. `MessageRequest::as_any` is the Rust downcast adapter for concrete request ownership, with no separate Java method. |
+| `ConsumerRuntime::pull_message`, `pop_message`; `MessageRequest::{consumer_group,mode}` | `PullMessageService` chooses `PullRequest` or `PopRequest` by `MessageRequest.getMessageRequestMode()` and invokes the registered consumer implementation; group selects the current runtime owner. | `runtime/pull.rs` maps FIFO, delayed scheduling, nullable group lookup and mode dispatch; `tests/pull_dispatch.rs::fifo_mode_dispatch_delay_and_group_selection_use_current_registration` checks the owner boundary. `MessageRequest::as_any` is the Rust downcast adapter for concrete request ownership, with no separate Java method. `PopRequest` now implements this trait and preserves a null group as `None`. |
 | `ConsumerRuntime::inbound_processor` and `ConsumerOperation` | Consumer-group inbound operations in `ClientRemotingProcessor`, including Push reset offset, consumer status, running info, and consume-directly handlers | [Inbound matrix](PHASE_6_INBOUND_MATRIX.md) checks request-code routing and absent-handler outcomes; Phase 17 owns the active admin/query handlers. |
 | `ConsumerRuntime::map_value_equality_key` | No Java method with this name. Like the producer adapter key, it models Java owner `equals()` only for conditional registry-map operations; lifecycle registration remains identity-based. | Registry equality and mutable-key differential cases in the Phase 6 requirement audit. |
 
@@ -2369,6 +2369,7 @@ adapters. The table groups the names by the Java owner whose API they expose.
 | `PullConsumerError`, `LitePullConsumerError` | Rust public error enums for Java Pull/Lite Pull operations. They wrap the Java configuration, client, Broker, offset, and lifecycle failure branches recorded in the Phase 13/14 consumer matrices. |
 | `ProcessPullError` | Typed Rust failures for the Java `PullAPIWrapper.processPullResult` FOUND-message decode and inner-batch paths; accepted data and failure order are covered by the Phase 14 pull-result fixtures. |
 | `PopProcessError`, `PopReceiptError` | Typed Rust error carriers for Java POP response decoding and `ExtraInfoUtil` receipt parsing. `PopReceiptError` keeps malformed numeric and missing-field outcomes distinct while the original receipt remains available for forward-compatible fields. |
+| `PopRequest` | Java `impl.consumer.PopRequest`, including its no-argument constructor, nullable group/topic/queue/process-queue fields, lock-first and init-mode state, `MessageRequestMode.POP`, equality/hash selection, UTF-16 String hashing, and `toString`. `SharedValue<MessageQueue>` and `Arc<PopProcessQueue>` retain the Java setter/getter reference semantics; the nullable `MessageRequest.consumer_group` routes through `select_consumer_nullable`. `fixtures/consumer/facade-api.json` pins all 16 public methods and direct behavior. |
 | `ProcessQueueAtomicLong` | Rust operation view for Java `ProcessQueue.getMsgCount()` / `getMsgSize()` `AtomicLong` values, including `get_and_add`, `add_and_get`, `get_and_set`, increment/decrement, and `compare_and_set` operations with Java wrapping arithmetic. |
 | `ProcessQueueMessageTreeMap`, `ProcessQueueMessageTreeReadGuard`, `ProcessQueueMessageTreeWriteGuard` | Lock-backed Rust views for Java `ProcessQueue.getMsgTreeMap()`'s live `TreeMap`. Read/write guards preserve direct map edits while keeping independent count and byte counters unchanged, matching Java's separate fields. |
 | `get_msg_tree_map`, `get_msg_count`, `get_msg_size`, `get_max_span`, `contains_message`, `contains_message_nullable`, `has_temp_message`, `put_message`, `put_message_nullable`, `put_message_items_nullable`, `take_messages`, `remove_message`, `remove_message_nullable`, `make_message_to_consume_again`, `make_message_to_consume_again_nullable`, `make_message_to_consume_again_items_nullable`, `clean_expired_msg`, `clean_expired_msg_nullable`, `fill_process_queue_info`, `fill_process_queue_info_nullable` | Java `ProcessQueue.getMsgTreeMap`, `getMsgCount`, `getMsgSize`, `getMaxSpan`, `containsMessage`, `hasTempMessage`, `putMessage`, `takeMessages`, `removeMessage`, `makeMessageToConsumeAgain`, `cleanExpiredMsg`, and `fillProcessQueueInfo`. The nullable adapters map Java's null-message `false`, null-list put/removal/requeue and null-consumer `NullPointerException` paths, null-element partial put/requeue mutation before `NullPointerException`, and null-info swallowed exception; Rust's queue owner adds generation-safe in-flight bookkeeping behind these same queue operations. |
@@ -2378,12 +2379,24 @@ adapters. The table groups the names by the Java owner whose API they expose.
 | `trace_context` | `ConsumeMessageContext.trace_context` maps Java `ConsumeMessageContext.traceContext` and carries hook-owned trace state between before/after callbacks. |
 | `LiteTraceKind`, `trace_kind`, `LiteTraceDispatcher`, `LiteTraceError` | Consumer trace kinds map Java `TraceType.SubBefore` / `SubAfter`; `LiteTraceDispatcher` is the Rust async owner for Java `AsyncTraceDispatcher` consume-trace records, and `LiteTraceError` carries Rust producer/worker lifecycle failures. The encoded control-character format is covered by the Phase 16 trace fixtures. |
 
-The root façade source scan covered all 125 direct re-exports with zero
+The root façade source scan covered all 127 direct re-exports with zero
 exact-name omissions after these crosswalks. Together, these Rustdoc/source
 reverse scans account for the exact-name omissions from the Core, Producer,
 Consumer, and façade exports. They do not replace P18-V01's complete
 Java source, settings, inherited API, validation, error, and control-flow
 reconciliation; that broader audit remains open.
+
+## P18-V01 Rustdoc export refresh after `PopRequest` — 2026-10-24
+
+Regenerated all-feature Rustdoc JSON after adding the public consumer
+`PopRequest` value and nullable `MessageRequest` group adapter. Excluding each
+crate root, current product-crate totals are Common 442, Consumer 472, Core
+800, Producer 379, Protocol 1,528, and Remoting 341 distinct public names.
+The Consumer crate has 686 public item records; Remoting has 404. The root
+facade direct re-export scan now includes 127 names. Rustdoc JSON completed
+with the workspace's existing `publish` and Consumer `AtomicU64::fetch_update`
+warnings. Counts track exported names only; broad P18-V01 behavior and
+reverse-export reconciliation remains `PARTIAL`.
 
 ## P18-V01 Rustdoc Common-export reverse scan — 2026-10-22
 

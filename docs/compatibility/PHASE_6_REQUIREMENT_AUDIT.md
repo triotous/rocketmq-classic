@@ -1,5 +1,19 @@
 # Phase 6 requirement and handoff audit
 
+## P18-V01 Java `PopRequest` public value API — 2026-10-24
+
+The pinned Java `client.impl.consumer.PopRequest` declares one public
+no-argument constructor and 16 public methods. Rust now exports
+`rocketmq_classic_consumer::PopRequest`; the invoked consumer facade fixture
+pins defaults, all exposed fields, `POP` mode, equality/hash selection, UTF-16
+String hashing, shared `MessageQueue` and `PopProcessQueue` references, and
+Java-style `toString`. Java equality intentionally ignores the process queue,
+`lockedFirst`, and `initMode`; Rust does the same. Its `MessageRequest` adapter
+retains nullable consumer groups, and runtime dispatch passes them through the
+nullable consumer selector. Code commit `f5ecf2ca` closes the direct
+value/API gap; broad P18-V01 source/settings/input/error/control-flow and
+reverse-export reconciliation remains `PARTIAL`.
+
 ## Phase 18 current-code full-feature and server-free refresh — 2026-10-24 (`a460d966`)
 
 On code revision `a460d966`, locked all-feature workspace tests and doctests

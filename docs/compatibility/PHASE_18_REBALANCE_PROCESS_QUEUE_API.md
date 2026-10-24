@@ -453,11 +453,15 @@ Pull's model and strategy are shared with its active registration, so these
 settings remain callable through the started owner and request an immediate
 rebalance when changed.
 
-One implementation call shape remains internal to Rust. Java's dispatch hooks
-accept mutable internal `PullRequest`/`PopRequest` lists; Rust
-creates requests through assignment activation and routes them through its
-owned pull scheduler/POP workers. These differences do not remove a consumer
-setting, queue operation or message-delivery flow from the public Rust facade.
+Rust exposes `rocketmq_classic_consumer::PopRequest` for Java's directly
+constructible `impl.consumer.PopRequest` value API. Its fixture pins the public
+constructor and 16 declared public methods, including nullable fields,
+`MessageRequestMode.POP`, equality/hash fields, UTF-16 string hashing, mutable
+`MessageQueue` reference retention, and `toString`. `MessageRequest` preserves a
+nullable consumer group with `Option<&str>`; the runtime routes that through its
+nullable owner selector. The Rust `PullRequest` remains an internal scheduling
+type. Assignment activation still builds queue work directly rather than
+exposing the Java dispatch hooks' mutable `PullRequest`/`PopRequest` lists.
 
 Java exposes the Push implementation and its nested `RebalancePushImpl` as
 separate objects. Rust's stable owner handle aliases both APIs, so it keeps
