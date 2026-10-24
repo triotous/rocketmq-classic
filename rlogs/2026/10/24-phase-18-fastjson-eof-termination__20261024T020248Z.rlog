@@ -52,3 +52,37 @@ Native Windows runtime and current-revision remote Ubuntu CI remain
 unverified. Phase 19 Broker/Docker validation is separate. No push or remote
 CI was run. The four protected Phase 19 worktree items remain unchanged and
 unstaged.
+
+## Phase 18 ConsumerRunningInfo Fastjson raw decoder continuation
+
+- Recorded: 2026-10-24 02:23:37 UTC
+- Code revision: `9180556a2f694b43ffc2ecd0417b6f51430ccf5e`
+- Fixture: `fixtures/consumer/running-info.json`, SHA-256
+  `495f040623c010c13a4d70f004db4d0529bd8fcda93530671015c69cb49f1e06`
+
+The pinned Java `RemotingSerializable.decode(byte[], ConsumerRunningInfo.class)`
+calls Fastjson `parseObject`. Rust's typed decoder first converted special
+object-valued `MessageQueue` map keys but did not normalize Fastjson input.
+Four invoked cases now cover trailing text and a second document after raw
+U+001A, a raw marker inside a string, and single-quoted input with a trailing
+comma. Rust matches Java acceptance and encoded fields; a populated Java body
+also round-trips through the typed decoder. Set-valued fields are compared
+without imposing iteration order.
+
+## Verification
+
+- The focused `consumer_running_info_raw_inputs_match_invoked_java_fastjson`
+  test passed, including the populated object-key body.
+- `cargo test --offline --locked --workspace` passed, including doctests. The
+  Remoting `codec` executable had a long launch delay, then completed all eight
+  tests successfully.
+- `cargo clippy --offline --locked --workspace --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+- `mvn -o -f compat/java-reference/pom.xml verify` passed: 37 scenarios,
+  fixture-drift checks, 11 message fixtures, 106 typed headers, and 19 typed
+  bodies.
+- The current revision's all-features workspace test was not rerun. The prior
+  attempt stalled during macOS `dyld` launch of the Remoting `codec` binary,
+  leaving that test gate unverified. Native Windows runtime and current-
+  revision remote Ubuntu CI remain unverified. No push or remote CI was run.
+  Four protected Phase 19 worktree paths remain unchanged and unstaged.

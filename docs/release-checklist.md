@@ -9542,3 +9542,24 @@ owner-specific checks belong in the manual handoff.
   validation is separate. No push or remote CI was run. The four protected
   Phase 19 worktree items remain unchanged and unstaged. Run record:
   `rlogs/2026/10/24-phase-18-fastjson-eof-termination__20261024T020248Z.rlog`.
+
+## P18-V01 ConsumerRunningInfo Fastjson raw decoder — 2026-10-24 (`9180556a`)
+
+- [x] The pinned Java `RemotingSerializable.decode` fixture covers four raw
+  body inputs: text after U+001A, a second JSON object after U+001A, U+001A
+  inside a string, and single quotes with a trailing comma. Rust now runs the
+  shared Fastjson normalizer before converting object-valued `MessageQueue`
+  map keys. The populated Java body also round-trips through the typed decoder.
+  Fixture SHA-256:
+  `495f040623c010c13a4d70f004db4d0529bd8fcda93530671015c69cb49f1e06`.
+- [x] The focused Rust differential and full locked workspace tests/doctests
+  passed. Strict all-target/all-feature Clippy, formatting, diff checks, and
+  pinned offline Maven `verify` passed; Maven verified 37 scenarios, fixture
+  drift, 11 message fixtures, 106 typed headers, and 19 typed bodies.
+- [ ] The current revision's all-features workspace test was not rerun. The
+  preceding attempt stalled at macOS `dyld` while launching Remoting `codec`;
+  this gate remains unverified. Broad P18-V01 remains PARTIAL, native Windows
+  runtime and current-revision remote Ubuntu CI remain unverified, and Phase 19
+  Broker/Docker evidence remains separate. No push or remote CI was run. The
+  four protected Phase 19 worktree paths remain unchanged and unstaged. Run
+  record: `rlogs/2026/10/24-phase-18-fastjson-eof-termination__20261024T020248Z.rlog`.
