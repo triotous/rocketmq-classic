@@ -152,6 +152,7 @@ struct Startup {
 
 struct ClientInner {
     connections: Mutex<HashMap<String, Arc<connection::Connection>>>,
+    connection_wrapper_locks: Mutex<HashMap<String, Weak<RwLock<()>>>>,
     connecting: Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>,
     retired_connections: Mutex<HashMap<u64, (String, Arc<connection::Connection>)>>,
     pending: Mutex<HashMap<i32, PendingEntry>>,
@@ -854,6 +855,7 @@ impl RemotingClient {
             });
         let inner = Arc::new(ClientInner {
             connections: Mutex::new(HashMap::new()),
+            connection_wrapper_locks: Mutex::new(HashMap::new()),
             retired_connections: Mutex::new(HashMap::new()),
             connecting: Mutex::new(HashMap::new()),
             pending: Mutex::new(HashMap::new()),
@@ -1135,6 +1137,7 @@ impl RemotingClient {
             mpsc::channel(CHANNEL_EVENT_QUEUE_CAPACITY);
         let inner = Arc::new(ClientInner {
             connections: Mutex::new(HashMap::new()),
+            connection_wrapper_locks: Mutex::new(HashMap::new()),
             retired_connections: Mutex::new(HashMap::new()),
             connecting: Mutex::new(HashMap::new()),
             pending: Mutex::new(HashMap::new()),
@@ -4939,6 +4942,7 @@ mod tests {
         });
         let inner = Arc::new(ClientInner {
             connections: Mutex::new(HashMap::new()),
+            connection_wrapper_locks: Mutex::new(HashMap::new()),
             retired_connections: Mutex::new(HashMap::new()),
             connecting: Mutex::new(HashMap::new()),
             pending: Mutex::new(HashMap::new()),

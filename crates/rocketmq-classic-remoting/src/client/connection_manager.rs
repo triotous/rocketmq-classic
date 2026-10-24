@@ -32,6 +32,28 @@ pub(super) fn parse_socket_port(value: &str) -> Result<u16, TransportError> {
 }
 
 impl ClientInner {
+    fn connection_wrapper_lock(&self, address: &str) -> Arc<std::sync::RwLock<()>> {
+        let mut locks = self.connection_wrapper_locks.lock().unwrap();
+        locks.retain(|_, lock| lock.strong_count() > 0);
+        if let Some(lock) = locks.get(address).and_then(std::sync::Weak::upgrade) {
+            return lock;
+        }
+        let lock = Arc::new(std::sync::RwLock::new(()));
+        locks.insert(address.to_owned(), Arc::downgrade(&lock));
+        lock
+    }
+
+    fn current_connection(&self, address: &str) -> Option<Arc<connection::Connection>> {
+        let wrapper_lock = self.connection_wrapper_lock(address);
+        let _wrapper_read = wrapper_lock.read().unwrap();
+        self.connections
+            .lock()
+            .unwrap()
+            .get(address)
+            .filter(|connection| !connection.is_closed() && !connection.is_retired())
+            .cloned()
+    }
+
     pub(super) fn retire_for_go_away(
         &self,
         address: &str,
@@ -41,6 +63,28 @@ impl ClientInner {
         let address = Address::parse(address)
             .map(|address| address.0)
             .unwrap_or_else(|_| address.to_owned());
+        let wrapper_lock = self.connection_wrapper_lock(connection.address());
+        let _wrapper_write = match wrapper_lock.try_write() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                // Java reconnects with tryLock, then checks whether the wrapper
+                // changed. A short read of the current channel makes reconnect
+                // fail without retry; a competing reconnect makes the check
+                // observe its replacement and retry through it.
+                let _wrapper_read = wrapper_lock.read().unwrap();
+                let retired = self.retired_connections.lock().unwrap();
+                if retired.contains_key(&generation) || connection.is_retired() {
+                    return true;
+                }
+                return self
+                    .connections
+                    .lock()
+                    .unwrap()
+                    .get(connection.address())
+                    .is_some_and(|current| current.generation != generation);
+            }
+        };
         let mut retired = self.retired_connections.lock().unwrap();
         if retired.contains_key(&generation) || connection.is_retired() {
             // Java keeps the old-channel-to-wrapper mapping. After the
@@ -106,10 +150,8 @@ impl ClientInner {
             return Err(TransportError::Shutdown);
         }
         let key = Address::parse(address)?.0;
-        if let Some(connection) = self.connections.lock().unwrap().get(&key).cloned() {
-            if !connection.is_closed() && !connection.is_retired() {
-                return Ok(connection);
-            }
+        if let Some(connection) = self.current_connection(&key) {
+            return Ok(connection);
         }
         if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
             return Err(TransportError::Timeout);
@@ -137,10 +179,8 @@ impl ClientInner {
         if self.closed.load(std::sync::atomic::Ordering::Acquire) {
             return Err(TransportError::Shutdown);
         }
-        if let Some(connection) = self.connections.lock().unwrap().get(&key).cloned() {
-            if !connection.is_closed() && !connection.is_retired() {
-                return Ok(connection);
-            }
+        if let Some(connection) = self.current_connection(&key) {
+            return Ok(connection);
         }
         let mut shutdown = self.shutdown.subscribe();
         let (host, _) = connection::split_address(&key)?;
@@ -209,15 +249,22 @@ impl ClientInner {
             max_idle_time,
             disable_worker_group,
         );
-        let mut connections = self.connections.lock().unwrap();
-        if self.closed.load(std::sync::atomic::Ordering::Acquire) || !channel.is_open() {
+        let unavailable = {
+            let wrapper_lock = self.connection_wrapper_lock(&key);
+            let _wrapper_write = wrapper_lock.write().unwrap();
+            let mut connections = self.connections.lock().unwrap();
+            if self.closed.load(std::sync::atomic::Ordering::Acquire) || !channel.is_open() {
+                true
+            } else {
+                connections.insert(key.clone(), connection.clone());
+                false
+            }
+        };
+        if unavailable {
             connection.close();
-            drop(connections);
             connection.join().await;
             return Err(TransportError::Shutdown);
         }
-        connections.insert(key.clone(), connection.clone());
-        drop(connections);
         self.notify_channel(super::NettyEventType::Active, channel);
         Ok(connection)
     }
@@ -269,9 +316,77 @@ impl ClientInner {
 #[cfg(test)]
 mod tests {
     use super::{Address, parse_socket_port};
-    use crate::client::connection;
+    use crate::client::{
+        RemotingClient,
+        connection::{self, TransportMode},
+    };
     use std::collections::BTreeMap;
     use std::net::ToSocketAddrs;
+    use std::sync::Arc;
+
+    async fn test_connection(
+        client: &RemotingClient,
+        generation: u64,
+        address: &str,
+    ) -> (Arc<connection::Connection>, tokio::io::DuplexStream) {
+        let (stream, peer) = tokio::io::duplex(1024);
+        let connection = connection::Connection::spawn(
+            Box::new(stream),
+            generation,
+            Arc::downgrade(&client.inner),
+            crate::codec::frame::DEFAULT_MAX_FRAME_SIZE,
+            (0, 0),
+            address.to_owned(),
+            false,
+        );
+        (connection, peer)
+    }
+
+    #[tokio::test]
+    async fn go_away_try_lock_skips_current_channel_and_retries_replaced_channel() {
+        let address = "127.0.0.1:10911";
+        let client = RemotingClient::with_limits(
+            TransportMode::Plain,
+            crate::codec::frame::DEFAULT_MAX_FRAME_SIZE,
+            0,
+        );
+        let (old, _old_peer) = test_connection(&client, 1, address).await;
+        client
+            .inner
+            .connections
+            .lock()
+            .unwrap()
+            .insert(address.to_owned(), old.clone());
+
+        let wrapper_lock = client.inner.connection_wrapper_lock(address);
+        let _reader = wrapper_lock.read().unwrap();
+        assert!(!client.inner.retire_for_go_away(address, old.clone()));
+        assert!(!old.is_retired());
+        drop(_reader);
+
+        let (replacement, _replacement_peer) = test_connection(&client, 2, address).await;
+        client
+            .inner
+            .connections
+            .lock()
+            .unwrap()
+            .insert(address.to_owned(), replacement.clone());
+        assert!(client.inner.retire_for_go_away(address, old.clone()));
+        assert!(old.is_retired());
+        assert!(
+            client
+                .inner
+                .retired_connections
+                .lock()
+                .unwrap()
+                .contains_key(&old.generation)
+        );
+
+        old.close();
+        replacement.close();
+        old.join().await;
+        replacement.join().await;
+    }
 
     #[test]
     fn address_splitting_matches_pinned_java_last_colon_oracle() {
