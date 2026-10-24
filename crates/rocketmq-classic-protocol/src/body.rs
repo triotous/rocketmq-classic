@@ -1772,9 +1772,12 @@ impl MessageQueueAssignment {
     /// Matches Java's public `equals` method, including its null-queue failure.
     pub fn java_equals(
         &self,
-        other: Option<&Self>,
+        other: Option<&dyn std::any::Any>,
     ) -> Result<bool, MessageQueueAssignmentEqualsError> {
         let Some(other) = other else {
+            return Ok(false);
+        };
+        let Some(other) = other.downcast_ref::<Self>() else {
             return Ok(false);
         };
         if std::ptr::eq(self, other) {
@@ -18883,6 +18886,13 @@ mod tests {
             assert_eq!(assignment.java_equals(Some(&assignment)), Ok(true));
 
             if case["name"] == "default" {
+                assert_eq!(case["equalsSelf"], true);
+                assert_eq!(case["equalsNull"], false);
+                assert_eq!(case["equalsDistinctNullQueue"], "NullPointerException");
+                assert_eq!(
+                    assignment.java_equals(Some(&"not-an-assignment" as &dyn std::any::Any)),
+                    Ok(case["equalsWrongType"].as_bool().unwrap())
+                );
                 assert_eq!(
                     assignment.java_equals(Some(&MessageQueueAssignment::default())),
                     Err(MessageQueueAssignmentEqualsError::NullMessageQueue)
