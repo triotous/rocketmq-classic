@@ -9806,3 +9806,25 @@ owner-specific checks belong in the manual handoff.
   Ubuntu CI remain unverified; Phase 19 Broker/Docker evidence remains
   separate. No push or remote CI was run. Run record:
   `rlogs/2026/10/24-phase-18-go-away-explicit-close-parity__20261024T093914Z.rlog`.
+
+## P18-V02 current-tree server-free gate after GO_AWAY close parity — 2026-10-24 (`dbbed745`)
+
+- [x] Default and all-feature locked workspace tests/doctests passed. Strict
+  all-target/all-feature workspace Clippy, `cargo fmt --all -- --check`,
+  `git diff --check`, differential comparator self-test and 37-scenario
+  manifest validation passed. Pinned offline Maven `verify` passed with 37
+  scenarios, 11 message fixtures, 106 typed headers, 19 typed bodies and Java
+  cross-decodes.
+- [x] Deterministic race/leak smoke passed 20 cases × 3; bounded fuzz smoke
+  passed 163 frame seeds, 11 message seeds, 2,784 mutations, 564 frame decodes
+  and 192 message decodes. Release facade examples built. Windows GNU
+  all-target/all-feature workspace check and strict Clippy passed as
+  compile-only evidence. Workspace metadata and dependency-direction checks
+  passed. The offline benchmark sample is recorded in
+  `compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+- [ ] Broad P18-V01 API/settings/input/error/control-flow and reverse-export
+  reconciliation remains PARTIAL. Native Windows runtime and current-revision
+  remote Ubuntu CI remain unverified; Phase 19 Broker/Docker evidence remains
+  separate. No push or remote CI was run. The four protected Phase 19 worktree
+  paths remain untouched and unstaged. Run record:
+  `rlogs/2026/10/24-phase-18-go-away-explicit-close-parity__20261024T093914Z.rlog`.
