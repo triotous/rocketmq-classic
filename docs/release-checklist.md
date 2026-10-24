@@ -32,6 +32,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   disposition. This closes the declared-comparator scan only; broad P18-V01
   remains PARTIAL.
 
+- [x] P18-V01 assignment DTO mode accessor assertion (`88061e7a`, 2026-10-24):
+  corrected `assignment_methods_match_invoked_java_public_api`, whose previous
+  `mode()` self-comparison did not verify the Java setter/getter value. The
+  focused Protocol test, strict Protocol Clippy, formatting, and diff checks
+  pass. Java's process-local `MessageQueueAssignment` hash collision behavior
+  remains an explicit unresolved runtime-set gap; broad P18-V01 remains
+  PARTIAL.
+
 - [x] P18-V01 `LatencyFaultToleranceImpl.FaultItem` scope disposition
   (2026-10-24): Java exposes a public nested helper, but instances stay in the
   enclosing implementation's private table, public fault-tolerance methods do

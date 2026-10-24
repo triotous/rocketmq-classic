@@ -473,3 +473,14 @@ Detailed run records for the focused code and current-tree gate runs are in
   raw strategy-owner disposition. This closes the declared-comparator scan for
   these modules only; inherited enum comparison and the broad P18-V01 audit
   remain separate.
+
+## P18-V01 assignment mode accessor assertion — 2026-10-24
+
+- Code commit `88061e7a` fixes a self-comparison in
+  `assignment_methods_match_invoked_java_public_api`; the test now compares the
+  getter result with the mode value supplied by the invoked Java fixture.
+- PASS: focused Protocol unit test, strict Protocol all-target/all-feature
+  Clippy, `cargo fmt --all -- --check`, and `git diff --check`.
+- The Java `MessageQueueAssignment` process-local hash collision case remains
+  unresolved; broad P18-V01 stays PARTIAL. Phase 19-owned worktree paths were
+  not staged or modified by this change.
