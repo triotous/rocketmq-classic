@@ -5050,3 +5050,37 @@ negative-rewind slice only; zero/cycle safe guards and broad P18-V01 remain
 documented/open. Native Windows runtime and current-revision remote Ubuntu CI
 remain unverified; Phase 19 Broker/Docker evidence remains separate. Execution
 record: `../../rlogs/2026/10/24-phase-18-count-inner-negative-rewind__20261024T085047Z.rlog`.
+
+## P18-V01 `countInnerMsgNum` zero-size and cyclic input flow — 2026-10-24 (`0cfb20ad`)
+
+The remaining malformed-count disposition now follows pinned Java 5.5.1 exactly:
+zero-size input restores the same cursor position and loops, while a finite
+in-range negative cycle repeats the same cursor path. Rust no longer returns a
+guard error for either path. The Java fixture observes each call in a daemon
+thread; the Rust test invokes each call in a child process, confirms it remains
+active after the bounded interval, then terminates the child. Ordinary finite
+rewinds and out-of-range negative positions retain the previously verified
+cursor/error behavior.
+
+Code commit: `0cfb20ad`. `fixtures/messages/records.json` SHA-256:
+`bd128623b1e311bcc095f73802325403d79487e2559442fcdeb8aae62f41a133`;
+Java fixture source SHA-256:
+`f8e30456418e5462ac03e9b42311f527667a745931bbbc4d5a1c17b657ee5ca0`.
+Focused message tests (28), default and all-feature locked workspace
+tests/doctests, strict all-target/all-feature workspace Clippy, release facade
+examples, Windows GNU all-target/all-feature check and strict Clippy
+(compile-only), deterministic race/leak smoke (20 cases × 3), bounded fuzz
+smoke (163 frame seeds, 11 message seeds, 2,784 mutations, 564 frame decodes,
+192 message decodes), offline Maven `verify` (37 scenarios, 11 message
+fixtures, 106 typed headers, 19 typed bodies), comparator/manifest, formatting,
+and diff checks passed. The full default workspace rerun used
+`CARGO_TARGET_DIR=/tmp/rocketmq-phase18-target` after the repository-target
+`fuzz_regressions` launcher was slow to start; the independent-target run
+passed. The offline benchmark is recorded in
+`PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+
+This closes the recorded `countInnerMsgNum` cursor discrepancy. Broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains PARTIAL. Native Windows runtime and current-revision remote Ubuntu CI
+remain unverified; Phase 19 Broker/Docker evidence remains separate. Run
+record: `../../rlogs/2026/10/24-phase-18-malformed-inner-count-parity__20261024T093158Z.rlog`.

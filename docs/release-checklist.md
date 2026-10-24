@@ -9766,3 +9766,22 @@ owner-specific checks belong in the manual handoff.
   remote Ubuntu CI remain unverified; Phase 19 Broker/Docker evidence remains
   separate. No push or remote CI was run. Run record:
   `rlogs/2026/10/24-phase-18-current-tree-supplemental-gates__20261024T090226Z.rlog`.
+
+## P18-V01 zero-size and cyclic inner-count flow parity — 2026-10-24 (`0cfb20ad`)
+
+- [x] Rust now follows Java `countInnerMsgNum` for zero-size and finite
+  in-range negative-cycle inputs, which continue looping. The pinned Java
+  fixture observes daemon-thread liveness; the Rust regression probes each
+  behavior in a child process and terminates it after the observation window.
+  Finite rewind and out-of-range failure cases remain covered by the message
+  fixture. Fixture hashes and implementation details are in the Phase 6 audit.
+- [x] Focused message tests, full default/all-feature workspace tests and
+  doctests, strict workspace Clippy, release examples, Windows GNU compile-only
+  checks/Clippy, 20 × 3 stress smoke, fixed-seed fuzz smoke, Maven `verify`,
+  comparator/manifest, formatting/diff checks and the offline benchmark passed.
+- [ ] This closes the recorded message-count cursor discrepancy only. Broad
+  P18-V01 remains PARTIAL; native Windows runtime and current-revision remote
+  Ubuntu CI remain unverified. Phase 19 Broker/Docker validation remains
+  separate. No push or remote CI was run, and the protected Phase 19 worktree
+  paths remain untouched. Run record:
+  `rlogs/2026/10/24-phase-18-malformed-inner-count-parity__20261024T093158Z.rlog`.
