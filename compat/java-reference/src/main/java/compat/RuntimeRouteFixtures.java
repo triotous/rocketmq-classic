@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.message.MessageQueue;
+import org.apache.rocketmq.common.message.MessageQueueForC;
 import org.apache.rocketmq.remoting.protocol.route.TopicRouteData;
 
 /** Actual Java route converters/VIP transform; no client or server is started. */
@@ -392,6 +393,8 @@ public final class RuntimeRouteFixtures {
         Map<String, Object> cases = new TreeMap<>();
         cases.put("messageQueue", compareToNullOutcome(
             () -> new MessageQueue("topic", "broker", 0).compareTo(null)));
+        cases.put("messageQueueForC", compareToNullOutcome(
+            () -> new MessageQueueForC("topic", "broker", 0, 0).compareTo(null)));
         cases.put("queueData", compareToNullOutcome(
             () -> queueData("broker", 1, 1, 1, 1).compareTo(null)));
         cases.put("brokerData", compareToNullOutcome(
@@ -446,6 +449,68 @@ public final class RuntimeRouteFixtures {
         result.put("brokerName", queue.getBrokerName());
         result.put("queueId", queue.getQueueId());
         return result;
+    }
+
+    private static Map<String, Object> messageQueueForCApiCases() {
+        MessageQueueForC queue = new MessageQueueForC("topic", "broker", -7, 42);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("values", messageQueueForCRow(queue));
+        result.put("hashCode", queue.hashCode());
+        result.put("toString", queue.toString());
+        result.put("equalsSelf", queue.equals(queue));
+        result.put("equalsCopy", queue.equals(new MessageQueueForC("topic", "broker", -7, 42)));
+        result.put("equalsNull", queue.equals(null));
+        result.put("equalsWrongType", queue.equals("not a MessageQueueForC"));
+        result.put("equalsOffsetChanged", queue.equals(new MessageQueueForC("topic", "broker", -7, 43)));
+        result.put("hashIgnoresOffset", queue.hashCode() == new MessageQueueForC("topic", "broker", -7, 43).hashCode());
+
+        MessageQueueForC mutated = new MessageQueueForC("old-topic", "old-broker", 0, 0);
+        mutated.setTopic("new-topic");
+        mutated.setBrokerName(null);
+        mutated.setQueueId(Integer.MIN_VALUE);
+        mutated.setOffset(Long.MIN_VALUE);
+        result.put("setterValues", messageQueueForCRow(mutated));
+        return result;
+    }
+
+    private static Map<String, Object> messageQueueForCRow(MessageQueueForC queue) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("topic", queue.getTopic());
+        result.put("brokerName", queue.getBrokerName());
+        result.put("queueId", queue.getQueueId());
+        result.put("offset", queue.getOffset());
+        return result;
+    }
+
+    private static List<Object> messageQueueForCCompareToCases() {
+        MessageQueueForC[][] pairs = new MessageQueueForC[][] {
+            {new MessageQueueForC("a", "b", 0, 0), new MessageQueueForC("c", "b", 0, 0)},
+            {new MessageQueueForC("abc", "b", 0, 0), new MessageQueueForC("a", "b", 0, 0)},
+            {new MessageQueueForC("\uD800\uDC00", "b", 0, 0), new MessageQueueForC("\uE000", "b", 0, 0)},
+            {new MessageQueueForC("t", "b", Integer.MAX_VALUE, 0), new MessageQueueForC("t", "b", Integer.MIN_VALUE, 0)},
+            {new MessageQueueForC("t", "b", 0, Long.MIN_VALUE), new MessageQueueForC("t", "b", 0, Long.MAX_VALUE)},
+            {new MessageQueueForC("t", "b", 0, 5), new MessageQueueForC("t", "b", 0, 3)},
+            {new MessageQueueForC(null, "b", 0, 0), new MessageQueueForC("t", "b", 0, 0)},
+            {new MessageQueueForC("t", "b", 0, 0), new MessageQueueForC(null, "b", 0, 0)},
+            {new MessageQueueForC("t", null, 0, 0), new MessageQueueForC("t", "b", 0, 0)},
+            {new MessageQueueForC("t", "b", 0, 0), new MessageQueueForC("t", null, 0, 0)},
+            {new MessageQueueForC("t", "b", 0, 5), new MessageQueueForC("t", "b", 0, 5)},
+            {new MessageQueueForC("t", "b", 0, 3), new MessageQueueForC("t", "b", 0, 5)}
+        };
+        List<Object> cases = new ArrayList<>();
+        for (MessageQueueForC[] pair : pairs) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("left", messageQueueForCRow(pair[0]));
+            item.put("right", messageQueueForCRow(pair[1]));
+            try {
+                item.put("result", pair[0].compareTo(pair[1]));
+                item.put("outcome", "OK");
+            } catch (Throwable error) {
+                item.put("outcome", error.getClass().getSimpleName());
+            }
+            cases.add(item);
+        }
+        return cases;
     }
 
     private static List<Object> nullableStaticMappingFields() {
@@ -4463,6 +4528,8 @@ public final class RuntimeRouteFixtures {
         fixture.put("messageQueueCompareTo", messageQueueCompareToCases());
         fixture.put("compareToNullOther", compareToNullOtherCases());
         fixture.put("messageQueueMethods", messageQueueMethodCases());
+        fixture.put("messageQueueForCApi", messageQueueForCApiCases());
+        fixture.put("messageQueueForCCompareTo", messageQueueForCCompareToCases());
         fixture.put("nullableStaticMappingFields", nullableStaticMappingFields());
         fixture.put("staticMappingMapEntryCases", staticMappingMapEntryCases());
         fixture.put("routeDtoInputCases", routeDtoInputCases());

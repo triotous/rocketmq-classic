@@ -3746,6 +3746,150 @@ impl std::fmt::Display for MessageQueue {
     }
 }
 
+/// Java 5.5.1 `MessageQueueForC` value used by the C-client offset response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageQueueForC {
+    topic: Option<String>,
+    broker_name: Option<String>,
+    queue_id: i32,
+    offset: i64,
+}
+
+/// Java `MessageQueueForC.compareTo` null failure branches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum MessageQueueForCCompareError {
+    #[error("Java NullPointerException: null MessageQueueForC compareTo argument")]
+    NullOther,
+    #[error("MessageQueueForC topic is null")]
+    NullTopic,
+    #[error("MessageQueueForC broker name is null")]
+    NullBrokerName,
+}
+
+impl MessageQueueForC {
+    /// Maps Java's `(topic, brokerName, queueId, offset)` constructor.
+    pub fn new(
+        topic: Option<String>,
+        broker_name: Option<String>,
+        queue_id: i32,
+        offset: i64,
+    ) -> Self {
+        Self {
+            topic,
+            broker_name,
+            queue_id,
+            offset,
+        }
+    }
+
+    pub fn topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub const fn queue_id(&self) -> i32 {
+        self.queue_id
+    }
+
+    pub const fn offset(&self) -> i64 {
+        self.offset
+    }
+
+    pub fn set_topic(&mut self, topic: Option<String>) {
+        self.topic = topic;
+    }
+
+    pub fn set_broker_name(&mut self, broker_name: Option<String>) {
+        self.broker_name = broker_name;
+    }
+
+    pub fn set_queue_id(&mut self, queue_id: i32) {
+        self.queue_id = queue_id;
+    }
+
+    pub fn set_offset(&mut self, offset: i64) {
+        self.offset = offset;
+    }
+
+    /// Returns Java's `hashCode`; the source method intentionally omits offset.
+    pub fn java_hash_code(&self) -> i32 {
+        let mut result = 1i32;
+        result = 31i32
+            .wrapping_mul(result)
+            .wrapping_add(java_optional_string_hash(&self.broker_name));
+        result = 31i32.wrapping_mul(result).wrapping_add(self.queue_id);
+        31i32
+            .wrapping_mul(result)
+            .wrapping_add(java_optional_string_hash(&self.topic))
+    }
+
+    /// Returns the pinned Java 5.5.1 `compareTo` result, including subtraction wrap.
+    pub fn java_compare_to(&self, other: &Self) -> Result<i32, MessageQueueForCCompareError> {
+        let topic = self
+            .topic
+            .as_deref()
+            .ok_or(MessageQueueForCCompareError::NullTopic)?;
+        let other_topic = other
+            .topic
+            .as_deref()
+            .ok_or(MessageQueueForCCompareError::NullTopic)?;
+        let result = java_string_compare_to(topic, other_topic);
+        if result != 0 {
+            return Ok(result);
+        }
+
+        let broker = self
+            .broker_name
+            .as_deref()
+            .ok_or(MessageQueueForCCompareError::NullBrokerName)?;
+        let other_broker = other
+            .broker_name
+            .as_deref()
+            .ok_or(MessageQueueForCCompareError::NullBrokerName)?;
+        let result = java_string_compare_to(broker, other_broker);
+        if result != 0 {
+            return Ok(result);
+        }
+
+        let result = self.queue_id.wrapping_sub(other.queue_id);
+        if result != 0 {
+            return Ok(result);
+        }
+        let offset_difference = self.offset.wrapping_sub(other.offset);
+        Ok(match offset_difference.cmp(&0) {
+            Ordering::Less => -1,
+            Ordering::Equal => 0,
+            Ordering::Greater => 1,
+        })
+    }
+
+    /// Maps Java's `NullPointerException` when `compareTo` receives null.
+    pub fn java_compare_to_nullable(
+        &self,
+        other: Option<&Self>,
+    ) -> Result<i32, MessageQueueForCCompareError> {
+        other
+            .map(|other| self.java_compare_to(other))
+            .unwrap_or(Err(MessageQueueForCCompareError::NullOther))
+    }
+}
+
+impl std::fmt::Display for MessageQueueForC {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "MessageQueueForC [topic={}, brokerName={}, queueId={}, offset={}]",
+            self.topic.as_deref().unwrap_or("null"),
+            self.broker_name.as_deref().unwrap_or("null"),
+            self.queue_id,
+            self.offset
+        )
+    }
+}
+
 impl Ord for MessageQueue {
     fn cmp(&self, other: &Self) -> Ordering {
         java_optional_string_cmp(&self.topic, &other.topic)
@@ -3859,6 +4003,70 @@ mod tests {
                     "{}",
                     case["name"]
                 );
+            }
+        }
+    }
+
+    fn message_queue_for_c_from_row(row: &serde_json::Value) -> MessageQueueForC {
+        MessageQueueForC::new(
+            row["topic"].as_str().map(str::to_owned),
+            row["brokerName"].as_str().map(str::to_owned),
+            row["queueId"].as_i64().unwrap() as i32,
+            row["offset"].as_i64().unwrap(),
+        )
+    }
+
+    #[test]
+    fn message_queue_for_c_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let java = &fixture["messageQueueForCApi"];
+        let queue = message_queue_for_c_from_row(&java["values"]);
+
+        assert_eq!(queue.topic(), Some("topic"));
+        assert_eq!(queue.broker_name(), Some("broker"));
+        assert_eq!(queue.queue_id(), -7);
+        assert_eq!(queue.offset(), 42);
+        assert_eq!(
+            queue.java_hash_code(),
+            java["hashCode"].as_i64().unwrap() as i32
+        );
+        assert_eq!(queue.to_string(), java["toString"].as_str().unwrap());
+        assert_eq!(queue == queue.clone(), java["equalsCopy"]);
+        assert!(
+            queue != MessageQueueForC::new(Some("topic".into()), Some("broker".into()), -7, 43)
+        );
+        assert_eq!(java["equalsSelf"], true);
+        assert_eq!(java["equalsNull"], false);
+        assert_eq!(java["equalsWrongType"], false);
+        assert_eq!(java["equalsOffsetChanged"], false);
+        assert_eq!(java["hashIgnoresOffset"], true);
+        assert_eq!(
+            queue.java_compare_to_nullable(None),
+            Err(MessageQueueForCCompareError::NullOther)
+        );
+
+        let mut updated =
+            MessageQueueForC::new(Some("old-topic".into()), Some("old-broker".into()), 0, 0);
+        updated.set_topic(Some("new-topic".into()));
+        updated.set_broker_name(None);
+        updated.set_queue_id(i32::MIN);
+        updated.set_offset(i64::MIN);
+        assert_eq!(updated.topic(), java["setterValues"]["topic"].as_str());
+        assert_eq!(updated.broker_name(), None);
+        assert_eq!(updated.queue_id(), i32::MIN);
+        assert_eq!(updated.offset(), i64::MIN);
+
+        for case in fixture["messageQueueForCCompareTo"].as_array().unwrap() {
+            let left = message_queue_for_c_from_row(&case["left"]);
+            let right = message_queue_for_c_from_row(&case["right"]);
+            match case["outcome"].as_str().unwrap() {
+                "OK" => assert_eq!(
+                    left.java_compare_to(&right).unwrap(),
+                    case["result"].as_i64().unwrap() as i32
+                ),
+                "NullPointerException" => assert!(left.java_compare_to(&right).is_err()),
+                outcome => panic!("unexpected Java compareTo outcome: {outcome}"),
             }
         }
     }
