@@ -1,7 +1,8 @@
 use base64::Engine;
 use rocketmq_classic_common::message::{
     MessageClientExt, MessageExt, MessageExtSubtype, MessageHostAddress,
-    MessageHostAddressBytesError, MessageQueue, NullableMessageProperties, SharedMessageProperties,
+    MessageHostAddressBytesError, MessageQueue, NullableMessageProperties, SharedMessageBody,
+    SharedMessageProperties,
 };
 use rocketmq_classic_consumer::{
     ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
@@ -237,6 +238,27 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
                     == Some("visible".into())
             );
         }
+        let subtype_body = subtype.custom_body.lock().unwrap().clone();
+        if let (Some(body), Some(subtype_body)) = (message.shared_body(), subtype_body) {
+            let caller_body = subtype.caller_body.lock().unwrap().clone();
+            record["bodySetterRetainsCallerArray"] =
+                json!(caller_body.is_some_and(|caller| body.ptr_eq(&caller)));
+            record["bodySetterMutationVisibleToGetter"] = json!(message.body().first() == Some(&2));
+            record["bodySharesSubtypeArray"] = json!(body.ptr_eq(&subtype_body));
+            body.with_bytes_mut(|bytes| {
+                if let Some(first) = bytes.first_mut() {
+                    *first = 9;
+                }
+            });
+            record["bodyMutationVisibleToSubtype"] =
+                json!(subtype_body.snapshot().first() == Some(&9));
+            subtype_body.with_bytes_mut(|bytes| {
+                if let Some(first) = bytes.first_mut() {
+                    *first = 10;
+                }
+            });
+            record["subtypeMutationVisibleToGetter"] = json!(message.body().first() == Some(&10));
+        }
         record["bornTimestamp"] = json!(message.born_timestamp());
         record["storeTimestamp"] = json!(message.store_timestamp());
         record["sysFlag"] = json!(message.sys_flag());
@@ -307,7 +329,8 @@ struct CustomDirectMessageExt {
     custom_priority: std::sync::atomic::AtomicI32,
     custom_born_host: MessageHostAddress,
     custom_store_host: MessageHostAddress,
-    custom_body: Mutex<Option<Vec<u8>>>,
+    custom_body: Mutex<Option<SharedMessageBody>>,
+    caller_body: Mutex<Option<SharedMessageBody>>,
     custom_properties: SharedMessageProperties,
 }
 
@@ -340,6 +363,7 @@ impl CustomDirectMessageExt {
             custom_born_host: MessageHostAddress::new("127.0.0.1", 10913),
             custom_store_host: MessageHostAddress::new("127.0.0.1", 10913),
             custom_body: Mutex::new(None),
+            caller_body: Mutex::new(None),
             custom_properties: SharedMessageProperties::from_nullable_properties(
                 NullableMessageProperties::from([(
                     Some("subtype-only".to_owned()),
@@ -659,12 +683,29 @@ impl MessageExtSubtype for CustomDirectMessageExt {
     }
 
     fn body(&self) -> Option<Option<Vec<u8>>> {
+        Some(
+            self.custom_body
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(SharedMessageBody::snapshot),
+        )
+    }
+
+    fn shared_body(&self) -> Option<Option<SharedMessageBody>> {
         Some(self.custom_body.lock().unwrap().clone())
     }
 
     fn set_body(&self, body: Option<Vec<u8>>) -> bool {
         self.body_writes.fetch_add(1, Ordering::SeqCst);
-        *self.custom_body.lock().unwrap() = body;
+        *self.custom_body.lock().unwrap() = body.map(SharedMessageBody::new);
+        true
+    }
+
+    fn set_shared_body(&self, body: Option<SharedMessageBody>) -> bool {
+        self.body_writes.fetch_add(1, Ordering::SeqCst);
+        *self.custom_body.lock().unwrap() = body.clone();
+        *self.caller_body.lock().unwrap() = body;
         true
     }
 
@@ -862,7 +903,9 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
             message.set_runtime_subtype(Arc::new(CustomDirectMessageExt::new()));
             message.set_topic_nullable(case["inputTopic"].as_str().map(str::to_owned));
             message.set_queue_id(3);
-            message.set_body(vec![1]);
+            let caller_body = SharedMessageBody::new([1]);
+            message.set_body_shared(Some(caller_body.clone()));
+            caller_body.with_bytes_mut(|bytes| bytes[0] = 2);
             message.set_message_id(physical);
             message
                 .set_system_property("RETRY_TOPIC", "subtype-retry-target")

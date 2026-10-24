@@ -492,7 +492,12 @@ public final class RuntimeConsumerOperationsFixtures {
         String topic = name.endsWith("null-topic") ? null : name.endsWith("empty-topic") ? "" : "tenant%orders";
         String physicalId = clientMessage || name.contains("-plain-") ? "physical-id" : null;
         String uniqueId = name.endsWith("-unique") && !name.endsWith("-no-unique") ? "client-unique" : null;
-        message.setTopic(topic); message.setQueueId(3); message.setBody(new byte[] {1});
+        byte[] callerBody = new byte[] {1};
+        message.setTopic(topic); message.setQueueId(3); message.setBody(callerBody);
+        if (customSubtype) {
+            ((CustomDirectMessageExt) message).callerBody = callerBody;
+            callerBody[0] = 2;
+        }
         if (customSubtype) message.setFlag(5);
         if (customSubtype) message.setStoreHost(new java.net.InetSocketAddress("127.0.0.1", 10911));
         if (customSubtype) {
@@ -566,6 +571,18 @@ public final class RuntimeConsumerOperationsFixtures {
                             "visible".equals(properties.get("through-subtype")));
                         item.put("mutationVisibleToLaterGetter",
                             "visible".equals(messages.get(0).getProperties().get("through-view")));
+                    }
+                    byte[] body = messages.get(0).getBody();
+                    item.put("bodySetterRetainsCallerArray",
+                        body == custom.callerBody && body == custom.customBody);
+                    item.put("bodySetterMutationVisibleToGetter",
+                        body != null && body.length > 0 && body[0] == 2);
+                    item.put("bodySharesSubtypeArray", body == custom.customBody);
+                    if (body != null && body.length > 0 && custom.customBody != null) {
+                        body[0] = 9;
+                        item.put("bodyMutationVisibleToSubtype", custom.customBody[0] == 9);
+                        custom.customBody[0] = 10;
+                        item.put("subtypeMutationVisibleToGetter", messages.get(0).getBody()[0] == 10);
                     }
                     item.put("bornTimestamp", messages.get(0).getBornTimestamp());
                     item.put("storeTimestamp", messages.get(0).getStoreTimestamp());
@@ -689,6 +706,7 @@ public final class RuntimeConsumerOperationsFixtures {
         private int customPriority = 37;
         private final Map<String, String> customProperties = new HashMap<>(Map.of("subtype-only", "visible"));
         private byte[] customBody;
+        private byte[] callerBody;
 
         @Override
         public String getTopic() {

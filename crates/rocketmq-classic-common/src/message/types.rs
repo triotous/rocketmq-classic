@@ -2289,6 +2289,11 @@ impl MessageExt {
         &self,
     ) -> impl Deref<Target = [u8]> + AsRef<[u8]> + std::fmt::Debug + PartialEq + '_ {
         if let Some(subtype) = self.runtime_subtype.as_ref() {
+            if let Some(body) = subtype.shared_body() {
+                return MessageExtBodyReadView(MessageExtBodyReadSource::Runtime(
+                    body.map(|body| body.snapshot()).unwrap_or_default(),
+                ));
+            }
             if let Some(body) = subtype.body() {
                 return MessageExtBodyReadView(MessageExtBodyReadSource::Runtime(
                     body.unwrap_or_default(),
@@ -2303,11 +2308,31 @@ impl MessageExt {
         MessageExtBodyReadView(MessageExtBodyReadSource::Stored(MessageBodyReadView(body)))
     }
 
+    /// Returns the live body handle exposed by Java's virtual `getBody()`.
+    /// A caller-defined subtype can provide its own shared byte array; a
+    /// snapshot-only subtype getter has no shared handle and returns `None`.
+    pub fn shared_body(&self) -> Option<SharedMessageBody> {
+        if let Some(subtype) = self.runtime_subtype.as_ref() {
+            if let Some(body) = subtype.shared_body() {
+                return body;
+            }
+            if subtype.body().is_some() {
+                return None;
+            }
+        }
+        self.message.shared_body()
+    }
+
     /// Nullable Java `Message.getBody()` view, including subtype overrides.
     pub fn body_nullable(
         &self,
     ) -> Option<impl Deref<Target = [u8]> + AsRef<[u8]> + std::fmt::Debug + PartialEq + '_> {
         if let Some(subtype) = self.runtime_subtype.as_ref() {
+            if let Some(body) = subtype.shared_body() {
+                return body.map(|body| {
+                    MessageExtBodyReadView(MessageExtBodyReadSource::Runtime(body.snapshot()))
+                });
+            }
             if let Some(body) = subtype.body() {
                 return body
                     .map(|body| MessageExtBodyReadView(MessageExtBodyReadSource::Runtime(body)));
@@ -2332,6 +2357,22 @@ impl MessageExt {
     /// Java's virtual `Message.setBody(byte[])` view.
     pub fn set_body(&mut self, body: impl Into<Vec<u8>>) {
         self.set_body_nullable(Some(body.into()));
+    }
+
+    /// Sets the virtual Java body while retaining the caller's shared byte
+    /// array. A subtype that handles `setBody` and needs caller aliasing should
+    /// override `MessageExtSubtype::set_shared_body`; otherwise its ordinary
+    /// `set_body` hook receives a byte snapshot.
+    pub fn set_body_shared(&mut self, body: Option<SharedMessageBody>) {
+        if let Some(subtype) = self.runtime_subtype.as_ref() {
+            if subtype.set_shared_body(body.clone()) {
+                return;
+            }
+            if subtype.set_body(body.as_ref().map(SharedMessageBody::snapshot)) {
+                return;
+            }
+        }
+        self.message.set_body_shared(body);
     }
 
     /// Java's nullable virtual `Message.setBody(byte[])` view.
@@ -3111,8 +3152,21 @@ pub trait MessageExtSubtype: Any + Send + Sync {
         None
     }
 
+    /// Override Java's virtual `Message.getBody()` with its live mutable byte
+    /// array. The owned handle preserves array identity across getter calls.
+    /// This hook takes precedence over the snapshot-only `body` hook.
+    fn shared_body(&self) -> Option<Option<SharedMessageBody>> {
+        None
+    }
+
     /// Handle Java's virtual `Message.setBody(byte[])`.
     fn set_body(&self, _body: Option<Vec<u8>>) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `Message.setBody(byte[])` while retaining the
+    /// caller's live byte-array identity.
+    fn set_shared_body(&self, _body: Option<SharedMessageBody>) -> bool {
         false
     }
 
