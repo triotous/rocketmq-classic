@@ -2221,8 +2221,11 @@ Pinned Java 5.5.1 `MQClientAPIImpl.getUser` sends request 3004 with a
 results, and leaves the supplied Broker address unchanged when VIP channels
 are enabled. Invoked Java fixtures and Rust loopback tests compare request
 headers, populated/default/null responses, success and Broker errors, timeout,
-typed-header cross-decode, and unchanged-address behavior. The auth reverse
-audit now has five open APIs; broader P18-V01 reconciliation remains open.
+typed-header cross-decode, and unchanged-address behavior. The nullable reply
+path now calls `UserInfo::java_decode_nullable`, matching the pinned Fastjson
+decoder. Two invoked cases verify trailing text and a second JSON document
+after raw U+001A; the existing absent-body and JSON-null cases still return
+`None`. Broader P18-V01 reconciliation remains open.
 
 ## P18-V01 direct `getAcl` Broker API — 2026-10-22
 

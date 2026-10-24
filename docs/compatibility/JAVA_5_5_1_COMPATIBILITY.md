@@ -973,3 +973,13 @@ The focused controller API suite, full locked Protocol and Core package suites
 with doctests, strict all-target/all-feature workspace Clippy, formatting,
 diff checks, and pinned offline Maven `verify` pass. This closes the tested
 typed response decoder paths only; broad P18-V01 remains open.
+
+Phase 18 `getUser` reply Fastjson decoding (2026-10-24, `41854b80`): Core now
+uses `UserInfo::java_decode_nullable` for the response body, matching the
+invoked Java API while preserving absent-body and JSON-null results. The
+`getUser` oracle adds two suffix cases: trailing text and a second JSON
+document after raw U+001A. Both return the same populated `UserInfo` as Java;
+the focused Core API differential passes all ten cases. Producer core fixture
+SHA-256: `ac4d435472279c6cdfefadf2811422359bc927223733c3521484c1c533d31f36`.
+This closes the tested `getUser` response decoder slice only; broad P18-V01
+remains open.

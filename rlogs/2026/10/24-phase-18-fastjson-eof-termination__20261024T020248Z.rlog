@@ -163,3 +163,31 @@ followed by trailing text.
   Native Windows runtime and current-revision remote Ubuntu CI remain
   unverified. Phase 19 Broker/Docker validation is separate. No push or remote
   CI was run; the four protected Phase 19 paths remain unchanged and unstaged.
+
+## Phase 18 getUser response Fastjson decoder continuation
+
+- Recorded: 2026-10-24 06:55 UTC
+- Code revision: `41854b80`
+- Fixture: `fixtures/producer/core.json`, SHA-256
+  `ac4d435472279c6cdfefadf2811422359bc927223733c3521484c1c533d31f36`
+
+The Core API audit found `getUser` still decoded its nullable `UserInfo` body
+through generic Serde. It now calls `UserInfo::java_decode_nullable`, matching
+the Java Fastjson path while preserving absent-body and JSON-null results. The
+invoked `getUser` oracle adds trailing-text and second-document cases after
+raw U+001A; Java returns the same populated DTO for both.
+
+## Verification
+
+- `cargo test --offline --locked -p rocketmq-classic-core --test admin_rpc get_user_matches_java_requests_responses_and_outcomes` passed all ten cases.
+- `cargo clippy --offline --locked --workspace --all-targets --all-features -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+- `mvn -o -f compat/java-reference/pom.xml verify` passed: 37 scenarios,
+  producer-core fixture drift, 11 message fixtures, 106 typed headers, and 19
+  typed bodies.
+- Full Core package tests and the all-features workspace test gate were not
+  rerun on this revision. The earlier all-features attempt stalled during
+  macOS `dyld` launch of Remoting `codec`. Native Windows runtime and
+  current-revision remote Ubuntu CI remain unverified. Phase 19 Broker/Docker
+  validation is separate; no push or remote CI was run. The four protected
+  Phase 19 paths remain unchanged and unstaged.

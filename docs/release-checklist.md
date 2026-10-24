@@ -9607,3 +9607,21 @@ owner-specific checks belong in the manual handoff.
   run. The four protected Phase 19 worktree paths remain unchanged and
   unstaged. Run record:
   `rlogs/2026/10/24-phase-18-fastjson-eof-termination__20261024T020248Z.rlog`.
+
+## P18-V01 `getUser` reply Fastjson decoder — 2026-10-24 (`41854b80`)
+
+- [x] Core `get_user` now uses the nullable Java Fastjson decoder on the reply
+  body. The invoked Java fixture adds trailing-text and second-document cases
+  after raw U+001A; both decode to the same `UserInfo`. The fixture preserves
+  absent-body and JSON-null behavior. Producer core fixture SHA-256:
+  `ac4d435472279c6cdfefadf2811422359bc927223733c3521484c1c533d31f36`.
+- [x] Focused Core `get_user` differential passed all ten cases. Strict
+  all-target/all-feature workspace Clippy, formatting, diff checks, and pinned
+  offline Maven `verify` passed. Maven verified 37 scenarios, fixture drift,
+  11 message fixtures, 106 typed headers, and 19 typed bodies.
+- [ ] Full Core package tests and the all-features workspace test gate were not
+  rerun on this revision. Broad P18-V01 remains PARTIAL. Native Windows runtime
+  and current-revision remote Ubuntu CI remain unverified. No push or remote
+  CI was run; the four protected Phase 19 worktree paths remain unchanged and
+  unstaged. Run record:
+  `rlogs/2026/10/24-phase-18-fastjson-eof-termination__20261024T020248Z.rlog`.

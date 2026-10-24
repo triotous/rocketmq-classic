@@ -4928,3 +4928,15 @@ Focused remoting comparison and pinned offline fixture generation pass. This
 closes the previously vague hook/pipeline/processor response-category and
 control-flow concern only; the broad P18-V01 bidirectional audit remains
 `PARTIAL`.
+
+## Phase 18 `getUser` reply Fastjson decoding — 2026-10-24 (`41854b80`)
+
+The remaining production `serde_json::from_slice` response path in Core's API
+module was `MQClientAPIImpl.getUser`. Core now dispatches its nullable body to
+`UserInfo::java_decode_nullable`, matching the Java Fastjson decoder while
+preserving absent-body and JSON-null results. The invoked Java API matrix adds
+two suffix cases (trailing text and a second JSON document after raw U+001A),
+and the focused Core differential passes all ten cases. Producer core fixture
+SHA-256 is
+`ac4d435472279c6cdfefadf2811422359bc927223733c3521484c1c533d31f36`. This
+closes this response-input slice only; broad P18-V01 remains `PARTIAL`.
