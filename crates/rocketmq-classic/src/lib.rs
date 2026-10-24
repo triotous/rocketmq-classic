@@ -41,14 +41,15 @@ pub use rocketmq_classic_producer::validation;
 pub use rocketmq_classic_producer::{
     AsyncSenderExecutor, AsyncSenderTask, BackpressureReadGuard, CallbackExecutor,
     CheckForbiddenContext, CheckForbiddenHook, CommunicationMode, EndTransactionContext,
-    EndTransactionHook, HookException, MessageBatch, NullablePublishInfoQueueFilters, Producer,
-    ProducerCompressor, ProducerConfig, ProducerError, ProducerLongArray, ProducerPublishQueueList,
-    ProducerQueueIndex, ProducerServiceState, ProducerTopicList, PublishInfoQueueFilter,
-    QueryResult, RecallMessageHandle, RetryResponseCodes, SendMessageContext, SendMessageHook,
-    SendMessageType, SendResult, SendStatus, TopicPublishInfo, TopicPublishInfoEntryHandle,
-    TopicPublishInfoEntrySetView, TopicPublishInfoKeySetView, TopicPublishInfoTable,
-    TopicPublishInfoTableError, TopicPublishInfoValuesView, TransactionCheckListener,
-    TransactionExecutor, TransactionListener, TransactionProducer, TransactionSendResult,
+    EndTransactionHook, FaultItem, FaultItemCompareError, HookException, MessageBatch,
+    NullablePublishInfoQueueFilters, Producer, ProducerCompressor, ProducerConfig, ProducerError,
+    ProducerLongArray, ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState,
+    ProducerTopicList, PublishInfoQueueFilter, QueryResult, RecallMessageHandle,
+    RetryResponseCodes, SendMessageContext, SendMessageHook, SendMessageType, SendResult,
+    SendStatus, TopicPublishInfo, TopicPublishInfoEntryHandle, TopicPublishInfoEntrySetView,
+    TopicPublishInfoKeySetView, TopicPublishInfoTable, TopicPublishInfoTableError,
+    TopicPublishInfoValuesView, TransactionCheckListener, TransactionExecutor, TransactionListener,
+    TransactionProducer, TransactionSendResult,
 };
 pub use rocketmq_classic_producer::{DEFAULT_PRODUCER_GROUP, TransactionCallbackError};
 pub use rocketmq_classic_producer::{

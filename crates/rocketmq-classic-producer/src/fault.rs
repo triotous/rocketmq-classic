@@ -1,11 +1,14 @@
 use std::{
+    any::Any,
+    cmp::Ordering as CmpOrdering,
     collections::HashMap,
     fmt,
+    hash::{Hash, Hasher},
     sync::{
         Arc, Mutex, PoisonError, RwLock,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use crate::config::{DEFAULT_LATENCY_MAX_MILLIS, DEFAULT_NOT_AVAILABLE_DURATION_MILLIS};
@@ -113,8 +116,230 @@ impl PartialEq for ProducerLongArray {
 
 impl Eq for ProducerLongArray {}
 
+/// Java-compatible value surface for
+/// `LatencyFaultToleranceImpl.FaultItem`.
+///
+/// The Java class is a non-static inner class. Its public behavior does not
+/// read the enclosing strategy, so Rust owns the value directly instead of
+/// retaining an otherwise-unused strategy reference.
+pub struct FaultItem {
+    name: Option<String>,
+    current_latency: AtomicI64,
+    start_timestamp: AtomicI64,
+    check_stamp: AtomicI64,
+    reachable: AtomicBool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FaultItemCompareError {
+    NullOther,
+    WrongType,
+}
+
+impl FaultItemCompareError {
+    pub fn java_exception_name(self) -> &'static str {
+        match self {
+            Self::NullOther => "java.lang.NullPointerException",
+            Self::WrongType => "java.lang.ClassCastException",
+        }
+    }
+}
+
+impl fmt::Display for FaultItemCompareError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::NullOther => "NullPointerException",
+            Self::WrongType => "ClassCastException",
+        })
+    }
+}
+
+impl std::error::Error for FaultItemCompareError {}
+
+impl FaultItem {
+    pub fn new(name: Option<String>) -> Self {
+        Self {
+            name,
+            current_latency: AtomicI64::new(0),
+            start_timestamp: AtomicI64::new(0),
+            check_stamp: AtomicI64::new(0),
+            reachable: AtomicBool::new(false),
+        }
+    }
+
+    pub fn update_not_available_duration(&self, not_available_duration_millis: i64) {
+        let comparison_time = java_current_time_millis();
+        if not_available_duration_millis > 0
+            && comparison_time.wrapping_add(not_available_duration_millis)
+                > self.start_timestamp.load(Ordering::SeqCst)
+        {
+            let start_timestamp =
+                java_current_time_millis().wrapping_add(not_available_duration_millis);
+            self.start_timestamp
+                .store(start_timestamp, Ordering::SeqCst);
+            tracing::info!(
+                target: "org.apache.rocketmq.client.latency.MQFaultStrategy",
+                "{} will be isolated for {} ms.",
+                self.name.as_deref().unwrap_or("null"),
+                not_available_duration_millis,
+            );
+        }
+    }
+
+    pub fn java_compare_to_nullable(
+        &self,
+        other: Option<&Self>,
+    ) -> Result<CmpOrdering, FaultItemCompareError> {
+        let other = other.ok_or(FaultItemCompareError::NullOther)?;
+        let self_available = self.is_available();
+        let other_available = other.is_available();
+        if self_available != other_available {
+            if self.is_available() {
+                return Ok(CmpOrdering::Less);
+            }
+            if other.is_available() {
+                return Ok(CmpOrdering::Greater);
+            }
+        }
+
+        let latency_order = self.get_current_latency().cmp(&other.get_current_latency());
+        if latency_order != CmpOrdering::Equal {
+            return Ok(latency_order);
+        }
+
+        Ok(self.get_start_timestamp().cmp(&other.get_start_timestamp()))
+    }
+
+    /// Models the erased `Comparable.compareTo(Object)` bridge, including its
+    /// cast failure for a non-`FaultItem` argument.
+    pub fn java_compare_to_object(
+        &self,
+        other: Option<&dyn Any>,
+    ) -> Result<CmpOrdering, FaultItemCompareError> {
+        let other = other.ok_or(FaultItemCompareError::NullOther)?;
+        self.java_compare_to_nullable(
+            other
+                .downcast_ref::<Self>()
+                .ok_or(FaultItemCompareError::WrongType)
+                .map(Some)?,
+        )
+    }
+
+    pub fn set_reachable(&self, reachable: bool) {
+        self.reachable.store(reachable, Ordering::SeqCst);
+    }
+
+    pub fn set_check_stamp(&self, check_stamp: i64) {
+        self.check_stamp.store(check_stamp, Ordering::SeqCst);
+    }
+
+    pub fn is_available(&self) -> bool {
+        java_current_time_millis() >= self.get_start_timestamp()
+    }
+
+    pub fn is_reachable(&self) -> bool {
+        self.reachable.load(Ordering::SeqCst)
+    }
+
+    pub fn get_name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn get_current_latency(&self) -> i64 {
+        self.current_latency.load(Ordering::SeqCst)
+    }
+
+    pub fn set_current_latency(&self, current_latency: i64) {
+        self.current_latency
+            .store(current_latency, Ordering::SeqCst);
+    }
+
+    pub fn get_start_timestamp(&self) -> i64 {
+        self.start_timestamp.load(Ordering::SeqCst)
+    }
+
+    pub fn set_start_timestamp(&self, start_timestamp: i64) {
+        self.start_timestamp
+            .store(start_timestamp, Ordering::SeqCst);
+    }
+
+    pub fn java_equals(&self, other: Option<&dyn Any>) -> bool {
+        let Some(other) = other.and_then(|value| value.downcast_ref::<Self>()) else {
+            return false;
+        };
+        std::ptr::eq(self, other)
+            || (self.name == other.name
+                && self.get_current_latency() == other.get_current_latency()
+                && self.get_start_timestamp() == other.get_start_timestamp())
+    }
+
+    pub fn java_hash_code(&self) -> i32 {
+        let mut hash = self.name.as_deref().map_or(0, java_fault_string_hash);
+        hash = hash
+            .wrapping_mul(31)
+            .wrapping_add(java_fault_long_hash(self.get_current_latency()));
+        hash.wrapping_mul(31)
+            .wrapping_add(java_fault_long_hash(self.get_start_timestamp()))
+    }
+
+    pub fn java_to_string(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl PartialEq for FaultItem {
+    fn eq(&self, other: &Self) -> bool {
+        self.java_equals(Some(other as &dyn Any))
+    }
+}
+
+impl Eq for FaultItem {}
+
+impl Hash for FaultItem {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.java_hash_code().hash(state);
+    }
+}
+
+impl fmt::Display for FaultItem {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "FaultItem{{name='{}', currentLatency={}, startTimestamp={}, reachableFlag={}}}",
+            self.name.as_deref().unwrap_or("null"),
+            self.get_current_latency(),
+            self.get_start_timestamp(),
+            self.is_reachable(),
+        )
+    }
+}
+
+impl fmt::Debug for FaultItem {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.to_string())
+    }
+}
+
+fn java_current_time_millis() -> i64 {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_millis() as i64,
+        Err(error) => -(error.duration().as_millis() as i64),
+    }
+}
+
+fn java_fault_string_hash(value: &str) -> i32 {
+    value.encode_utf16().fold(0_i32, |hash, code_unit| {
+        hash.wrapping_mul(31).wrapping_add(i32::from(code_unit))
+    })
+}
+
+fn java_fault_long_hash(value: i64) -> i32 {
+    let bits = value as u64;
+    ((bits >> 32) as u32 ^ bits as u32) as i32
+}
+
 #[derive(Clone, Copy, Debug)]
-struct FaultItem {
+struct FaultRecord {
     current_latency_millis: u64,
     unavailable_until: Instant,
     check_after: Instant,
@@ -125,7 +350,7 @@ struct FaultItem {
 /// tables. The clock is passed into pure methods so boundary cases can be
 /// checked without sleeping.
 pub(crate) struct FaultStrategy {
-    items: Mutex<HashMap<String, FaultItem>>,
+    items: Mutex<HashMap<String, FaultRecord>>,
     latency_max_millis: RwLock<ProducerLongArray>,
     not_available_duration_millis: RwLock<ProducerLongArray>,
     send_latency_fault_enable: AtomicBool,
@@ -248,7 +473,7 @@ impl FaultStrategy {
             .items
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let entry = items.entry(broker.to_owned()).or_insert(FaultItem {
+        let entry = items.entry(broker.to_owned()).or_insert(FaultRecord {
             current_latency_millis: 0,
             unavailable_until: now,
             check_after: now,

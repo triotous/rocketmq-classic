@@ -10,10 +10,10 @@ use rocketmq_classic_common::{
 use rocketmq_classic_core::route::TopicRouteDataHandle;
 use rocketmq_classic_producer::{
     AsyncSenderExecutor, AsyncSenderTask, CheckForbiddenContext, CheckForbiddenHook,
-    CommunicationMode, DEFAULT_PRODUCER_GROUP, Producer, ProducerConfig, ProducerError,
-    ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState, ProducerTopicList,
-    PublishInfoQueueFilter, SendMessageContext, SendMessageHook, SendMessageType, TopicPublishInfo,
-    TopicPublishInfoTableError,
+    CommunicationMode, DEFAULT_PRODUCER_GROUP, FaultItem, FaultItemCompareError, Producer,
+    ProducerConfig, ProducerError, ProducerPublishQueueList, ProducerQueueIndex,
+    ProducerServiceState, ProducerTopicList, PublishInfoQueueFilter, SendMessageContext,
+    SendMessageHook, SendMessageType, TopicPublishInfo, TopicPublishInfoTableError,
     validation::{
         check_broker_config, check_topic_config, validate_group, validate_message,
         validate_send_topic, validate_system_topic, validate_topic,
@@ -46,6 +46,290 @@ fn java_default_settings_are_present() {
     assert_eq!(config.retry_times_when_send_async_failed(), 2);
     assert!(!config.retry_another_broker_when_not_store_ok());
     assert_eq!(config.max_message_size(), 4 * 1024 * 1024);
+}
+
+#[test]
+fn latency_fault_item_public_surface_and_behavior_match_invoked_java() {
+    use std::{
+        any::Any,
+        cmp::Ordering,
+        hash::{Hash, Hasher},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let api = &fixture["faultItemApi"];
+    assert_eq!(
+        api["className"],
+        "org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem"
+    );
+    assert_eq!(api["declaredPublicMethodCount"], 15);
+    assert_eq!(api["publicMethodCount"], 15);
+    let java_methods = api["declaredPublicMethods"].as_array().unwrap();
+    for signature in [
+        "boolean org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.equals(java.lang.Object)",
+        "boolean org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.isAvailable()",
+        "boolean org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.isReachable()",
+        "int org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.compareTo(java.lang.Object)",
+        "int org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.compareTo(org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem)",
+        "int org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.hashCode()",
+        "java.lang.String org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.getName()",
+        "java.lang.String org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.toString()",
+        "long org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.getCurrentLatency()",
+        "long org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.getStartTimestamp()",
+        "void org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.setCheckStamp(long)",
+        "void org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.setCurrentLatency(long)",
+        "void org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.setReachable(boolean)",
+        "void org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.setStartTimestamp(long)",
+        "void org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem.updateNotAvailableDuration(long)",
+    ] {
+        assert!(
+            java_methods.iter().any(|method| method == signature),
+            "missing pinned Java FaultItem method {signature}"
+        );
+    }
+    assert_eq!(
+        api["publicConstructors"][0],
+        "org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl$FaultItem(org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl,java.lang.String)"
+    );
+
+    let expected = &fixture["faultItemBehavior"];
+    let item = FaultItem::new(Some("broker-a".to_owned()));
+    assert_eq!(item.get_name(), expected["defaultName"].as_str());
+    assert_eq!(
+        item.get_current_latency(),
+        expected["defaultCurrentLatency"]
+    );
+    assert_eq!(
+        item.get_start_timestamp(),
+        expected["defaultStartTimestamp"]
+    );
+    assert_eq!(item.is_available(), expected["defaultAvailable"]);
+    assert_eq!(item.is_reachable(), expected["defaultReachable"]);
+    assert_eq!(item.java_to_string(), expected["defaultToString"]);
+
+    let epoch_millis = || {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+    };
+    let before_update = epoch_millis();
+    item.update_not_available_duration(10_000);
+    assert_eq!(
+        item.get_start_timestamp() > before_update,
+        expected["positiveDurationMovedStartForward"]
+    );
+    assert_eq!(
+        !item.is_available(),
+        expected["positiveDurationMakesUnavailable"]
+    );
+    let unavailable_until = item.get_start_timestamp();
+    item.update_not_available_duration(0);
+    assert_eq!(
+        item.get_start_timestamp() == unavailable_until,
+        expected["zeroDurationRetainsStart"]
+    );
+    item.update_not_available_duration(-1);
+    assert_eq!(
+        item.get_start_timestamp() == unavailable_until,
+        expected["negativeDurationRetainsStart"]
+    );
+    let overflow_duration = FaultItem::new(Some("overflow".to_owned()));
+    overflow_duration.update_not_available_duration(i64::MAX);
+    assert_eq!(
+        overflow_duration.get_start_timestamp() == 0,
+        expected["overflowDurationRetainsStart"]
+    );
+    item.set_start_timestamp(i64::MAX);
+    item.update_not_available_duration(1);
+    assert_eq!(
+        item.get_start_timestamp() == i64::MAX,
+        expected["shorterDurationDoesNotMoveStart"]
+    );
+
+    let equal = FaultItem::new(Some("same".to_owned()));
+    equal.set_current_latency(50);
+    equal.set_start_timestamp(700);
+    equal.set_reachable(true);
+    equal.set_check_stamp(1);
+    let equal_different_flags = FaultItem::new(Some("same".to_owned()));
+    equal_different_flags.set_current_latency(50);
+    equal_different_flags.set_start_timestamp(700);
+    equal_different_flags.set_reachable(false);
+    equal_different_flags.set_check_stamp(i64::MAX);
+    assert!(equal.java_equals(Some(&equal_different_flags as &dyn Any)));
+    assert!(equal.java_equals(Some(&equal as &dyn Any)));
+    assert!(!equal.java_equals(None));
+    assert!(!equal.java_equals(Some(&"same" as &dyn Any)));
+    assert!(equal == equal_different_flags);
+    assert_eq!(
+        equal == equal_different_flags,
+        expected["equalAcrossOwners"]
+    );
+    assert_eq!(
+        equal.java_hash_code(),
+        expected["equalHashCode"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        equal.java_hash_code() == equal_different_flags.java_hash_code(),
+        expected["equalHashCodes"]
+    );
+    assert_eq!(
+        equal == equal_different_flags,
+        expected["equalityIgnoresReachableAndCheckStamp"]
+    );
+    assert_eq!(
+        !equal.java_equals(Some(
+            &FaultItem::new(Some("different".to_owned())) as &dyn Any
+        )),
+        expected["differentNameNotEqual"]
+    );
+    let different_latency = FaultItem::new(Some("same".to_owned()));
+    different_latency.set_current_latency(51);
+    different_latency.set_start_timestamp(700);
+    assert_eq!(
+        !equal.java_equals(Some(&different_latency as &dyn Any)),
+        expected["differentLatencyNotEqual"]
+    );
+    let different_start = FaultItem::new(Some("same".to_owned()));
+    different_start.set_current_latency(50);
+    different_start.set_start_timestamp(701);
+    assert_eq!(
+        !equal.java_equals(Some(&different_start as &dyn Any)),
+        expected["differentStartNotEqual"]
+    );
+    assert_eq!(equal.java_to_string(), expected["equalToString"]);
+    assert_eq!(
+        equal.java_compare_to_nullable(Some(&equal_different_flags)),
+        Ok(Ordering::Equal)
+    );
+    let mut equal_hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut other_hasher = std::collections::hash_map::DefaultHasher::new();
+    equal.hash(&mut equal_hasher);
+    equal_different_flags.hash(&mut other_hasher);
+    assert_eq!(equal_hasher.finish(), other_hasher.finish());
+
+    let available = FaultItem::new(Some("available".to_owned()));
+    available.set_current_latency(10_000);
+    available.set_start_timestamp(i64::MIN);
+    let unavailable = FaultItem::new(Some("unavailable".to_owned()));
+    unavailable.set_current_latency(0);
+    unavailable.set_start_timestamp(i64::MAX);
+    let order_code = |ordering| match ordering {
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
+    };
+    assert_eq!(
+        order_code(
+            available
+                .java_compare_to_nullable(Some(&unavailable))
+                .unwrap()
+        ),
+        expected["availabilityPrecedesLatency"]
+    );
+    assert_eq!(
+        order_code(
+            unavailable
+                .java_compare_to_nullable(Some(&available))
+                .unwrap()
+        ),
+        expected["unavailableFollowsAvailable"]
+    );
+
+    let low_latency = FaultItem::new(Some("low-latency".to_owned()));
+    low_latency.set_current_latency(-5);
+    low_latency.set_start_timestamp(i64::MIN);
+    let high_latency = FaultItem::new(Some("high-latency".to_owned()));
+    high_latency.set_current_latency(5);
+    high_latency.set_start_timestamp(i64::MIN);
+    assert_eq!(
+        order_code(
+            low_latency
+                .java_compare_to_nullable(Some(&high_latency))
+                .unwrap()
+        ),
+        expected["signedLatencyOrder"]
+    );
+    let tie_different_name = FaultItem::new(Some("different-name".to_owned()));
+    tie_different_name.set_current_latency(5);
+    tie_different_name.set_start_timestamp(i64::MIN);
+    assert_eq!(
+        order_code(
+            low_latency
+                .java_compare_to_nullable(Some(&tie_different_name))
+                .unwrap()
+        ),
+        expected["comparisonIgnoresName"]
+    );
+
+    let early_start = FaultItem::new(Some("early".to_owned()));
+    early_start.set_current_latency(5);
+    early_start.set_start_timestamp(10);
+    let late_start = FaultItem::new(Some("late".to_owned()));
+    late_start.set_current_latency(5);
+    late_start.set_start_timestamp(20);
+    assert_eq!(
+        order_code(
+            early_start
+                .java_compare_to_nullable(Some(&late_start))
+                .unwrap()
+        ),
+        expected["startTimestampOrder"]
+    );
+
+    assert_eq!(
+        item.java_compare_to_nullable(None),
+        Err(FaultItemCompareError::NullOther)
+    );
+    assert_eq!(
+        item.java_compare_to_object(None),
+        Err(FaultItemCompareError::NullOther)
+    );
+    assert_eq!(
+        item.java_compare_to_object(Some(&"wrong type" as &dyn Any)),
+        Err(FaultItemCompareError::WrongType)
+    );
+    assert_eq!(
+        FaultItemCompareError::NullOther.to_string(),
+        expected["nullCompareFailure"].as_str().unwrap()
+    );
+    assert_eq!(
+        FaultItemCompareError::WrongType.to_string(),
+        expected["wrongTypeComparableFailure"].as_str().unwrap()
+    );
+    assert_eq!(
+        FaultItemCompareError::NullOther.java_exception_name(),
+        "java.lang.NullPointerException"
+    );
+    assert_eq!(
+        FaultItemCompareError::WrongType.java_exception_name(),
+        "java.lang.ClassCastException"
+    );
+    assert_eq!(
+        FaultItem::new(None).get_name(),
+        expected["nullName"].as_str()
+    );
+    let null_name = FaultItem::new(None);
+    let other_null_name = FaultItem::new(None);
+    assert_eq!(null_name, other_null_name);
+    assert_eq!(
+        null_name.java_hash_code(),
+        expected["nullNameHash"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        FaultItem::new(Some("A😀".to_owned())).java_hash_code(),
+        expected["unicodeNameHash"].as_i64().unwrap() as i32
+    );
+    let extreme_hash = FaultItem::new(Some("hash".to_owned()));
+    extreme_hash.set_current_latency(i64::MIN);
+    extreme_hash.set_start_timestamp(i64::MAX);
+    assert_eq!(
+        extreme_hash.java_hash_code(),
+        expected["extremeLongHash"].as_i64().unwrap() as i32
+    );
 }
 
 #[test]

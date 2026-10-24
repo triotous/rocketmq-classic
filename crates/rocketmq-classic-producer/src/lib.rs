@@ -40,7 +40,7 @@ pub use compressor::ProducerCompressor;
 pub use config::{DEFAULT_PRODUCER_GROUP, ProducerConfig};
 pub use error::ProducerError;
 pub use executor::{AsyncSenderExecutor, AsyncSenderTask};
-pub use fault::ProducerLongArray;
+pub use fault::{FaultItem, FaultItemCompareError, ProducerLongArray};
 pub use hooks::{
     CheckForbiddenContext, CheckForbiddenHook, CommunicationMode, EndTransactionContext,
     EndTransactionHook, HookException, SendMessageContext, SendMessageHook, SendMessageType,

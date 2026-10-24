@@ -1,11 +1,11 @@
 use rocketmq_classic::{
     ClientConfig, ConsumerServiceState, ConsumerStatsManager, DEFAULT_CONSUMER_GROUP,
-    DEFAULT_PRODUCER_GROUP, EndTransactionContext, EndTransactionHook, Message, MessageBatch,
-    MessageExtSubtype, MqHelper, NotifyResult, NullablePublishInfoQueueFilters,
-    OrderlyListenerFuture, PermName, PermissionParseError, PopResult, PopStatus, Producer,
-    ProducerConfig, ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState,
-    ProducerTopicList, PublishInfoQueueFilter, QueryResult, SharedMessageBody,
-    SharedMessageProperties, TopicPublishInfo, TopicPublishInfoEntryHandle,
+    DEFAULT_PRODUCER_GROUP, EndTransactionContext, EndTransactionHook, FaultItem,
+    FaultItemCompareError, Message, MessageBatch, MessageExtSubtype, MqHelper, NotifyResult,
+    NullablePublishInfoQueueFilters, OrderlyListenerFuture, PermName, PermissionParseError,
+    PopResult, PopStatus, Producer, ProducerConfig, ProducerPublishQueueList, ProducerQueueIndex,
+    ProducerServiceState, ProducerTopicList, PublishInfoQueueFilter, QueryResult,
+    SharedMessageBody, SharedMessageProperties, TopicPublishInfo, TopicPublishInfoEntryHandle,
     TopicPublishInfoEntrySetView, TopicPublishInfoKeySetView, TopicPublishInfoTable,
     TopicPublishInfoTableError, TopicPublishInfoValuesView, TopicRouteData, TopicRouteDataHandle,
 };
@@ -85,6 +85,11 @@ async fn phase_owned_public_types_are_available_from_the_facade_crate() {
     assert_public_type::<NotifyResult>();
     assert_public_type::<EndTransactionContext<'static>>();
     assert_public_type::<dyn EndTransactionHook>();
+    let fault_item = FaultItem::new(Some("fault-item".to_owned()));
+    fault_item.set_current_latency(12);
+    assert_eq!(fault_item.get_current_latency(), 12);
+    assert_public_type::<FaultItem>();
+    assert_public_type::<FaultItemCompareError>();
     assert_public_type::<NullablePublishInfoQueueFilters<'static>>();
     assert_public_type::<ProducerPublishQueueList>();
     assert_public_type::<ProducerQueueIndex>();

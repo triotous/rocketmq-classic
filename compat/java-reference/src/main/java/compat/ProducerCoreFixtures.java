@@ -40,6 +40,7 @@ import org.apache.rocketmq.client.impl.producer.TopicPublishInfo;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.latency.MQFaultStrategy;
+import org.apache.rocketmq.client.latency.LatencyFaultToleranceImpl;
 import org.apache.rocketmq.client.common.ThreadLocalIndex;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.client.producer.MessageQueueSelector;
@@ -947,6 +948,8 @@ public final class ProducerCoreFixtures {
         faultStrategy.put("probeQueueId", 0);
         faultStrategy.put("probeCommitted", true);
         result.put("faultStrategy", faultStrategy);
+        result.put("faultItemApi", publicApiSurface(LatencyFaultToleranceImpl.FaultItem.class));
+        result.put("faultItemBehavior", faultItemBehavior());
         result.put("runtimeFaultStrategy", runtimeFaultStrategy());
         result.put("runtimeFaultStrategyNullArrays", runtimeFaultStrategyNullArrays());
 
@@ -8301,6 +8304,115 @@ public final class ProducerCoreFixtures {
             return result;
         } catch (ReflectiveOperationException error) {
             throw new IllegalStateException("cannot invoke pinned producer compression method", error);
+        }
+    }
+
+    private static Map<String, Object> faultItemBehavior() {
+        LatencyFaultToleranceImpl owner = new LatencyFaultToleranceImpl(null, null);
+        LatencyFaultToleranceImpl anotherOwner = new LatencyFaultToleranceImpl(null, null);
+        LatencyFaultToleranceImpl.FaultItem defaults = owner.new FaultItem("broker-a");
+        Map<String, Object> result = new TreeMap<>();
+        result.put("defaultName", defaults.getName());
+        result.put("defaultCurrentLatency", defaults.getCurrentLatency());
+        result.put("defaultStartTimestamp", defaults.getStartTimestamp());
+        result.put("defaultAvailable", defaults.isAvailable());
+        result.put("defaultReachable", defaults.isReachable());
+        result.put("defaultToString", defaults.toString());
+
+        long before = System.currentTimeMillis();
+        defaults.updateNotAvailableDuration(10_000);
+        long unavailableUntil = defaults.getStartTimestamp();
+        result.put("positiveDurationMovedStartForward", unavailableUntil > before);
+        result.put("positiveDurationMakesUnavailable", !defaults.isAvailable());
+        defaults.updateNotAvailableDuration(0);
+        result.put("zeroDurationRetainsStart", defaults.getStartTimestamp() == unavailableUntil);
+        defaults.updateNotAvailableDuration(-1);
+        result.put("negativeDurationRetainsStart", defaults.getStartTimestamp() == unavailableUntil);
+        LatencyFaultToleranceImpl.FaultItem overflowDuration = owner.new FaultItem("overflow");
+        overflowDuration.updateNotAvailableDuration(Long.MAX_VALUE);
+        result.put("overflowDurationRetainsStart", overflowDuration.getStartTimestamp() == 0);
+        defaults.setStartTimestamp(Long.MAX_VALUE);
+        defaults.updateNotAvailableDuration(1);
+        result.put("shorterDurationDoesNotMoveStart", defaults.getStartTimestamp() == Long.MAX_VALUE);
+
+        LatencyFaultToleranceImpl.FaultItem equal = owner.new FaultItem("same");
+        equal.setCurrentLatency(50);
+        equal.setStartTimestamp(700);
+        equal.setReachable(true);
+        equal.setCheckStamp(1);
+        LatencyFaultToleranceImpl.FaultItem equalDifferentFlags = anotherOwner.new FaultItem("same");
+        equalDifferentFlags.setCurrentLatency(50);
+        equalDifferentFlags.setStartTimestamp(700);
+        equalDifferentFlags.setReachable(false);
+        equalDifferentFlags.setCheckStamp(Long.MAX_VALUE);
+        result.put("equalAcrossOwners", equal.equals(equalDifferentFlags));
+        result.put("equalHashCodes", equal.hashCode() == equalDifferentFlags.hashCode());
+        result.put("equalHashCode", equal.hashCode());
+        result.put("equalityIgnoresReachableAndCheckStamp", equal.equals(equalDifferentFlags));
+        result.put("differentNameNotEqual",
+            !equal.equals(owner.new FaultItem("different")));
+        LatencyFaultToleranceImpl.FaultItem differentLatency = owner.new FaultItem("same");
+        differentLatency.setCurrentLatency(51);
+        differentLatency.setStartTimestamp(700);
+        result.put("differentLatencyNotEqual", !equal.equals(differentLatency));
+        LatencyFaultToleranceImpl.FaultItem differentStart = owner.new FaultItem("same");
+        differentStart.setCurrentLatency(50);
+        differentStart.setStartTimestamp(701);
+        result.put("differentStartNotEqual", !equal.equals(differentStart));
+        result.put("wrongTypeEquals", equal.equals("same"));
+        result.put("nullEquals", equal.equals(null));
+        result.put("equalToString", equal.toString());
+
+        LatencyFaultToleranceImpl.FaultItem available = owner.new FaultItem("available");
+        available.setCurrentLatency(10_000);
+        available.setStartTimestamp(Long.MIN_VALUE);
+        LatencyFaultToleranceImpl.FaultItem unavailable = owner.new FaultItem("unavailable");
+        unavailable.setCurrentLatency(0);
+        unavailable.setStartTimestamp(Long.MAX_VALUE);
+        result.put("availabilityPrecedesLatency", available.compareTo(unavailable));
+        result.put("unavailableFollowsAvailable", unavailable.compareTo(available));
+
+        LatencyFaultToleranceImpl.FaultItem lowLatency = owner.new FaultItem("low-latency");
+        lowLatency.setCurrentLatency(-5);
+        lowLatency.setStartTimestamp(Long.MIN_VALUE);
+        LatencyFaultToleranceImpl.FaultItem highLatency = owner.new FaultItem("high-latency");
+        highLatency.setCurrentLatency(5);
+        highLatency.setStartTimestamp(Long.MIN_VALUE);
+        result.put("signedLatencyOrder", lowLatency.compareTo(highLatency));
+        LatencyFaultToleranceImpl.FaultItem tieDifferentName = owner.new FaultItem("different-name");
+        tieDifferentName.setCurrentLatency(5);
+        tieDifferentName.setStartTimestamp(Long.MIN_VALUE);
+        result.put("comparisonIgnoresName", lowLatency.compareTo(tieDifferentName));
+
+        LatencyFaultToleranceImpl.FaultItem earlyStart = owner.new FaultItem("early");
+        earlyStart.setCurrentLatency(5);
+        earlyStart.setStartTimestamp(10);
+        LatencyFaultToleranceImpl.FaultItem lateStart = owner.new FaultItem("late");
+        lateStart.setCurrentLatency(5);
+        lateStart.setStartTimestamp(20);
+        result.put("startTimestampOrder", earlyStart.compareTo(lateStart));
+        result.put("nullCompareFailure", caughtClass(() -> equal.compareTo(null)));
+        result.put("wrongTypeComparableFailure", caughtClass(() -> ((Comparable) equal).compareTo("same")));
+
+        LatencyFaultToleranceImpl.FaultItem nullName = owner.new FaultItem(null);
+        LatencyFaultToleranceImpl.FaultItem otherNullName = anotherOwner.new FaultItem(null);
+        result.put("nullName", nullName.getName());
+        result.put("nullNamesCompareEqual", nullName.equals(otherNullName));
+        result.put("nullNameHash", nullName.hashCode());
+        result.put("unicodeNameHash", owner.new FaultItem("A\uD83D\uDE00").hashCode());
+        LatencyFaultToleranceImpl.FaultItem extremeHash = owner.new FaultItem("hash");
+        extremeHash.setCurrentLatency(Long.MIN_VALUE);
+        extremeHash.setStartTimestamp(Long.MAX_VALUE);
+        result.put("extremeLongHash", extremeHash.hashCode());
+        return result;
+    }
+
+    private static String caughtClass(Check check) {
+        try {
+            check.run();
+            return "none";
+        } catch (Exception error) {
+            return error.getClass().getSimpleName();
         }
     }
 
