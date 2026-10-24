@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.Message;
@@ -1181,7 +1182,7 @@ public final class MessageDecodeFixtures {
         return outcome;
     }
 
-    private static Map<String, Object> nonstandardCompactCountSizeOutcomes() {
+    private static Map<String, Object> nonstandardCompactCountSizeOutcomes() throws InterruptedException {
         Map<String, Object> outcome = new TreeMap<>();
         ByteBuffer subFour = ByteBuffer.wrap(new byte[] {0, 0, 0, 3, 0, 0, 0, 4});
         try {
@@ -1210,6 +1211,31 @@ public final class MessageDecodeFixtures {
             outcome.put("rewindingCountThrowsIllegalArgument", true);
         }
         outcome.put("rewindingCountPositionAfter", rewinding.position());
+
+        ByteBuffer zero = ByteBuffer.allocate(4);
+        CountDownLatch zeroStarted = new CountDownLatch(1);
+        Thread zeroCounter = new Thread(() -> {
+            zeroStarted.countDown();
+            MessageDecoder.countInnerMsgNum(zero);
+        }, "phase18-zero-inner-count-probe");
+        zeroCounter.setDaemon(true);
+        zeroCounter.start();
+        zeroStarted.await();
+        zeroCounter.join(50L);
+        outcome.put("zeroCountRemainsRunning", zeroCounter.isAlive());
+
+        ByteBuffer negativeCycle = ByteBuffer.allocate(16);
+        negativeCycle.putInt(4).putInt(8).position(12).putInt(-8).position(0);
+        CountDownLatch negativeCycleStarted = new CountDownLatch(1);
+        Thread negativeCycleCounter = new Thread(() -> {
+            negativeCycleStarted.countDown();
+            MessageDecoder.countInnerMsgNum(negativeCycle);
+        }, "phase18-negative-cycle-inner-count-probe");
+        negativeCycleCounter.setDaemon(true);
+        negativeCycleCounter.start();
+        negativeCycleStarted.await();
+        negativeCycleCounter.join(50L);
+        outcome.put("negativeCycleCountRemainsRunning", negativeCycleCounter.isAlive());
         return outcome;
     }
 

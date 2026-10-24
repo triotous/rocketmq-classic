@@ -23,7 +23,10 @@ use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::io::Cursor;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 
 // These fixtures both inspect or mutate the process-wide Java-compatible
 // reserved-property set, so keep them isolated from one another.
@@ -2198,6 +2201,8 @@ fn message_decoder_property_map_methods_match_java_551() {
 #[test]
 fn compact_message_codec_and_inner_batch_match_java_551() {
     let expected = &fixture()["messageCompactApi"];
+    assert_eq!(expected["zeroCountRemainsRunning"], true);
+    assert_eq!(expected["negativeCycleCountRemainsRunning"], true);
     let mut first = Message::default();
     first.set_body([0, 255, 42]);
     first.set_flag(-17);
@@ -2468,22 +2473,73 @@ fn compact_message_codec_and_inner_batch_match_java_551() {
         rewinding_count_cursor.position(),
         expected["rewindingCountPositionAfter"]
     );
-    let mut zero_count_cursor = Cursor::new(&[0, 0, 0, 0][..]);
-    assert_eq!(
-        count_inner_messages(&mut zero_count_cursor),
-        Err(CompactMessageError::InvalidInnerSize { size: 0 })
-    );
-    assert_eq!(zero_count_cursor.position(), 0);
-    let mut negative_cycle_bytes = vec![0; 16];
-    negative_cycle_bytes[..4].copy_from_slice(&4_i32.to_be_bytes());
-    negative_cycle_bytes[4..8].copy_from_slice(&8_i32.to_be_bytes());
-    negative_cycle_bytes[12..16].copy_from_slice(&(-8_i32).to_be_bytes());
-    let mut negative_cycle_cursor = Cursor::new(negative_cycle_bytes.as_slice());
-    assert_eq!(
-        count_inner_messages(&mut negative_cycle_cursor),
-        Err(CompactMessageError::InvalidInnerSize { size: -8 })
-    );
-    assert_eq!(negative_cycle_cursor.position(), 4);
+}
+
+#[test]
+fn count_inner_zero_and_negative_cycle_match_java_nontermination() {
+    const PROBE_MODE: &str = "ROCKETMQ_COUNT_INNER_PROBE_MODE";
+    const PROBE_MARKER: &str = "ROCKETMQ_COUNT_INNER_PROBE_MARKER";
+
+    if let Ok(mode) = std::env::var(PROBE_MODE) {
+        let input: &[u8] = match mode.as_str() {
+            "zero" => &[0, 0, 0, 0],
+            "negative-cycle" => {
+                let mut input = Box::new([0_u8; 16]);
+                input[..4].copy_from_slice(&4_i32.to_be_bytes());
+                input[4..8].copy_from_slice(&8_i32.to_be_bytes());
+                input[12..16].copy_from_slice(&(-8_i32).to_be_bytes());
+                let marker = std::env::var_os(PROBE_MARKER).unwrap();
+                std::fs::write(marker, b"entered").unwrap();
+                let mut cursor = Cursor::new(input.as_slice());
+                let result = count_inner_messages(&mut cursor);
+                panic!("negative cycle returned unexpectedly: {result:?}");
+            }
+            other => panic!("unknown count probe mode: {other}"),
+        };
+        let marker = std::env::var_os(PROBE_MARKER).unwrap();
+        std::fs::write(marker, b"entered").unwrap();
+        let mut cursor = Cursor::new(input);
+        let result = count_inner_messages(&mut cursor);
+        panic!("zero-size loop returned unexpectedly: {result:?}");
+    }
+
+    let executable = std::env::current_exe().unwrap();
+    for mode in ["zero", "negative-cycle"] {
+        let marker = std::env::temp_dir().join(format!(
+            "rocketmq-count-inner-probe-{}-{mode}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&marker);
+        let mut child = Command::new(&executable)
+            .args([
+                "--exact",
+                "count_inner_zero_and_negative_cycle_match_java_nontermination",
+                "--nocapture",
+            ])
+            .env(PROBE_MODE, mode)
+            .env(PROBE_MARKER, &marker)
+            .spawn()
+            .unwrap();
+        let startup_deadline = Instant::now() + Duration::from_secs(5);
+        while !marker.exists() {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("{mode} probe exited before entering count loop: {status}");
+            }
+            assert!(
+                Instant::now() < startup_deadline,
+                "{mode} probe did not start"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        thread::sleep(Duration::from_millis(50));
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "{mode} count loop returned instead of matching Java's nontermination"
+        );
+        child.kill().unwrap();
+        let _ = child.wait();
+        std::fs::remove_file(marker).unwrap();
+    }
 }
 
 #[test]
