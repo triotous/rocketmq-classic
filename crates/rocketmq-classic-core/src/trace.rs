@@ -314,6 +314,22 @@ impl TraceContext {
     pub fn compare_to(&self, other: &Self) -> Ordering {
         self.timestamp_millis.cmp(&other.timestamp_millis)
     }
+
+    /// Compares with an optional value and maps Java's null-argument failure.
+    pub fn java_compare_to_nullable(
+        &self,
+        other: Option<&Self>,
+    ) -> Result<Ordering, TraceContextCompareError> {
+        other
+            .map(|other| self.compare_to(other))
+            .ok_or(TraceContextCompareError::NullOther)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum TraceContextCompareError {
+    #[error("Java NullPointerException: null TraceContext compareTo argument")]
+    NullOther,
 }
 
 impl fmt::Display for TraceContext {
@@ -621,6 +637,10 @@ mod tests {
                 .as_bool()
                 .unwrap()
         );
+        assert_eq!(
+            identity["compareNullOtherException"],
+            "NullPointerException"
+        );
     }
 
     #[test]
@@ -772,6 +792,10 @@ mod tests {
         later.timestamp_millis = 2;
         assert_eq!(first.compare_to(&later), Ordering::Less);
         assert_eq!(later.compare_to(&first), Ordering::Greater);
+        assert_eq!(
+            first.java_compare_to_nullable(None),
+            Err(TraceContextCompareError::NullOther)
+        );
     }
 
     fn context_from_fixture(case: &Value) -> TraceContext {

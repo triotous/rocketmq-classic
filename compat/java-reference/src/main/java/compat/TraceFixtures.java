@@ -122,6 +122,12 @@ public final class TraceFixtures {
         result.put("equalValueContextsCompareEqual", firstContext.equals(secondContext));
         result.put("sameContextReferenceComparesEqual", firstContext.equals(firstContext));
         result.put("equalTimestampContextsCompareAsZero", firstContext.compareTo(secondContext) == 0);
+        try {
+            firstContext.compareTo(null);
+            result.put("compareNullOtherException", "NONE");
+        } catch (Throwable error) {
+            result.put("compareNullOtherException", error.getClass().getSimpleName());
+        }
         return result;
     }
 
