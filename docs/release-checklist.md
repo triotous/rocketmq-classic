@@ -9460,3 +9460,44 @@ owner-specific checks belong in the manual handoff.
   current-revision remote Ubuntu CI remain unverified; Phase 19 Broker/Docker
   validation remains separate. No push or remote CI was run. Run record:
   `rlogs/2026/10/24-phase-18-current-tree-server-free-gate__20261024T001852Z.rlog`.
+
+## P18-V01 Fastjson numeric suffix and string coercion — 2026-10-24 (`8b375eac`)
+
+- [x] Fourteen invoked Java 5.5.1 heartbeat DTO cases cover uppercase `L`,
+  `F`, `D`, `B`, and `S` suffixes, exponent and decimal-point forms,
+  lowercase `f` rejection, and numeric suffix conversion to `SubscriptionData.topic`.
+  Rust now matches the tested integer results, Float rounding, and Float/Double
+  exponent strings. The expanded 1,102-case heartbeat differential and focused
+  formatter tests pass. Fixture SHA-256:
+  `69ab7ea24c30ad628e6f2b519268edeebee9060d7013b6becdfad88adc658f49`.
+- [x] Committed-revision server-free gates pass: strict workspace Clippy,
+  sequential default/all-feature workspace tests and doctests, Maven verify
+  (37 scenarios, 11 message fixtures, 106 typed headers, 19 typed bodies),
+  comparator self-test, 37-scenario manifest, metadata and seven package
+  license listings, stress smoke (20 cases x 3), fuzz smoke (163 frame seeds,
+  11 message seeds, 2,784 mutations), release examples, offline benchmark,
+  Windows GNU check/Clippy, and the Asia/Taipei Unique ID fixture.
+- [ ] This closes the tested Fastjson token and string-field cases only. Broad
+  P18-V01 reconciliation remains PARTIAL; native Windows runtime and current-
+  revision remote Ubuntu CI remain unverified. Phase 19 Broker/Docker
+  validation remains separate. No push or remote CI was run. Run record:
+  `rlogs/2026/10/24-phase-18-fastjson-numeric-suffix__20261024T010523Z.rlog`.
+
+## P18-V02 committed-tree server-free gate — 2026-10-24 (`8b375eac`)
+
+- [x] Strict workspace all-target/all-feature Clippy, formatter, default and
+  all-feature workspace tests/doctests passed. The test configurations ran
+  sequentially. Pinned offline Maven verification passed with 37 scenarios,
+  fixture drift checks, 11 message fixtures, and Java cross-decodes for 106
+  typed headers and 19 typed bodies.
+- [x] Differential self-test and 37-scenario manifest passed. Workspace
+  metadata and all seven package listings include `LICENSE` and `NOTICE`.
+  Stress smoke passed 20 cases x 3; bounded fuzz smoke passed 163 frame seeds,
+  11 message seeds, and 2,784 mutations (245 frame decodes, 192 message
+  decodes). Facade release examples, the offline benchmark, and Windows GNU
+  all-target/all-feature check and strict Clippy passed. The Asia/Taipei Unique
+  ID fixture passed.
+- [ ] P18-V01 remains PARTIAL, native Windows runtime and current-revision
+  remote Ubuntu CI remain unverified, and Phase 19 Broker/Docker evidence is
+  separate. No push or remote CI was run. Run record:
+  `rlogs/2026/10/24-phase-18-fastjson-numeric-suffix__20261024T010523Z.rlog`.
