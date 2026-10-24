@@ -49,8 +49,8 @@ pub(crate) fn encode_with_limit(
 }
 
 pub fn decode(bytes: &[u8]) -> Result<RemotingCommand, CodecError> {
-    let value: Value =
-        serde_json::from_slice(bytes).map_err(|error| CodecError::Json(error.to_string()))?;
+    let value: Value = rocketmq_classic_protocol::decode_java_remoting_serializable(bytes)
+        .map_err(|error| CodecError::Json(error.to_string()))?;
     let object = value
         .as_object()
         .ok_or_else(|| CodecError::Json("header must be a JSON object".into()))?;

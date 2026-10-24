@@ -127,6 +127,7 @@ public final class RemotingApiSurfaceFixtures {
         fixture.put("remotingCommandPublicConstructors", publicConstructors(RemotingCommand.class));
         fixture.put("remotingCommandPublicMethods", publicMethods(RemotingCommand.class));
         fixture.put("remotingCommandIdentityBehavior", remotingCommandIdentityBehavior());
+        fixture.put("remotingCommandJsonHeaderInputs", remotingCommandJsonHeaderInputs());
         fixture.put("processTimerIdentityBehavior", processTimerIdentityBehavior());
         fixture.put("remotingHeaderEncodingBehavior", remotingHeaderEncodingBehavior());
         fixture.put("responseFuturePublicConstructors", publicConstructors(ResponseFuture.class));
@@ -161,6 +162,36 @@ public final class RemotingApiSurfaceFixtures {
         fixture.put("remotingMetricsBehavior", remotingMetricsBehavior());
         fixture.put("attributesBuilderBehavior", attributesBuilderBehavior());
         return fixture;
+    }
+
+    private static List<Map<String, Object>> remotingCommandJsonHeaderInputs() throws Exception {
+        String[][] inputs = {
+            {"eof-trailing-text", "{\"code\":34,\"opaque\":17,\"remark\":\"before\"}\u001atrailing"},
+            {"eof-trailing-json", "{\"code\":34,\"opaque\":17,\"remark\":\"before\"}\u001a{\"ignored\":true}"},
+            {"single-quoted-trailing-comma", "{'code':34,'opaque':17,'remark':'single',}"}
+        };
+        List<Map<String, Object>> cases = new ArrayList<>();
+        for (String[] input : inputs) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("name", input[0]);
+            item.put("input", input[1]);
+            try {
+                byte[] header = input[1].getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                java.nio.ByteBuffer encoded = java.nio.ByteBuffer.allocate(header.length + 4);
+                encoded.putInt(RemotingCommand.markProtocolType(header.length, SerializeType.JSON));
+                encoded.put(header);
+                RemotingCommand command = RemotingCommand.decode(encoded.array());
+                item.put("outcome", "returned");
+                item.put("code", command.getCode());
+                item.put("opaque", command.getOpaque());
+                item.put("remark", command.getRemark());
+            } catch (RuntimeException error) {
+                item.put("outcome", error.getClass().getSimpleName());
+                item.put("errorMessage", error.getMessage());
+            }
+            cases.add(item);
+        }
+        return cases;
     }
 
     private static Map<String, Object> remotingCommandIdentityBehavior() throws NoSuchMethodException {

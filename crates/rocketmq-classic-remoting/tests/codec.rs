@@ -68,6 +68,36 @@ fn nullable_language_matches_invoked_java_json_and_binary_boundaries() {
 }
 
 #[test]
+fn json_header_inputs_match_invoked_java_fastjson_decoder() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/response-future-api.json"
+    ))
+    .unwrap();
+    let cases = fixture["remotingCommandJsonHeaderInputs"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 3);
+    for case in cases {
+        let name = case["name"].as_str().unwrap();
+        let input = case["input"].as_str().unwrap();
+        assert_eq!(case["outcome"], "returned", "{name}");
+        let command =
+            json_header::decode(input.as_bytes()).unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert_eq!(
+            command.code,
+            case["code"].as_i64().unwrap() as i32,
+            "{name}"
+        );
+        assert_eq!(
+            command.opaque,
+            case["opaque"].as_i64().unwrap() as i32,
+            "{name}"
+        );
+        assert_eq!(command.remark.as_deref(), case["remark"].as_str(), "{name}");
+    }
+}
+
+#[test]
 fn unknown_binary_language_code_matches_java_value_of_byte_null() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
