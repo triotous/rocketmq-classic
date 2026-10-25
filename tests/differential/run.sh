@@ -129,6 +129,13 @@ for scenario in selected:
             raise SystemExit("REQ-001 reverse request topic must be the matching _rust topic")
     if scenario.get("id") == "PROD-005-send-timeout" and inputs.get("timeout_ms") != 100:
         raise SystemExit("PROD-005 timeout must remain the reviewed 100 ms deadline")
+    if scenario_id == "P15-V03" and (
+        inputs.get("request_timeout_ms") != 4500
+        or inputs.get("no_reply_hold_ms") != 1500
+        or inputs.get("late_reply_delay_ms") != 6500
+        or inputs.get("late_reply_hold_ms") != 4000
+    ):
+        raise SystemExit("P15-V03 timeout and late-reply bounds differ from the reviewed live case")
     if scenario_id == "P5-V02-producer" and inputs.get("methods") != [
         "send-v1", "send-v2", "batch", "reply-v1", "reply-v2", "end-transaction"
     ]:
@@ -180,7 +187,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P5-V02-extensions" "P0-V03" "P6-V04" "P7-V02" "P7-V04" "P9-V03" "P13-V02" "REQ-001-request-reply-success")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P5-V02-extensions" "P0-V03" "P6-V04" "P7-V02" "P7-V04" "P9-V03" "P13-V02" "REQ-001-request-reply-success" "P15-V03")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -220,6 +227,11 @@ fi
 IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group <"$selected_file"
 rust_request_topic=""
 timeout_ms=""
+p15_topics=()
+p15_timeout_ms=4500
+p15_no_reply_hold_ms=1500
+p15_late_reply_delay_ms=6500
+p15_late_reply_hold_ms=4000
 if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     if [[ "$topic" != *_java ]]; then
         echo "The Java request topic must end with _java so the reverse-direction topic can be derived safely" >&2
@@ -227,13 +239,16 @@ if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     fi
     rust_request_topic="${topic%_java}_rust"
 fi
+if [[ "$scenario_id" == "P15-V03" ]]; then
+    p15_topics=("${topic}_reverse" "${topic}_no_reply_java" "${topic}_no_reply_rust" "${topic}_late_java" "${topic}_late_rust")
+fi
 if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
     timeout_ms=100
 fi
 case "$profile:$scenario_id" in
     basic:*) ;;
     two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c|two-broker:PROD-005-send-timeout|two-broker:P5-V02-consumer|two-broker:P13-V02) ;;
-    two-broker-host:P7-V04) ;;
+    two-broker-host:P7-V04|two-broker-host:P15-V03) ;;
     transaction:TX-001-commit|transaction:TX-002-rollback) ;;
     tls:P3-V04) ;;
     host-routed:P6-V04|host-routed:P7-V02|host-routed:P9-V03) ;;
@@ -363,6 +378,12 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    P15-V03:compat_p15_request_reply)
+        if [[ "$profile" != "two-broker-host" || "$consumer_group" != "compat_p15_request_reply" ]]; then
+            echo "P15-V03 metadata differs from the reviewed two-Broker request/reply case" >&2
+            exit 3
+        fi
+        ;;
     P9-V03:compat_p9_pull)
         if [[ "$profile" != "host-routed" || "$consumer_group" != "compat_p9_pull" ]]; then
             echo "P9-V03 metadata differs from the reviewed explicit-pull case" >&2
@@ -398,7 +419,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P5-V02-extensions" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P7-V04" && "$scenario_id" != "P9-V03" && "$scenario_id" != "P13-V02" && "$scenario_id" != "REQ-001-request-reply-success" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P5-V02-extensions" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P7-V04" && "$scenario_id" != "P9-V03" && "$scenario_id" != "P13-V02" && "$scenario_id" != "REQ-001-request-reply-success" && "$scenario_id" != "P15-V03" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -579,6 +600,12 @@ if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     printf 'consumer_group=%s\nrequest_topics=%s,%s\nrequest_timeout_ms=15000\n' "$consumer_group" "$topic" "$rust_request_topic" \
         >>"$evidence_dir/metadata.txt"
 fi
+if [[ "$scenario_id" == "P15-V03" ]]; then
+    printf 'consumer_group=%s\nrequest_topics=%s,%s\nno_responder_topics=%s,%s\nlate_reply_topics=%s,%s\nrequest_timeout_ms=%s\nno_reply_hold_ms=%s\nlate_reply_delay_ms=%s\nlate_reply_hold_ms=%s\n' \
+        "$consumer_group" "$topic" "${p15_topics[0]}" "${p15_topics[1]}" "${p15_topics[2]}" \
+        "${p15_topics[3]}" "${p15_topics[4]}" "$p15_timeout_ms" "$p15_no_reply_hold_ms" \
+        "$p15_late_reply_delay_ms" "$p15_late_reply_hold_ms" >>"$evidence_dir/metadata.txt"
+fi
 if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
     printf 'topic=%s\nsend_timeout_ms=%s\nproxy_response_delay_ms=600\nexpected_committed_messages=2\n' "$topic" "$timeout_ms" \
         >>"$evidence_dir/metadata.txt"
@@ -732,6 +759,15 @@ docker compose --project-name $project_name --file integration-tests/compose.yam
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g ${consumer_group}_rust -n namesrv:9876
 Rust responder / Java requester, then Java responder / Rust requester; each responder emits READY before its paired request.
 EOF
+elif [[ "$scenario_id" == "P15-V03" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host COMPOSE_PROJECT_NAME=$project_name bash tests/differential/run.sh --scenario P15-V03
+The runner provisions the isolated two-Broker host-routed profile, creates six one-queue topics on both Brokers, creates the two responder groups, runs bidirectional success plus both no-responder and late-reply language directions, checks timeout/callback/correlation state, and tears down only this Compose project.
+request_timeout_ms=$p15_timeout_ms
+no_reply_hold_ms=$p15_no_reply_hold_ms
+late_reply_delay_ms=$p15_late_reply_delay_ms
+late_reply_hold_ms=$p15_late_reply_hold_ms
+EOF
 elif [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
@@ -882,6 +918,9 @@ fi
 if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     topic_cleanup_list+=("$rust_request_topic")
 fi
+if [[ "$scenario_id" == "P15-V03" ]]; then
+    topic_cleanup_list+=("${p15_topics[@]}")
+fi
 responder_pid=""
 timeout_proxy_pid=""
 tls_proxy_pid=""
@@ -923,7 +962,7 @@ cleanup() {
             } >>"$evidence_dir/broker-internal-logs.log" 2>&1
         done
     fi
-    if [[ "$scenario_id" == "P7-V04" ]]; then
+    if [[ "$scenario_id" == "P7-V04" || "$scenario_id" == "P15-V03" ]]; then
         "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 broker-a-host broker-b-host \
             >"$evidence_dir/broker-logs.log" 2>&1
     fi
@@ -1074,11 +1113,11 @@ if [[ "$scenario_id" == "P5-V02-extensions" ]]; then
     done
 fi
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P3-V04" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P5-V02-producer" || "$scenario_id" == "P5-V02-consumer" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "P13-V02" || "$scenario_id" == "REQ-001-request-reply-success" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P3-V04" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P5-V02-producer" || "$scenario_id" == "P5-V02-consumer" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "P13-V02" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     topic_queue_count=4
-    if [[ "$scenario_id" == "P3-V04" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "P5-V02-consumer" ]]; then
+    if [[ "$scenario_id" == "P3-V04" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "P5-V02-consumer" ]]; then
         topic_queue_count=1
     elif [[ "$scenario_id" == "REBAL-001-average-10q-3c" ]]; then
         topic_queue_count=5
@@ -1106,6 +1145,19 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
             cat "$evidence_dir/topic-create.log" >&2
             exit 1
         fi
+    fi
+    if [[ "$scenario_id" == "P15-V03" ]]; then
+        for extra_topic in "${p15_topics[@]}"; do
+            for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
+                topic_service="${broker_admin_target%%:*}"
+                topic_broker="${broker_admin_target#*:}"
+                if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateTopic -b "$topic_broker" -t "$extra_topic" -r 1 -w 1 -n namesrv:9876 \
+                    >>"$evidence_dir/topic-create.log" 2>&1; then
+                    cat "$evidence_dir/topic-create.log" >&2
+                    exit 1
+                fi
+            done
+        done
     fi
     if [[ "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "P5-V02-consumer" ]]; then
         echo "Creating scenario-owned subscription group $producer_group"
@@ -1157,6 +1209,20 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
                 exit 1
             fi
         done
+    elif [[ "$scenario_id" == "P15-V03" ]]; then
+        echo "Creating scenario-owned Java and Rust reply responder groups on both Brokers"
+        : >"$evidence_dir/group-create.log"
+        for responder_group in "${consumer_group}_java" "${consumer_group}_rust"; do
+            for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
+                topic_service="${broker_admin_target%%:*}"
+                topic_broker="${broker_admin_target#*:}"
+                if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateSubGroup -b "$topic_broker" -g "$responder_group" -n namesrv:9876 \
+                    >>"$evidence_dir/group-create.log" 2>&1; then
+                    cat "$evidence_dir/group-create.log" >&2
+                    exit 1
+                fi
+            done
+        done
     elif [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
         echo "Creating scenario-owned responder group $consumer_group"
         for responder_group in "$consumer_group" "${consumer_group}_java" "${consumer_group}_rust"; do
@@ -1192,13 +1258,14 @@ start_reply_responder() {
     local reply_body="$2"
     local request_topic="$3"
     local output_file="$4"
+    local delay_ms="${5:-0}"
     if [[ "$language" == "java" ]]; then
         mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-            -Dexec.args="respond $namesrv_addr $request_topic ${consumer_group}_java compat_req_java_responder $reply_body" \
+            -Dexec.args="respond $namesrv_addr $request_topic ${consumer_group}_java compat_req_java_responder $reply_body $delay_ms" \
             exec:java@live-request-reply-probe >"$output_file" 2>"${output_file%.tsv}.stderr" &
     else
         "$repo_root/target/debug/live_client" p19-respond "$namesrv_addr" "$request_topic" \
-            "${consumer_group}_rust" compat_req_rust_responder "$reply_body" \
+            "${consumer_group}_rust" compat_req_rust_responder "$reply_body" "$delay_ms" \
             >"$output_file" 2>"${output_file%.tsv}.stderr" &
     fi
     responder_pid=$!
@@ -1250,6 +1317,39 @@ run_reply_requester() {
     else
         if ! "$repo_root/target/debug/live_client" p19-request "$namesrv_addr" "$request_topic" \
             compat_req_rust_requester "$body" >"$output_file" \
+            2>"${output_file%.tsv}.stderr"; then
+            cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
+            return 1
+        fi
+    fi
+}
+
+run_request_timeout() {
+    local language="$1"
+    local mode="$2"
+    local request_topic="$3"
+    local group="$4"
+    local body="$5"
+    local output_file="$6"
+    local command="p19-timeout"
+    local java_mode="timeout"
+    local hold_ms="$p15_no_reply_hold_ms"
+    if [[ "$mode" == "late" ]]; then
+        command="p19-late-timeout"
+        java_mode="late-timeout"
+        hold_ms="$p15_late_reply_hold_ms"
+    fi
+    if [[ "$language" == "java" ]]; then
+        if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+            -Dexec.args="$java_mode $namesrv_addr $request_topic $group $body $p15_timeout_ms $hold_ms" \
+            exec:java@live-request-reply-probe >"$output_file" \
+            2>"${output_file%.tsv}.stderr"; then
+            cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
+            return 1
+        fi
+    else
+        if ! "$repo_root/target/debug/live_client" "$command" "$namesrv_addr" "$request_topic" \
+            "$group" "$body" "$p15_timeout_ms" "$hold_ms" >"$output_file" \
             2>"${output_file%.tsv}.stderr"; then
             cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
             return 1
@@ -2605,6 +2705,137 @@ PY
         exit 1
     fi
     printf 'PASS REQ-001-request-reply-success: Java and Rust each received exactly one correlated Broker reply from the other client; reply body and metadata matched\n' \
+        | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "P15-V03" ]]; then
+    echo "Checking bidirectional replies, no-responder timeouts, and late-reply terminal state"
+    start_reply_responder rust p15-java-to-rust-reply "$topic" "$evidence_dir/rust-responder.tsv"
+    run_reply_requester java "$topic" p15-java-to-rust-request "$evidence_dir/java-request-rust-reply.tsv"
+    wait_reply_responder "$evidence_dir/rust-responder.tsv"
+
+    start_reply_responder java p15-rust-to-java-reply "${p15_topics[0]}" "$evidence_dir/java-responder.tsv"
+    run_reply_requester rust "${p15_topics[0]}" p15-rust-to-java-request "$evidence_dir/rust-request-java-reply.tsv"
+    wait_reply_responder "$evidence_dir/java-responder.tsv"
+
+    run_request_timeout java none "${p15_topics[1]}" compat_p15_no_reply_java p15-no-reply-java "$evidence_dir/java-no-reply.tsv"
+    run_request_timeout rust none "${p15_topics[2]}" compat_p15_no_reply_rust p15-no-reply-rust "$evidence_dir/rust-no-reply.tsv"
+
+    start_reply_responder rust p15-late-java-reply "${p15_topics[3]}" "$evidence_dir/rust-late-responder.tsv" "$p15_late_reply_delay_ms"
+    run_request_timeout java late "${p15_topics[3]}" compat_p15_late_java p15-late-java "$evidence_dir/java-late-timeout.tsv"
+    wait_reply_responder "$evidence_dir/rust-late-responder.tsv"
+
+    start_reply_responder java p15-late-rust-reply "${p15_topics[4]}" "$evidence_dir/java-late-responder.tsv" "$p15_late_reply_delay_ms"
+    run_request_timeout rust late "${p15_topics[4]}" compat_p15_late_rust p15-late-rust "$evidence_dir/rust-late-timeout.tsv"
+    wait_reply_responder "$evidence_dir/java-late-responder.tsv"
+
+    if ! python3 - "$topic" "${p15_topics[0]}" "${p15_topics[1]}" "${p15_topics[2]}" \
+        "${p15_topics[3]}" "${p15_topics[4]}" "$p15_timeout_ms" \
+        "$p15_no_reply_hold_ms" "$p15_late_reply_hold_ms" \
+        "$evidence_dir/java-request-rust-reply.tsv" "$evidence_dir/rust-responder.tsv" \
+        "$evidence_dir/rust-request-java-reply.tsv" "$evidence_dir/java-responder.tsv" \
+        "$evidence_dir/java-no-reply.tsv" "$evidence_dir/rust-no-reply.tsv" \
+        "$evidence_dir/java-late-timeout.tsv" "$evidence_dir/rust-late-timeout.tsv" \
+        "$evidence_dir/rust-late-responder.tsv" "$evidence_dir/java-late-responder.tsv" <<'PY'
+import sys
+from pathlib import Path
+
+(java_topic, rust_topic, java_no_reply_topic, rust_no_reply_topic,
+ java_late_topic, rust_late_topic, timeout_ms, no_reply_hold_ms,
+ late_hold_ms, java_request_path, rust_responder_path, rust_request_path,
+ java_responder_path, java_timeout_path, rust_timeout_path, java_late_path,
+ rust_late_path, rust_late_responder_path, java_late_responder_path) = sys.argv[1:]
+timeout_ms = int(timeout_ms)
+no_reply_hold_ms = int(no_reply_hold_ms)
+late_hold_ms = int(late_hold_ms)
+
+def lines(path):
+    return Path(path).read_text().splitlines()
+
+def parse_request(path, expected_topic, request_body, reply_body):
+    rows = [line.split("\t") for line in lines(path) if line.startswith("REQ\t")]
+    requests = [row for row in rows if len(row) > 1 and row[1] == "REQUEST"]
+    replies = [row for row in rows if len(row) > 1 and row[1] == "REPLY"]
+    if len(requests) != 1 or len(replies) != 1:
+        raise SystemExit(f"{path}: expected one requester observation and one returned reply")
+    request, reply = requests[0], replies[0]
+    if len(request) != 9 or request[2] != expected_topic or bytes.fromhex(request[3]) != request_body.encode():
+        raise SystemExit(f"{path}: request topic/body or result shape differs: {request!r}")
+    if not request[4] or request[4] == "-" or request[5] == "-" or request[6] != "15000":
+        raise SystemExit(f"{path}: request correlation/reply-to/TTL fields are missing: {request!r}")
+    if len(reply) != 9 or not reply[2].endswith("_REPLY_TOPIC"):
+        raise SystemExit(f"{path}: reply topic or result shape differs: {reply!r}")
+    if bytes.fromhex(reply[3]) != reply_body.encode() or reply[4] != request[4]:
+        raise SystemExit(f"{path}: reply body or correlation differs: {reply!r}")
+    if reply[5] != request[5] or reply[6] != request[6] or reply[8] != "reply":
+        raise SystemExit(f"{path}: reply metadata differs from request: {reply!r}")
+    return request[4], request[5], reply[2]
+
+def parse_responder(path, expected_topic, expected_body):
+    rows = [line.split("\t") for line in lines(path) if line.startswith("REQ\t")]
+    received = [row for row in rows if len(row) > 1 and row[1] == "RECEIVED"]
+    sent = [row for row in rows if len(row) > 1 and row[1] == "RESPONDER"]
+    if len(received) != 1 or len(received[0]) != 6:
+        raise SystemExit(f"{path}: expected one received request: {received!r}")
+    if received[0][2] != expected_topic or bytes.fromhex(received[0][3]) != expected_body.encode():
+        raise SystemExit(f"{path}: responder consumed an unexpected request: {received[0]!r}")
+    if len(sent) != 1 or len(sent[0]) != 7 or sent[0][2] != "SEND_OK":
+        raise SystemExit(f"{path}: expected one successful reply send: {sent!r}")
+    if not sent[0][3].endswith("_REPLY_TOPIC") or sent[0][4:] != received[0][3:]:
+        raise SystemExit(f"{path}: reply send metadata differs from received request: {sent[0]!r}")
+    return received[0], sent[0]
+
+def parse_timeout(path, expected_topic, expected_hold):
+    rows = [line.split("\t") for line in lines(path) if line.startswith("REQ\tTIMEOUT\t")]
+    if len(rows) != 1 or len(rows[0]) != 7:
+        raise SystemExit(f"{path}: expected one timeout row: {rows!r}")
+    row = rows[0]
+    elapsed = int(row[4])
+    if row[2] != expected_topic or not row[3] or elapsed < timeout_ms - 500 or elapsed > timeout_ms + 6000:
+        raise SystemExit(f"{path}: timeout topic/correlation/duration differs: {row!r}")
+    if row[5] != "false" or int(row[6]) != expected_hold:
+        raise SystemExit(f"{path}: timeout left a pending correlation or used the wrong hold: {row!r}")
+    return row[3]
+
+def parse_late(path, expected_topic, expected_hold, java):
+    rows = [line.split("\t") for line in lines(path) if line.startswith("REQ\tLATE_TIMEOUT\t")]
+    if len(rows) != 1 or len(rows[0]) != 8:
+        raise SystemExit(f"{path}: expected one late-timeout row: {rows!r}")
+    row = rows[0]
+    valid_outcome = row[7] == "org.apache.rocketmq.client.exception.RequestTimeoutException" if java else row[7] == "TIMEOUT"
+    if row[2] != expected_topic or not row[3] or row[4] != "1" or row[5] != "false":
+        raise SystemExit(f"{path}: late reply changed callback or correlation state: {row!r}")
+    if int(row[6]) != expected_hold or not valid_outcome:
+        raise SystemExit(f"{path}: timeout callback outcome differs: {row!r}")
+    return row[3]
+
+java_success_corr, _, java_reply_topic = parse_request(
+    java_request_path, java_topic, "p15-java-to-rust-request", "p15-java-to-rust-reply")
+rust_success_received, _ = parse_responder(
+    rust_responder_path, java_topic, "p15-java-to-rust-request")
+rust_success_corr, _, rust_reply_topic = parse_request(
+    rust_request_path, rust_topic, "p15-rust-to-java-request", "p15-rust-to-java-reply")
+java_success_received, _ = parse_responder(
+    java_responder_path, rust_topic, "p15-rust-to-java-request")
+if java_success_corr != rust_success_received[4] or rust_success_corr != java_success_received[4]:
+    raise SystemExit("cross-language responder correlation differs from requester")
+if java_reply_topic != rust_reply_topic:
+    raise SystemExit("Java and Rust successful request replies use different reply topics")
+
+parse_timeout(java_timeout_path, java_no_reply_topic, no_reply_hold_ms)
+parse_timeout(rust_timeout_path, rust_no_reply_topic, no_reply_hold_ms)
+java_late_corr = parse_late(java_late_path, java_late_topic, late_hold_ms, True)
+rust_late_corr = parse_late(rust_late_path, rust_late_topic, late_hold_ms, False)
+rust_late_received, _ = parse_responder(
+    rust_late_responder_path, java_late_topic, "p15-late-java")
+java_late_received, _ = parse_responder(
+    java_late_responder_path, rust_late_topic, "p15-late-rust")
+if java_late_corr != rust_late_received[4] or rust_late_corr != java_late_received[4]:
+    raise SystemExit("late reply responder did not receive the matching timed-out request")
+PY
+    then
+        echo "Java/Rust request/reply timeout or late-reply behavior differs from P15-V03" >&2
+        exit 1
+    fi
+    printf 'PASS P15-V03: bidirectional replies matched; Java and Rust no-responder timeouts removed correlations; opposite-language late replies arrived after timeout without changing the single terminal callback\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P3-V04" ]]; then
     cat >"$evidence_dir/ca.cnf" <<'EOF'

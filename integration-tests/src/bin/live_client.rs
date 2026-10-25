@@ -6,8 +6,8 @@ use std::{
 use rocketmq_classic::{
     ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, LocalTransactionState, MessageSelector,
     Producer, ProducerConfig, ProducerError, PullConsumer, PullConsumerConfig, PushConsumer,
-    PushConsumerConfig, PushMessageListener, TransactionCallbackError, TransactionListener,
-    TransactionProducer, create_reply_message,
+    PushConsumerConfig, PushMessageListener, RequestFutureHolder, TransactionCallbackError,
+    TransactionListener, TransactionProducer, create_reply_message,
 };
 use rocketmq_classic_common::message::{
     DecodeOptions, Message, MessageExt, MessageQueue, decode_many_as_client_compatible,
@@ -104,13 +104,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("p19-request") if arguments.len() == 5 => {
             request_reply_request(&arguments[1], &arguments[2], &arguments[3], &arguments[4]).await
         }
-        Some("p19-respond") if arguments.len() == 6 => {
+        Some("p19-timeout") if arguments.len() == 7 => {
+            request_reply_timeout(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                arguments[5].parse()?,
+                arguments[6].parse()?,
+            )
+            .await
+        }
+        Some("p19-late-timeout") if arguments.len() == 7 => {
+            request_reply_late_timeout(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                arguments[5].parse()?,
+                arguments[6].parse()?,
+            )
+            .await
+        }
+        Some("p19-respond") if arguments.len() == 6 || arguments.len() == 7 => {
             request_reply_respond(
                 &arguments[1],
                 &arguments[2],
                 &arguments[3],
                 &arguments[4],
                 &arguments[5],
+                arguments.get(6).map_or(Ok(0), |delay| delay.parse())?,
             )
             .await
         }
@@ -224,7 +247,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume|p5-extension-lite-pop <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume|p5-extension-lite-pop <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-timeout|p19-late-timeout <namesrv-address> <topic> <producer-group> <body> <timeout-ms> <hold-ms> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> [delay-ms] | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -872,12 +895,144 @@ async fn request_reply_request(
     Ok(())
 }
 
+async fn request_reply_timeout(
+    namesrv_address: &str,
+    topic: &str,
+    producer_group: &str,
+    body: &str,
+    timeout_ms: u64,
+    hold_ms: u64,
+) -> Result<(), Box<dyn Error>> {
+    let mut config = ProducerConfig::new(producer_group)?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    config.set_send_timeout_millis(10_000);
+    let producer = Arc::new(Producer::new(config));
+    producer.set_send_message_with_vip_channel(false);
+    producer.start().await?;
+
+    let result: Result<(), Box<dyn Error>> = async {
+        let started = Instant::now();
+        let mut request = Message::new(topic, body.as_bytes().to_vec());
+        let result = producer
+            .request(&mut request, Duration::from_millis(timeout_ms))
+            .await;
+        match result {
+            Err(ProducerError::RequestReplyTimeout { .. }) => {}
+            Err(error) => return Err(format!("expected request timeout, got {error}").into()),
+            Ok(reply) => {
+                return Err(format!(
+                    "expected request timeout, received reply on {}",
+                    reply.topic()
+                )
+                .into());
+            }
+        }
+        let correlation_id = request
+            .get_property("CORRELATION_ID")
+            .ok_or("timed-out request has no correlation ID")?;
+        tokio::time::sleep(Duration::from_millis(hold_ms)).await;
+        let pending = RequestFutureHolder::get_instance()
+            .get_request_future_table()
+            .contains_key(&correlation_id)?;
+        if pending {
+            return Err("timed-out request remained in the correlation table".into());
+        }
+        println!(
+            "REQ\tTIMEOUT\t{topic}\t{correlation_id}\t{}\tfalse\t{hold_ms}",
+            started.elapsed().as_millis()
+        );
+        Ok(())
+    }
+    .await;
+    let shutdown = producer.shutdown().await;
+    result?;
+    shutdown?;
+    Ok(())
+}
+
+async fn request_reply_late_timeout(
+    namesrv_address: &str,
+    topic: &str,
+    producer_group: &str,
+    body: &str,
+    timeout_ms: u64,
+    late_wait_ms: u64,
+) -> Result<(), Box<dyn Error>> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let mut config = ProducerConfig::new(producer_group)?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    config.set_send_timeout_millis(10_000);
+    let producer = Arc::new(Producer::new(config));
+    producer.set_send_message_with_vip_channel(false);
+    producer.start().await?;
+
+    let result: Result<(), Box<dyn Error>> = async {
+        let mut request = Message::new(topic, body.as_bytes().to_vec());
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_for_task = callback_count.clone();
+        let (callback_tx, mut callback_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        producer
+            .request_with_callback(
+                &mut request,
+                Box::new(move |result| {
+                    callback_count_for_task.fetch_add(1, Ordering::AcqRel);
+                    let outcome = match result {
+                        Ok(_) => "SUCCESS".to_owned(),
+                        Err(ProducerError::RequestReplyTimeout { .. }) => "TIMEOUT".to_owned(),
+                        Err(error) => format!("ERROR:{error}"),
+                    };
+                    let _ = callback_tx.send(outcome);
+                }),
+                Duration::from_millis(timeout_ms),
+            )
+            .await?;
+        let correlation_id = request
+            .get_property("CORRELATION_ID")
+            .ok_or("late-reply request has no correlation ID")?;
+        let outcome = tokio::time::timeout(
+            Duration::from_millis(timeout_ms.saturating_add(3_000)),
+            callback_rx.recv(),
+        )
+        .await?
+        .ok_or_else(|| std::io::Error::other("request timeout callback channel closed"))?;
+        if outcome != "TIMEOUT" {
+            return Err(format!("expected timeout callback, got {outcome}").into());
+        }
+        tokio::time::sleep(Duration::from_millis(late_wait_ms)).await;
+        let callbacks = callback_count.load(Ordering::Acquire);
+        let pending = RequestFutureHolder::get_instance()
+            .get_request_future_table()
+            .contains_key(&correlation_id)?;
+        if callbacks != 1 || pending {
+            return Err(format!(
+                "late reply changed terminal state: callbacks={callbacks}, pending={pending}"
+            )
+            .into());
+        }
+        println!(
+            "REQ\tLATE_TIMEOUT\t{topic}\t{correlation_id}\t{callbacks}\tfalse\t{late_wait_ms}\t{outcome}"
+        );
+        Ok(())
+    }
+    .await;
+    let shutdown = producer.shutdown().await;
+    result?;
+    shutdown?;
+    Ok(())
+}
+
 async fn request_reply_respond(
     namesrv_address: &str,
     topic: &str,
     consumer_group: &str,
     producer_group: &str,
     reply_body: &str,
+    delay_ms: u64,
 ) -> Result<(), Box<dyn Error>> {
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -899,6 +1054,7 @@ async fn request_reply_respond(
     let listener_producer = producer.clone();
     let listener_replied = replied.clone();
     let listener_body = reply_body.as_bytes().to_vec();
+    let listener_delay = Duration::from_millis(delay_ms);
     consumer
         .set_message_listener(PushMessageListener::concurrently(
             move |messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| {
@@ -906,6 +1062,7 @@ async fn request_reply_respond(
                 let result_tx = result_tx.clone();
                 let replied = listener_replied.clone();
                 let reply_body = listener_body.clone();
+                let delay = listener_delay;
                 async move {
                     let mut status = ConsumeConcurrentlyStatus::ConsumeSuccess;
                     for request in messages {
@@ -924,6 +1081,9 @@ async fn request_reply_respond(
                             request_correlation,
                             request_reply_to
                         );
+                        if !delay.is_zero() {
+                            tokio::time::sleep(delay).await;
+                        }
                         let outcome = match create_reply_message(Some(&request), reply_body.clone())
                         {
                             Ok(mut reply) => match producer.send(&mut reply).await {

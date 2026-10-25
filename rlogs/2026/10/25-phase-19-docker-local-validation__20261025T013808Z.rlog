@@ -389,3 +389,12 @@
   formatting, and whitespace checks pass. `run-local.sh --all` and final
   Phase 19 acceptance remain pending the rest of the local matrix and manual
   owner evidence.
+
+## P19-04 P15-V03 bidirectional timeout runner — 2026-10-25
+
+- Added Java 5.5.1 and Rust probes for synchronous no-responder timeout, callback timeout, delayed responders, and pending-correlation inspection. The manifest now runs P15-V03 on the host-routed two-Broker 5.3.4 profile, with isolated request topics, bounded timeout/late-reply windows, and per-Broker topic/group setup.
+- First diagnostic `20261025T142644Z` passed bidirectional success and no-responder timeout, then failed closed because the delayed Rust responder did not receive Java's request. Evidence is archived under `docs/compatibility/evidence/phase-19/P15-V03/20261025T142644Z/`; its responder-group setup used cluster-wide `mqadmin updateSubGroup -c`, which could not reach the peer Broker's loopback advertisement.
+- Changed P15 group setup to create each responder group directly on both Brokers with `mqadmin updateSubGroup -b`. Verified the 5.3.4 `mqadmin` command supports `-b` from the pinned image help output.
+- Diagnostic `20261025T143206Z` passed P15-V03 against the pinned unmodified 5.3.4 image. Both requester/responder directions delivered correlated replies; Java and Rust no-responder requests timed out and removed their correlations; each opposite-language delayed responder sent a reply after timeout while the requester retained exactly one timeout callback and no pending correlation. Evidence is archived under `docs/compatibility/evidence/phase-19/P15-V03/20261025T143206Z/` (`source_code_dirty=true`, exit 0, duration 271 seconds), so it is diagnostic only.
+- The runner deleted all six scenario-owned topics from both Brokers and removed the containers, NameServer, volumes and network. Filtered Docker queries found no remaining resources for the project.
+- Maven Java compile, Cargo live-client build, Cargo formatting, Bash syntax, manifest validation, and `git diff --check` pass. `run.sh --check-all` now rejects only the eight cases still lacking runners. A clean-source P15 replay remains required after the implementation commit.

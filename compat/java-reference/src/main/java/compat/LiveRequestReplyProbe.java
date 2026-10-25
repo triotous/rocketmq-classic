@@ -2,13 +2,19 @@ package compat;
 
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.rocketmq.client.exception.RequestTimeoutException;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
 import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.RequestCallback;
+import org.apache.rocketmq.client.producer.RequestFutureHolder;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.client.utils.MessageUtil;
 import org.apache.rocketmq.common.message.Message;
@@ -23,13 +29,26 @@ public final class LiveRequestReplyProbe {
             request(args[1], args[2], args[3], args[4]);
             return;
         }
-        if (args.length == 6 && "respond".equals(args[0])) {
-            respond(args[1], args[2], args[3], args[4], args[5]);
+        if (args.length == 7 && "timeout".equals(args[0])) {
+            timeout(args[1], args[2], args[3], args[4], Long.parseLong(args[5]),
+                Long.parseLong(args[6]));
+            return;
+        }
+        if (args.length == 7 && "late-timeout".equals(args[0])) {
+            lateTimeout(args[1], args[2], args[3], args[4], Long.parseLong(args[5]),
+                Long.parseLong(args[6]));
+            return;
+        }
+        if ((args.length == 6 || args.length == 7) && "respond".equals(args[0])) {
+            respond(args[1], args[2], args[3], args[4], args[5],
+                args.length == 7 ? Long.parseLong(args[6]) : 0);
             return;
         }
         throw new IllegalArgumentException(
             "usage: request <nameserver> <topic> <producer-group> <body> | "
-                + "respond <nameserver> <topic> <consumer-group> <producer-group> <reply-body>");
+                + "timeout|late-timeout <nameserver> <topic> <producer-group> <body> "
+                + "<timeout-ms> <hold-ms> | respond <nameserver> <topic> <consumer-group> "
+                + "<producer-group> <reply-body> [delay-ms]");
     }
 
     private static void request(String namesrvAddress, String topic, String group, String body)
@@ -48,7 +67,7 @@ public final class LiveRequestReplyProbe {
 
     private static void respond(
         String namesrvAddress, String topic, String consumerGroup, String producerGroup,
-        String replyBody
+        String replyBody, long delayMillis
     ) throws Exception {
         DefaultMQProducer producer = producer(namesrvAddress, producerGroup);
         DefaultMQPushConsumer consumer = new DefaultMQPushConsumer(consumerGroup);
@@ -67,6 +86,9 @@ public final class LiveRequestReplyProbe {
                     + request.getProperty("CORRELATION_ID") + "\t"
                     + request.getProperty("REPLY_TO_CLIENT"));
                 try {
+                    if (delayMillis > 0) {
+                        Thread.sleep(delayMillis);
+                    }
                     Message reply = MessageUtil.createReplyMessage(
                         request, replyBody.getBytes(StandardCharsets.UTF_8));
                     SendResult sent = producer.send(reply);
@@ -106,6 +128,95 @@ public final class LiveRequestReplyProbe {
             if (producerStarted) {
                 producer.shutdown();
             }
+        }
+    }
+
+    private static void timeout(
+        String namesrvAddress, String topic, String group, String body,
+        long timeoutMillis, long holdMillis
+    ) throws Exception {
+        DefaultMQProducer producer = producer(namesrvAddress, group);
+        producer.start();
+        try {
+            long started = System.nanoTime();
+            Message request = new Message(topic, body.getBytes(StandardCharsets.UTF_8));
+            try {
+                Message reply = producer.request(request, timeoutMillis);
+                throw new IllegalStateException("expected request timeout, received " + reply.getTopic());
+            } catch (RequestTimeoutException expected) {
+                // The Java requester waits for the configured timeout while its shared
+                // timeout scanner removes the correlation entry on its next pass.
+            }
+            String correlationId = request.getProperty("CORRELATION_ID");
+            if (correlationId == null || correlationId.isEmpty()) {
+                throw new IllegalStateException("timed-out request has no correlation ID");
+            }
+            Thread.sleep(holdMillis);
+            boolean pending = RequestFutureHolder.getInstance().getRequestFutureTable()
+                .containsKey(correlationId);
+            if (pending) {
+                throw new IllegalStateException("timed-out request remained in the correlation table");
+            }
+            System.out.printf("REQ\tTIMEOUT\t%s\t%s\t%d\tfalse\t%d%n", topic, correlationId,
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), holdMillis);
+        } finally {
+            producer.shutdown();
+        }
+    }
+
+    private static void lateTimeout(
+        String namesrvAddress, String topic, String group, String body,
+        long timeoutMillis, long lateWaitMillis
+    ) throws Exception {
+        DefaultMQProducer producer = producer(namesrvAddress, group);
+        producer.start();
+        try {
+            Message request = new Message(topic, body.getBytes(StandardCharsets.UTF_8));
+            AtomicInteger callbackCount = new AtomicInteger();
+            AtomicReference<Throwable> callbackError = new AtomicReference<>();
+            AtomicReference<String> callbackOutcome = new AtomicReference<>("NONE");
+            CountDownLatch callbackDone = new CountDownLatch(1);
+            RequestCallback callback = new RequestCallback() {
+                @Override
+                public void onSuccess(Message message) {
+                    callbackCount.incrementAndGet();
+                    callbackOutcome.set("SUCCESS");
+                    callbackDone.countDown();
+                }
+
+                @Override
+                public void onException(Throwable error) {
+                    callbackCount.incrementAndGet();
+                    callbackError.set(error);
+                    callbackOutcome.set(error.getClass().getName());
+                    callbackDone.countDown();
+                }
+            };
+            producer.request(request, callback, timeoutMillis);
+            String correlationId = request.getProperty("CORRELATION_ID");
+            if (correlationId == null || correlationId.isEmpty()) {
+                throw new IllegalStateException("late-reply request has no correlation ID");
+            }
+            if (!callbackDone.await(timeoutMillis + 2_000, TimeUnit.MILLISECONDS)) {
+                throw new IllegalStateException("request timeout callback did not run");
+            }
+            Throwable error = callbackError.get();
+            if (!(error instanceof RequestTimeoutException)) {
+                throw new IllegalStateException("expected RequestTimeoutException callback, got "
+                    + callbackOutcome.get(), error);
+            }
+            Thread.sleep(lateWaitMillis);
+            int callbacks = callbackCount.get();
+            boolean pending = RequestFutureHolder.getInstance().getRequestFutureTable()
+                .containsKey(correlationId);
+            if (callbacks != 1 || pending) {
+                throw new IllegalStateException("late reply changed terminal callback/table state: callbacks="
+                    + callbacks + ", pending=" + pending);
+            }
+            System.out.printf("REQ\tLATE_TIMEOUT\t%s\t%s\t%d\tfalse\t%d\t%s%n", topic,
+                correlationId, callbacks, lateWaitMillis, callbackOutcome.get());
+        } finally {
+            producer.shutdown();
         }
     }
 
