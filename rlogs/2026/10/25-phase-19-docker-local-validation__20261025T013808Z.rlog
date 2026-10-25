@@ -470,3 +470,9 @@
 - The runner now uses the host-routed two-Broker Compose profile internally for P10 while retaining the manifest's `two-broker` topology, configures each Broker directly, and safely handles an empty proxy PID array. The corrective runner revision must be clean-source replayed.
 
 - RLOG correction: the revision placeholder in the preceding P10-V03 second-replay bullet is `73f135c15e8627d7a16b673cfa95746aa7afcb80`.
+
+## P19-05 P10-V03 third clean replay diagnostic — 2026-10-25
+
+- Clean-source run `20261025T152543Z` on revision `74b5b41b846c323449e2ee02fc5674679e4493d9` passed provisioning, Java queue-0 seeding, Rust fixed assignment, success/partial acknowledgement, partial retry at counts 0/1, failure callbacks at counts 0/1, and the configured DLQ transition. The DLQ message retained its body and key.
+- The sole failing assertion expected the DLQ copy's `reconsumeTimes` to equal retryMaxTimes (1). RocketMQ 5.3.4 stores it as 2 after incrementing the terminal send-back, while listener attempts correctly remain `[0,1]`. Evidence is preserved at `docs/compatibility/evidence/phase-19/P10-V03/20261025T152543Z/`, with `source_code_dirty=false`, exit 1, and Compose teardown complete; filtered project resource queries were empty.
+- Updated the Rust probe, archived command/metadata expectations, and runner assertion to require DLQ `reconsumeTimes=retryMaxTimes+1`. A final clean-source replay is pending.

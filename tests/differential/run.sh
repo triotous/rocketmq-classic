@@ -673,8 +673,8 @@ if [[ "$scenario_id" == "P15-V03" ]]; then
         "$p15_late_reply_delay_ms" "$p15_late_reply_hold_ms" >>"$evidence_dir/metadata.txt"
 fi
 if [[ "$scenario_id" == "P10-V03" ]]; then
-    printf 'consumer_group=%s\nassignment=%s\nretry_topic=%s\ndlq_topic=%s\nmax_reconsume_times=%s\ninitial_messages=p10-success,p10-partial-ack,p10-partial-retry\nfailure_message=p10-failure-dlq\nfixed_queue=broker-a:0\n' \
-        "$consumer_group" "test-only-fixed" "$p10_retry_topic" "$p10_dlq_topic" "$p10_retry_max_times" \
+    printf 'consumer_group=%s\nassignment=%s\nretry_topic=%s\ndlq_topic=%s\nmax_reconsume_times=%s\nexpected_listener_reconsume_counts=0,1\nexpected_dlq_reconsume_times=%s\ninitial_messages=p10-success,p10-partial-ack,p10-partial-retry\nfailure_message=p10-failure-dlq\nfixed_queue=broker-a:0\n' \
+        "$consumer_group" "test-only-fixed" "$p10_retry_topic" "$p10_dlq_topic" "$p10_retry_max_times" "$((p10_retry_max_times + 1))" \
         >>"$evidence_dir/metadata.txt"
 fi
 if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
@@ -820,7 +820,7 @@ docker compose --project-name $project_name --file integration-tests/compose.yam
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed-p10 $namesrv_addr $topic initial" exec:java@live-high-level-producer-probe
 target/debug/live_client p10-push $namesrv_addr $topic $consumer_group <evidence>/rust-ready <evidence>/seed-failure
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed-p10 $namesrv_addr $topic failure" exec:java@live-high-level-producer-probe
-The manifest profile is two-broker; the host-routed two-Broker Compose profile publishes NameServer-advertised Broker endpoints to the host Java/Rust clients. The runner releases the failure seed gate after Java sends the failure message; Rust records callbacks and verifies the retry-topic/DLQ transition before shutdown.
+The manifest profile is two-broker; the host-routed two-Broker Compose profile publishes NameServer-advertised Broker endpoints to the host Java/Rust clients. The runner releases the failure seed gate after Java sends the failure message; Rust records callbacks and verifies the retry-topic/DLQ transition before shutdown. Broker 5.3.4 stores the terminal DLQ copy with reconsumeTimes=retryMaxTimes+1 after the final send-back.
 EOF
 elif [[ "$scenario_id" == "P9-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -2256,7 +2256,7 @@ if [row[3:5] for row in failures] != [["p10-failure-dlq", "0"], ["p10-failure-dl
     raise SystemExit(f"failure callbacks did not exhaust exactly one retry: {failures!r}")
 dlq = rows("rust-p10-push.tsv", ["P10", "DLQ"])
 expected_dlq_topic = f"%DLQ%{group}"
-if dlq != [["P10", "DLQ", expected_dlq_topic, "p10-failure-dlq", str(retry_limit), "p10-failure-dlq-key"]]:
+if dlq != [["P10", "DLQ", expected_dlq_topic, "p10-failure-dlq", str(retry_limit + 1), "p10-failure-dlq-key"]]:
     raise SystemExit(f"configured DLQ result differs: {dlq!r}")
 if rows("rust-p10-push.tsv", ["P10", "PASS"]) != [["P10", "PASS", "LISTENER_SUCCESS_PARTIAL_FAILURE", "RETRIES=1", "DLQ=FOUND"]]:
     raise SystemExit("Rust Push consumer did not report the complete P10 result")

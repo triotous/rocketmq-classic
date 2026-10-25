@@ -509,7 +509,7 @@ async fn p10_push_probe(
         if partial_retries != [0, 1] {
             return Err(format!("partial batch retry counts differ: {partial_retries:?}").into());
         }
-        if failure_retries != [0, 1] || dlq_message.2 != 1 {
+        if failure_retries != [0, 1] || dlq_message.2 != 2 {
             return Err(format!(
                 "DLQ retry counts differ: listener={failure_retries:?}, dlq={}",
                 dlq_message.2

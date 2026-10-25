@@ -1,0 +1,5 @@
+This clean-source replay used revision 74b5b41b846c323449e2ee02fc5674679e4493d9 with source_code_dirty=false. Both Java 5.5.1 and Rust ran against the host-routed two-Broker RocketMQ 5.3.4 profile. Java seeded all three initial messages on broker-a queue 0. Rust received the first batch, set ackIndex=1, then observed the partial message again with reconsumeTimes=1 and acknowledged it. The failure-stage callback ran at reconsumeTimes 0 and 1, then the Broker placed the message in %DLQ%compat_p10_push with body and key intact.
+
+The runner's final assertion expected the stored DLQ reconsumeTimes to equal the configured retryMaxTimes (1). The Broker stored it as 2: 5.3.4 increments the terminal send-back copy after the last listener attempt, so the DLQ value is retryMaxTimes+1 while listener callbacks remain [0,1]. This assertion alone failed. Compose teardown completed; project-filtered Docker container, volume, and network queries returned empty. The manifest remains PENDING_PHASE_19.
+
+The probe and runner now assert the observed listener sequence and DLQ reconsumeTimes=retryMaxTimes+1. The corrected revision requires a clean-source replay.
