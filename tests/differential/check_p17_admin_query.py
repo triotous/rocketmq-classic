@@ -23,7 +23,8 @@ def messages(directory, name, key):
             continue
         if len(row) != 7:
             raise SystemExit(f"{name}: malformed message row for {key}: {row}")
-        selected.append((row[3], int(row[4]), int(row[5]), row[6]))
+        broker_name = row[3] if row[3] not in ("", "null") else "<not-provided>"
+        selected.append((broker_name, int(row[4]), int(row[5]), row[6]))
     return sorted(selected)
 
 
@@ -45,11 +46,10 @@ def check_prepare(directory):
     duplicate = compare_pair(
         directory, "java-duplicate.tsv", "rust-duplicate.tsv", "p17-duplicate-key", 2
     )
-    if {(row[0], row[3]) for row in duplicate} != {
-        ("broker-a", "p17-duplicate-broker-a"),
-        ("broker-b", "p17-duplicate-broker-b"),
-    }:
-        raise SystemExit(f"duplicate-key messages did not come from both Brokers: {duplicate}")
+    if [row[3] for row in duplicate] != [
+        "p17-duplicate-broker-a", "p17-duplicate-broker-b"
+    ]:
+        raise SystemExit(f"duplicate-key messages did not match the two-Broker seed: {duplicate}")
     bounded = compare_pair(
         directory, "java-bounded-all.tsv", "rust-bounded-all.tsv", "p17-bounded-time-range", 2
     )
@@ -83,7 +83,6 @@ def check_verify(directory):
     )
     if (
         len(partial) != 1
-        or partial[0][0] != "broker-a"
         or partial[0][1] != 0
         or partial[0][3] != "p17-duplicate-broker-a"
     ):

@@ -1760,7 +1760,11 @@ if [[ "$scenario_id" == "P17-V02" ]]; then
         exit 1
     fi
     if [[ "$(awk -F '\t' '$1 == "P17" && $2 == "SEND" { count++ } END { print count + 0 }' "$evidence_dir/java-seed.tsv")" != 4 ]] \
-        || ! grep -Fxq $'P17\tSEED\t4\t2\t2' "$evidence_dir/java-seed.tsv"; then
+        || ! grep -Fxq $'P17\tSEED\t4\t2\t2' "$evidence_dir/java-seed.tsv" \
+        || ! grep -Fq $'P17\tSEND\tp17-duplicate-key\tbroker-a\t' "$evidence_dir/java-seed.tsv" \
+        || ! grep -Fq $'P17\tSEND\tp17-duplicate-key\tbroker-b\t' "$evidence_dir/java-seed.tsv" \
+        || ! grep -Fq $'P17\tSEND\tp17-bounded-time-range\tbroker-a\t' "$evidence_dir/java-seed.tsv" \
+        || ! grep -Fq $'P17\tSEND\tp17-bounded-time-range\tbroker-b\t' "$evidence_dir/java-seed.tsv"; then
         echo "Java seed did not report all four Broker-targeted messages" >&2
         exit 1
     fi
