@@ -62,6 +62,10 @@ public final class LiveRequestReplyProbe {
                 if (!replied.compareAndSet(false, true)) {
                     continue;
                 }
+                System.out.println("REQ\tRECEIVED\t" + request.getTopic() + "\t"
+                    + toHex(request.getBody()) + "\t"
+                    + request.getProperty("CORRELATION_ID") + "\t"
+                    + request.getProperty("REPLY_TO_CLIENT"));
                 try {
                     Message reply = MessageUtil.createReplyMessage(
                         request, replyBody.getBytes(StandardCharsets.UTF_8));

@@ -121,6 +121,12 @@ for scenario in selected:
     profile = scenario.get("profile")
     inputs = scenario.get("inputs", {})
     topic = inputs.get("topic", "-")
+    if scenario.get("id") == "REQ-001-request-reply-success":
+        if not isinstance(topic, str) or not topic.endswith("_java"):
+            raise SystemExit("REQ-001 Java request topic must end with _java")
+        expected_reverse_topic = topic[:-5] + "_rust"
+        if inputs.get("reverse_topic") != expected_reverse_topic:
+            raise SystemExit("REQ-001 reverse request topic must be the matching _rust topic")
     producer_group = inputs.get("producer_group", inputs.get("transaction_group", inputs.get("group", "-")))
     consumer_group = inputs.get("consumer_group", inputs.get("group", "-"))
     body = inputs.get("body", "-")
@@ -196,6 +202,14 @@ if [[ "$selection" != "scenario" ]]; then
 fi
 
 IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group <"$selected_file"
+rust_request_topic=""
+if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
+    if [[ "$topic" != *_java ]]; then
+        echo "The Java request topic must end with _java so the reverse-direction topic can be derived safely" >&2
+        exit 3
+    fi
+    rust_request_topic="${topic%_java}_rust"
+fi
 case "$profile:$scenario_id" in
     basic:*) ;;
     two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c) ;;
@@ -302,7 +316,7 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
-    REQ-001-request-reply-success:compat_phase0_request)
+    REQ-001-request-reply-success:compat_phase0_request_java)
         if [[ "$profile" != "host-routed" || "$consumer_group" != "compat_req_responder" ]]; then
             echo "Request/reply metadata differs from the reviewed host-routed case" >&2
             exit 3
@@ -486,7 +500,7 @@ if [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" ]
     printf 'consumer_group=%s\n' "$consumer_group" >>"$evidence_dir/metadata.txt"
 fi
 if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
-    printf 'consumer_group=%s\nrequest_timeout_ms=15000\n' "$consumer_group" \
+    printf 'consumer_group=%s\nrequest_topics=%s,%s\nrequest_timeout_ms=15000\n' "$consumer_group" "$topic" "$rust_request_topic" \
         >>"$evidence_dir/metadata.txt"
 fi
 {
@@ -556,7 +570,6 @@ elif [[ "$scenario_id" == "P6-V04" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=host-routed COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
-docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g $consumer_group -n namesrv:9876
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g ${consumer_group}_java -n namesrv:9876
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g ${consumer_group}_rust -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic compat_p6_producer_a compat_p6_producer_b $consumer_group" exec:java@live-shared-runtime-probe
@@ -576,7 +589,10 @@ elif [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=host-routed COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateTopic -c RocketMQLocalTest -t $rust_request_topic -r 1 -w 1 -n namesrv:9876
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g $consumer_group -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g ${consumer_group}_java -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g ${consumer_group}_rust -n namesrv:9876
 Rust responder / Java requester, then Java responder / Rust requester; each responder emits READY before its paired request.
 EOF
 elif [[ "$scenario_id" == "P0-V03" ]]; then
@@ -682,6 +698,10 @@ cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- 
 EOF
 fi
 topic_created=false
+topic_cleanup_list=("$topic")
+if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
+    topic_cleanup_list+=("$rust_request_topic")
+fi
 responder_pid=""
 cleanup() {
     status=$?
@@ -692,13 +712,16 @@ cleanup() {
         wait "$responder_pid" 2>/dev/null
     fi
     if [[ "$topic_created" == true ]]; then
-        "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin deleteTopic -c RocketMQLocalTest -t "$topic" -n namesrv:9876 \
-            >"$evidence_dir/topic-cleanup.log" 2>&1
-        delete_status=$?
-        if ((delete_status)); then
-            status=1
-            echo "Scenario topic cleanup failed; see $evidence_dir/topic-cleanup.log" >&2
-        fi
+        : >"$evidence_dir/topic-cleanup.log"
+        for topic_to_delete in "${topic_cleanup_list[@]}"; do
+            "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin deleteTopic -c RocketMQLocalTest -t "$topic_to_delete" -n namesrv:9876 \
+                >>"$evidence_dir/topic-cleanup.log" 2>&1
+            delete_status=$?
+            if ((delete_status)); then
+                status=1
+                echo "Scenario topic cleanup failed for $topic_to_delete; see $evidence_dir/topic-cleanup.log" >&2
+            fi
+        done
     fi
     ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
         COMPOSE_PROJECT_NAME="$project_name" bash "$repo_root/integration-tests/cleanup.sh" \
@@ -810,6 +833,13 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
         cat "$evidence_dir/topic-create.log" >&2
         exit 1
     fi
+    if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
+        if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateTopic -c RocketMQLocalTest -t "$rust_request_topic" -r 1 -w 1 -n namesrv:9876 \
+            >>"$evidence_dir/topic-create.log" 2>&1; then
+            cat "$evidence_dir/topic-create.log" >&2
+            exit 1
+        fi
+    fi
     if [[ "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" ]]; then
         echo "Creating scenario-owned subscription group $producer_group"
         if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$producer_group" -n namesrv:9876 \
@@ -866,13 +896,14 @@ fi
 start_reply_responder() {
     local language="$1"
     local reply_body="$2"
-    local output_file="$3"
+    local request_topic="$3"
+    local output_file="$4"
     if [[ "$language" == "java" ]]; then
         mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-            -Dexec.args="respond $namesrv_addr $topic ${consumer_group}_java compat_req_java_responder $reply_body" \
+            -Dexec.args="respond $namesrv_addr $request_topic ${consumer_group}_java compat_req_java_responder $reply_body" \
             exec:java@live-request-reply-probe >"$output_file" 2>"${output_file%.tsv}.stderr" &
     else
-        "$repo_root/target/debug/live_client" p19-respond "$namesrv_addr" "$topic" \
+        "$repo_root/target/debug/live_client" p19-respond "$namesrv_addr" "$request_topic" \
             "${consumer_group}_rust" compat_req_rust_responder "$reply_body" \
             >"$output_file" 2>"${output_file%.tsv}.stderr" &
     fi
@@ -911,18 +942,19 @@ wait_reply_responder() {
 
 run_reply_requester() {
     local language="$1"
-    local body="$2"
-    local output_file="$3"
+    local request_topic="$2"
+    local body="$3"
+    local output_file="$4"
     if [[ "$language" == "java" ]]; then
         if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-            -Dexec.args="request $namesrv_addr $topic compat_req_java_requester $body" \
+            -Dexec.args="request $namesrv_addr $request_topic compat_req_java_requester $body" \
             exec:java@live-request-reply-probe >"$output_file" \
             2>"${output_file%.tsv}.stderr"; then
             cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
             return 1
         fi
     else
-        if ! "$repo_root/target/debug/live_client" p19-request "$namesrv_addr" "$topic" \
+        if ! "$repo_root/target/debug/live_client" p19-request "$namesrv_addr" "$request_topic" \
             compat_req_rust_requester "$body" >"$output_file" \
             2>"${output_file%.tsv}.stderr"; then
             cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
@@ -1730,15 +1762,15 @@ PY
     printf 'PASS P9-V03: Java and Rust matched all four pull statuses, suggested broker, boundary RPCs, and persisted resume offset\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
-    start_reply_responder rust reply-java-to-rust "$evidence_dir/rust-responder.tsv"
-    run_reply_requester java request-java-to-rust "$evidence_dir/java-request-rust-reply.tsv"
+    start_reply_responder rust reply-java-to-rust "$topic" "$evidence_dir/rust-responder.tsv"
+    run_reply_requester java "$topic" request-java-to-rust "$evidence_dir/java-request-rust-reply.tsv"
     wait_reply_responder "$evidence_dir/rust-responder.tsv"
 
-    start_reply_responder java reply-rust-to-java "$evidence_dir/java-responder.tsv"
-    run_reply_requester rust request-rust-to-java "$evidence_dir/rust-request-java-reply.tsv"
+    start_reply_responder java reply-rust-to-java "$rust_request_topic" "$evidence_dir/java-responder.tsv"
+    run_reply_requester rust "$rust_request_topic" request-rust-to-java "$evidence_dir/rust-request-java-reply.tsv"
     wait_reply_responder "$evidence_dir/java-responder.tsv"
 
-    if ! python3 - "$topic" \
+    if ! python3 - "$topic" "$rust_request_topic" \
         "$evidence_dir/java-request-rust-reply.tsv" \
         "$evidence_dir/rust-responder.tsv" \
         "$evidence_dir/rust-request-java-reply.tsv" \
@@ -1746,16 +1778,16 @@ elif [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
 import sys
 from pathlib import Path
 
-topic, java_request_path, rust_responder_path, rust_request_path, java_responder_path = sys.argv[1:]
+java_topic, rust_topic, java_request_path, rust_responder_path, rust_request_path, java_responder_path = sys.argv[1:]
 
-def parse_request(path, request_body, reply_body):
+def parse_request(path, expected_topic, request_body, reply_body):
     lines = Path(path).read_text().splitlines()
     requests = [line.split("\t") for line in lines if line.startswith("REQ\tREQUEST\t")]
     replies = [line.split("\t") for line in lines if line.startswith("REQ\tREPLY\t")]
     if len(requests) != 1 or len(replies) != 1:
         raise SystemExit(f"{path}: expected exactly one request and one returned reply")
     request, reply = requests[0], replies[0]
-    if len(request) != 9 or request[2] != topic or bytes.fromhex(request[3]) != request_body.encode():
+    if len(request) != 9 or request[2] != expected_topic or bytes.fromhex(request[3]) != request_body.encode():
         raise SystemExit(f"{path}: request topic/body or result shape differs: {request!r}")
     if not request[4] or request[4] == "-" or request[5] == "-" or request[6] != "15000":
         raise SystemExit(f"{path}: request omitted correlation/reply-to/TTL metadata: {request!r}")
@@ -1770,22 +1802,29 @@ def parse_request(path, request_body, reply_body):
         reply[2], reply[3], reply[8]
     )
 
-def parse_responder(path):
+def parse_responder(path, expected_topic, expected_body):
     lines = Path(path).read_text().splitlines()
+    received = [line.split("\t") for line in lines if line.startswith("REQ\tRECEIVED\t")]
     sent = [line.split("\t") for line in lines if line.startswith("REQ\tRESPONDER\t")]
+    if len(received) != 1 or len(received[0]) != 6:
+        raise SystemExit(f"{path}: expected exactly one request observation")
+    if received[0][2] != expected_topic or bytes.fromhex(received[0][3]) != expected_body.encode():
+        raise SystemExit(f"{path}: responder consumed the wrong request: {received[0]!r}")
     if len(sent) != 1 or len(sent[0]) != 7 or sent[0][2] != "SEND_OK":
         raise SystemExit(f"{path}: expected exactly one successful reply send")
     if not sent[0][3].endswith("_REPLY_TOPIC"):
         raise SystemExit(f"{path}: responder sent to an unexpected topic: {sent[0]!r}")
+    if sent[0][4:] != received[0][3:]:
+        raise SystemExit(f"{path}: reply send did not use the received request metadata")
     return sent[0][3:]
 
-java_rust = parse_request(java_request_path, "request-java-to-rust", "reply-java-to-rust")
-rust_java = parse_request(rust_request_path, "request-rust-to-java", "reply-rust-to-java")
-java_rust_sent = parse_responder(rust_responder_path)
-rust_java_sent = parse_responder(java_responder_path)
-if java_rust[0] != topic or java_rust[1] != java_rust_sent[1] or java_rust[2] != java_rust_sent[2] or java_rust[3] != java_rust_sent[3]:
+java_rust = parse_request(java_request_path, java_topic, "request-java-to-rust", "reply-java-to-rust")
+rust_java = parse_request(rust_request_path, rust_topic, "request-rust-to-java", "reply-rust-to-java")
+java_rust_sent = parse_responder(rust_responder_path, java_topic, "request-java-to-rust")
+rust_java_sent = parse_responder(java_responder_path, rust_topic, "request-rust-to-java")
+if java_rust[0] != java_topic or java_rust[1] != java_rust_sent[1] or java_rust[2] != java_rust_sent[2] or java_rust[3] != java_rust_sent[3]:
     raise SystemExit("Rust responder did not receive the expected Java request")
-if rust_java[0] != topic or rust_java[1] != rust_java_sent[1] or rust_java[2] != rust_java_sent[2] or rust_java[3] != rust_java_sent[3]:
+if rust_java[0] != rust_topic or rust_java[1] != rust_java_sent[1] or rust_java[2] != rust_java_sent[2] or rust_java[3] != rust_java_sent[3]:
     raise SystemExit("Java responder did not receive the expected Rust request")
 if java_rust[6] != java_rust_sent[0] or rust_java[6] != rust_java_sent[0]:
     raise SystemExit("responder send topic differs from the topic returned to the requester")

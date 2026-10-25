@@ -728,6 +728,13 @@ async fn request_reply_respond(
                             request.get_property("CORRELATION_ID").unwrap_or_default();
                         let request_reply_to =
                             request.get_property("REPLY_TO_CLIENT").unwrap_or_default();
+                        println!(
+                            "REQ\tRECEIVED\t{}\t{}\t{}\t{}",
+                            request.topic(),
+                            request_body,
+                            request_correlation,
+                            request_reply_to
+                        );
                         let outcome = match create_reply_message(Some(&request), reply_body.clone())
                         {
                             Ok(mut reply) => match producer.send(&mut reply).await {
