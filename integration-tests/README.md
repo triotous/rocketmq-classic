@@ -94,12 +94,14 @@ reply fields and each responder's observed request.
 cross-language pull readback.
 `P5-V02-producer` compares raw producer V1, V2, batch, reply V1/V2, and
 end-transaction calls on the pinned Broker.
+`P5-V02-consumer` compares raw pull and Lite pull, offset query/update,
+consumer-list, send-back, and queue lock/unlock calls on the two-Broker profile.
 It deletes any owned topic and tears down only that project. Toolchain,
 configuration, output, and cleanup evidence is stored under
 `docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
-after comparison and cleanup both succeed. The runner implements 23 of 37
-cases and all 23 have passed: the two Phase 0 route cases, `P0-V03`,
-`P5-V02-route`, `P5-V02-producer`, `P6-V04`, `P7-V02`, `P9-V03`,
+after comparison and cleanup both succeed. The runner implements 24 of 37
+cases and all 24 have passed: the two Phase 0 route cases, `P0-V03`,
+`P5-V02-route`, `P5-V02-producer`, `P5-V02-consumer`, `P6-V04`, `P7-V02`, `P9-V03`,
 `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, `HEARTBEAT-001`,
 `PROD-001-sync-send` through `PROD-004-batch-send`, `PROD-005-send-timeout`, and
 `CONS-001-query-offset` through `CONS-004-update-offset`, plus
@@ -182,7 +184,7 @@ It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
 produce a `BLOCKED` result with the missing IDs in the archived log; the full
 matrix cannot report success until all IDs have passing evidence. Currently
-23 of 37 live cases have runners; the other 14, the remaining two-Broker
+24 of 37 live cases have runners; the other 13, the remaining two-Broker
 cases, TLS/ACL/feature profiles, and a fresh `run-local.sh --all` pass remain
 pending. The last full local run predates several later runner additions and
 must be rerun against the current revision.

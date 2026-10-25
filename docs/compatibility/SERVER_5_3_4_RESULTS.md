@@ -275,3 +275,15 @@ Java and Rust each advanced the queue by three stored messages. The topic,
 reply consumer group, and basic-profile Compose project were removed. Evidence
 is under [`20261025T110552Z`](evidence/phase-19/P5-V02-producer/20261025T110552Z/).
 Live coverage is now 23/37, with 14 cases pending.
+
+## P5 consumer RPC variants — 2026-10-25
+
+`P5-V02-consumer` passed on clean revision
+`df61d2f784176a0841839be47c8c9f02183e5948` with `source_code_dirty=false`.
+Java 5.5.1 and Rust matched ordinary pull and Lite pull (`FOUND`, two
+messages, min/max offsets 0/2), offset update/query at 1, consumer-list
+availability, send-back success, queue lock, and unlock. The topic and
+scenario-owned group were removed with the isolated two-Broker project.
+Evidence is under
+[`20261025T111709Z`](evidence/phase-19/P5-V02-consumer/20261025T111709Z/).
+Live coverage is now 24/37, with 13 cases pending.

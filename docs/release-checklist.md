@@ -10639,3 +10639,17 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - Live coverage is 23/37, with 14 scenarios pending. Full local gates must be
   rerun after the remaining runner additions; broad P18-V01, MAN-01..05, and
   remote Docker CI remain open.
+
+## P19 P5-V02 consumer RPC variants — 2026-10-25 (`df61d2f7`)
+
+- [x] Added direct Java 5.5.1/Rust probes for ordinary pull, Lite pull, offset
+  update/query, consumer-list, send-back, and queue lock/unlock on the
+  two-Broker profile.
+- [x] `P5-V02-consumer` passed at `20261025T111709Z` on
+  `df61d2f784176a0841839be47c8c9f02183e5948` with `source_code_dirty=false`.
+  Both probes matched `FOUND` with two messages and offsets 0/2 for both pull
+  methods; the remaining six RPCs also matched their successful outcomes.
+  Topic deletion and two-Broker Compose teardown passed.
+- Live coverage is 24/37, with 13 scenarios pending. Full local gates must be
+  rerun after the remaining runner additions; broad P18-V01, MAN-01..05, and
+  remote Docker CI remain open.

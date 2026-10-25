@@ -1,6 +1,6 @@
 # Phase 5 implementation handoff
 
-Local phase acceptance: P5-V01, P5-V03 and P5-U01 verified. P5-V02 has partial Phase 19 evidence: route and producer subcases pass, while consumer and extension subcases remain pending. Branch: `06-phase-05-typed-rpc-api`. No live Broker, NameServer or Docker was required or contacted for the Phase 5 acceptance; no final Java compatibility/release claim is made.
+Local phase acceptance: P5-V01, P5-V03 and P5-U01 verified. P5-V02 has partial Phase 19 evidence: route, producer, and consumer subcases pass; the extension subcase remains pending. Branch: `06-phase-05-typed-rpc-api`. No live Broker, NameServer or Docker was required or contacted for the Phase 5 acceptance; no final Java compatibility/release claim is made.
 
 ## Requirement audit
 
@@ -38,4 +38,4 @@ Recent incremental commits: `0d3d708` malformed pull/lock/assignment; `2c25a09` 
 
 ## Downstream ownership
 
-Phase 6 receives route, heartbeat V1/V2 and unregister primitives over a caller-owned/shared RemotingClient. Phase 7 supplies producer queue selection/retry/unique-ID/batch preparation. Phase 8 attaches a single binary message decoder to existing raw pull/POP bytes. Phase 13 supplies public Lite/POP consumer state and extra-info attachment using these lower-level calls. Phase 19 executes the four P5-V02 scenario groups against server 5.3.4 with Java success/error differential evidence. No Phase 5 manual action remains.
+Phase 6 receives route, heartbeat V1/V2 and unregister primitives over a caller-owned/shared RemotingClient. Phase 7 supplies producer queue selection/retry/unique-ID/batch preparation. Phase 8 attaches a single binary message decoder to existing raw pull/POP bytes. Phase 13 supplies public Lite/POP consumer state and extra-info attachment using these lower-level calls. Phase 19 has passing server 5.3.4 differential evidence for the P5-V02 route, producer, and consumer subcases; the extension subcase remains pending. No final Java compatibility or release claim is made.

@@ -9,7 +9,7 @@ remains in progress.
 
 ## Phase 19 live status — 2026-10-25
 
-Twenty-three of 37 registered Broker scenarios have passing Java 5.5.1/Rust
+Twenty-four of 37 registered Broker scenarios have passing Java 5.5.1/Rust
 evidence on the pinned 5.3.4 image. Four consumer cases cover reciprocal
 offset updates and queries, a found pull with message-body comparison, and an
 empty pull; `P5-V02-route` covers matching results for an existing and missing
@@ -31,9 +31,11 @@ restart. `REQ-001-request-reply-success` also passes the two cross-language
 request/reply directions with matching correlation and reply metadata.
 `P5-V02-producer` matches raw V1, V2, batch, one-way reply V1/V2, and
 end-transaction RPC outcomes.
+`P5-V02-consumer` matches raw pull/Lite pull, offset update/query,
+consumer-list, send-back, and lock/unlock outcomes on the two-Broker profile.
 `PROD-005-send-timeout` delays the Broker responses beyond 100 ms, confirms
 both clients report timeout, and verifies each message is committed once by
-matching Java/Rust pull results. The other 14 scenarios remain unimplemented
+matching Java/Rust pull results. The other 13 scenarios remain unimplemented
 and pending. This does
 not close the broader P18-V01 public API/settings/flow reverse audit or establish
 full client parity. See
