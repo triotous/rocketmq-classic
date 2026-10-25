@@ -1204,8 +1204,6 @@ async fn p5_producer(
             ("send-v1", SendKind::V1, false, false),
             ("send-v2", SendKind::V2, false, false),
             ("batch", SendKind::Batch, false, true),
-            ("reply-v1", SendKind::ReplyV1, true, false),
-            ("reply-v2", SendKind::ReplyV2, true, false),
         ] {
             let mut message = Message::new(topic, format!("p5-rust-{method}").into_bytes());
             message.set_keys(format!("compat_p5_rust_{method}"))?;
@@ -1261,6 +1259,82 @@ async fn p5_producer(
                 )
                 .await?
                 .ok_or("synchronous producer RPC returned no result")?;
+            if result.offset_msg_id.as_deref().is_none_or(str::is_empty) {
+                return Err(format!("{method} returned an incomplete send result").into());
+            }
+            println!(
+                "P5\tRESULT\t{method}\t{}\t{}\t{}\t{}",
+                result.status.name(),
+                result.topic,
+                result.queue_id,
+                result.queue_offset
+            );
+        }
+
+        let heartbeat = HeartbeatData {
+            client_id: Some("compat-p5-client".into()),
+            ..HeartbeatData::default()
+        };
+        heartbeat
+            .producer_data_set
+            .as_ref()
+            .expect("default heartbeat initializes producer set")
+            .with_mut(|producers| {
+                producers.insert(Some(SharedValue::from(ProducerData {
+                    group_name: Some(producer_group.to_owned()),
+                })));
+            });
+        api.send_heartbeat(
+            broker_address,
+            &heartbeat,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await?;
+
+        for (method, kind) in [
+            ("reply-v1", SendKind::ReplyV1),
+            ("reply-v2", SendKind::ReplyV2),
+        ] {
+            let mut message = Message::new(topic, format!("p5-rust-{method}").into_bytes());
+            message.set_keys(format!("compat_p5_rust_{method}"))?;
+            message.set_system_property("MSG_TYPE", "reply")?;
+            message
+                .set_system_property("CORRELATION_ID", format!("compat-p5-correlation-{method}"))?;
+            message.set_system_property("REPLY_TO_CLIENT", "compat-p5-client")?;
+            message.set_system_property("TTL", "60000")?;
+            let message_id = ids.set_if_missing(&mut message);
+            let born_timestamp = i64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_millis(),
+            )?;
+            let mut header = SendMessageRequestHeaderV1::default();
+            header.set_producer_group(Some(producer_group.to_owned()));
+            header.set_topic(topic.to_owned());
+            header.set_default_topic("TBW102".into());
+            header.set_default_topic_queue_nums(4);
+            header.set_queue_id(0);
+            header.set_sys_flag(0);
+            header.set_born_timestamp(born_timestamp);
+            header.set_flag(message.flag());
+            header.set_properties(Some(encode_properties(&message.properties())));
+            header.set_reconsume_times(Some(0));
+            header.set_unit_mode(Some(false));
+            header.set_batch(Some(false));
+            header.set_broker_name(Some("broker-a".into()));
+            let result = api
+                .send_message(
+                    broker_address,
+                    "broker-a",
+                    &header,
+                    message.body().to_vec(),
+                    &message_id,
+                    kind,
+                    SendMode::Sync,
+                    Instant::now() + Duration::from_secs(10),
+                )
+                .await?
+                .ok_or("reply producer RPC returned no result")?;
             if result.offset_msg_id.as_deref().is_none_or(str::is_empty) {
                 return Err(format!("{method} returned an incomplete send result").into());
             }

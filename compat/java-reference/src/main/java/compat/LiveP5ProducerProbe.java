@@ -19,6 +19,8 @@ import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.protocol.header.EndTransactionRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.heartbeat.HeartbeatData;
+import org.apache.rocketmq.remoting.protocol.heartbeat.ProducerData;
 
 /** Exercises the Phase 5 producer RPC variants against a live Broker. */
 public final class LiveP5ProducerProbe {
@@ -48,6 +50,12 @@ public final class LiveP5ProducerProbe {
             emit(api, smartSend, false, false, false, brokerAddress, topic, "send-v1");
             emit(api, smartSend, true, false, false, brokerAddress, topic, "send-v2");
             emit(api, smartSend, true, true, false, brokerAddress, topic, "batch");
+            HeartbeatData heartbeat = new HeartbeatData();
+            heartbeat.setClientID("compat-p5-client");
+            ProducerData producer = new ProducerData();
+            producer.setGroupName(PRODUCER_GROUP);
+            heartbeat.getProducerDataSet().add(producer);
+            api.sendHeartbeat(brokerAddress, heartbeat, 10_000);
             emit(api, smartSend, false, false, true, brokerAddress, topic, "reply-v1");
             emit(api, smartSend, true, false, true, brokerAddress, topic, "reply-v2");
 
