@@ -56,7 +56,8 @@ services:
     restart: "no"
 
   broker-auth:
-    image: apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+    image: ${ROCKETMQ_AUTH_BROKER_IMAGE:-apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8}
+    platform: ${ROCKETMQ_AUTH_BROKER_PLATFORM:-linux/arm64}
     profiles: [tls-auth]
     command: ["broker", "-c", "/etc/rocketmq/broker.conf"]
     depends_on:

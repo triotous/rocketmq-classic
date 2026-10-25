@@ -17,6 +17,14 @@ if [[ "$ROCKETMQ_PROFILE" == "tls-auth" && ( -z "${ROCKETMQ_BROKER_AUTH_CONFIG:-
     echo "tls-auth requires ROCKETMQ_BROKER_AUTH_CONFIG to name the per-run Broker config with synthetic credentials" >&2
     exit 2
 fi
+if [[ "$ROCKETMQ_PROFILE" == "tls-auth" && "${ROCKETMQ_AUTH_BROKER_IMAGE:-}" != "rocketmq-classic-p19-official-5.3.4-amd64:88508d548042" ]]; then
+    echo "tls-auth requires the locally built, SHA-512-verified Apache 5.3.4 binary-distribution image from build-official-rocketmq-5.3.4-amd64.sh" >&2
+    exit 2
+fi
+if [[ "$ROCKETMQ_PROFILE" == "tls-auth" && "${ROCKETMQ_AUTH_BROKER_PLATFORM:-}" != "linux/amd64" ]]; then
+    echo "tls-auth requires ROCKETMQ_AUTH_BROKER_PLATFORM=linux/amd64 for the verified RocketMQ 5.3.4 Linux RocksDB JNI library" >&2
+    exit 2
+fi
 
 project_name="${COMPOSE_PROJECT_NAME:-rocketmq-classic-p19-local}"
 if [[ ! "$project_name" =~ ^rocketmq-classic-p19-[a-z0-9-]+$ ]]; then

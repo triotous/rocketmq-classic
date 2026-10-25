@@ -247,6 +247,22 @@ It checks both successful directions, no-responder timeouts, and delayed
 opposite-language replies after timeout, then deletes its six scenario topics
 from both Brokers.
 
+P16-V02 uses the pinned 5.3.4 NameServer and a local container built from the
+official Apache 5.3.4 binary distribution. The builder checks the published
+SHA-512 before extracting the archive and pins its amd64 Temurin 8 base image.
+The official 5.3.4 distribution contains the Linux x86_64 RocksDB JNI library
+used by the ACL metadata provider; the pinned linux/arm64 Docker image does not
+contain a Linux ARM64 native library. Docker amd64 emulation is required on an
+ARM64 host. The scenario runner builds this test-only container automatically
+and still runs Java and Rust against RocketMQ 5.3.4; no Broker code or
+distribution files are patched.
+
+```bash
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable \
+ROCKETMQ_PROFILE=tls-auth \
+bash tests/differential/run.sh --scenario P16-V02
+```
+
 Live runs require the pinned runner toolchains: Maven on JDK 27 and Rust 1.85.0,
 matching the repository CI configuration.
 
@@ -261,14 +277,15 @@ It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
 produce a `BLOCKED` result with the missing IDs in the archived log; the full
 matrix cannot report success until all IDs have passing evidence. Currently
-33 of 37 live cases have passing evidence; four remain without runners:
-`P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02`.
+36 of 37 live cases have passing evidence; `P16-V02` is the only case without
+a passing run. It already has a runner, including the verified Apache 5.3.4
+binary-distribution profile described above.
 `P5-V02-extensions`
 passed the 5.3.4 parity case with matching unsupported responses for Lite
 subscription and Lite POP; positive Lite success-path coverage passed
 separately on the official 5.5.0 image and is not part of the 5.3.4 manifest
 count.
-The remaining two-Broker cases, ACL/feature profiles, and a fresh
-`run-local.sh --all` pass remain pending. The last full local run predates
-several later runner additions and must be rerun against the current revision.
+The P16 ACL/TLS case and a fresh `run-local.sh --all` pass remain pending. The
+last full local run predates several later runner additions and must be rerun
+against the current revision.
 Starting a profile by itself does not mark a scenario passed.

@@ -711,6 +711,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     tests/differential/delayed_response_proxy.py tests/differential/tls_broker_proxy.py tests/differential/acl_tampering_proxy.py tests/differential/query_failure_proxy.py tests/differential/check_p17_admin_query.py
     crates/rocketmq-classic-remoting/src/client/mod.rs
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
+    integration-tests/build-official-rocketmq-5.3.4-amd64.sh integration-tests/docker
     integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf integration-tests/config/broker-tx.conf integration-tests/config/broker-host.conf integration-tests/config/broker-a-host.conf integration-tests/config/broker-b-host.conf integration-tests/config/broker-a-transaction-host.conf integration-tests/config/broker-b-transaction-host.conf integration-tests/config/broker-auth.conf
     integration-tests/setup.sh integration-tests/cleanup.sh
     tests/differential/compare.py tests/differential/run.sh tests/differential/check_mixed_ownership.py tests/differential/check_p11_push.py tests/differential/check_p12_orderly.py)
@@ -747,8 +748,23 @@ then
 fi
 mkdir -p "$evidence_dir"
 cp "$selected_file" "$evidence_dir/selected.tsv"
-printf 'scenario=%s\nprofile=%s\nproject=%s\nrun_id=%s\njava_client=5.5.1\nserver=5.3.4\nserver_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8\nsource_revision=%s\nsource_code_dirty=%s\nproducer_group=%s\nbody=%s\nseed=not-applicable\n' \
+auth_broker_image=""
+if [[ "$scenario_id" == "P16-V02" ]]; then
+    if ! auth_broker_image="$(bash "$repo_root/integration-tests/build-official-rocketmq-5.3.4-amd64.sh" \
+        2>"$evidence_dir/official-distribution-build.log")"; then
+        cat "$evidence_dir/official-distribution-build.log" >&2
+        exit 1
+    fi
+    export ROCKETMQ_AUTH_BROKER_IMAGE="$auth_broker_image"
+    export ROCKETMQ_AUTH_BROKER_PLATFORM=linux/amd64
+fi
+server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+if [[ -n "$auth_broker_image" ]]; then
+    server_image="$auth_broker_image"
+fi
+printf 'scenario=%s\nprofile=%s\nproject=%s\nrun_id=%s\njava_client=5.5.1\nserver=5.3.4\nserver_image=%s\nsource_revision=%s\nsource_code_dirty=%s\nproducer_group=%s\nbody=%s\nseed=not-applicable\n' \
     "$scenario_id" "$manifest_profile" "$project_name" "$run_id" \
+    "$server_image" \
     "$(git -C "$repo_root" rev-parse HEAD)" "$source_code_dirty" "$producer_group" "$body" \
     >"$evidence_dir/metadata.txt"
 if [[ "$profile" != "$manifest_profile" ]]; then
@@ -818,6 +834,9 @@ if [[ "$scenario_id" == "P14-V03" ]]; then
         "$consumer_group" >>"$evidence_dir/metadata.txt"
 fi
 if [[ "$scenario_id" == "P16-V02" ]]; then
+    auth_broker_image_id="$(docker image inspect "$auth_broker_image" --format '{{.Id}}')"
+    printf 'name_server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8\nauth_broker_image=%s\nauth_broker_image_id=%s\nauth_broker_platform=linux/amd64\nauth_broker_base_image=eclipse-temurin:8-jre@sha256:acfd157ba9dc5b7cbfd2bd2391bc206a6d23e6ddbba564eb89cf60e77de77831\nserver_distribution=Apache RocketMQ 5.3.4 binary release\nserver_distribution_sha512=88508d5480421ce1582e56aa2e3b6e28ea6b88418cf618fd79a78f996a7ae853ee1ea98780377235ed396ce2bc82b4f3d88a838c72076760466702d881bfc6ae\n' \
+        "$auth_broker_image" "$auth_broker_image_id" >>"$evidence_dir/metadata.txt"
     printf 'checks=signed-request-accepted,wrong-secret-rejected,tampered-body-rejected,trusted-ca-accepted,wrong-hostname-rejected,untrusted-ca-rejected,missing-client-certificate-rejected\nmutual_tls=true\ninsecure_tls_bypass=false\ncredentials=per-run-random-synthetic-and-redacted\n' \
         >>"$evidence_dir/metadata.txt"
 fi
@@ -863,7 +882,7 @@ fi
     docker version --format 'Docker client {{.Client.Version}} / server {{.Server.Version}}'
     docker compose version
     docker info --format 'Docker platform {{.OSType}}/{{.Architecture}}'
-    python3 - "$repo_root/integration-tests/compose.yaml" "$repo_root/integration-tests/config/broker.conf" "$repo_root/integration-tests/config/broker-b.conf" "$repo_root/integration-tests/config/broker-tx.conf" "$repo_root/integration-tests/config/broker-host.conf" "$repo_root/integration-tests/config/broker-a-host.conf" "$repo_root/integration-tests/config/broker-b-host.conf" "$repo_root/integration-tests/config/broker-auth.conf" <<'PY'
+    python3 - "$repo_root/integration-tests/compose.yaml" "$repo_root/integration-tests/config/broker.conf" "$repo_root/integration-tests/config/broker-b.conf" "$repo_root/integration-tests/config/broker-tx.conf" "$repo_root/integration-tests/config/broker-host.conf" "$repo_root/integration-tests/config/broker-a-host.conf" "$repo_root/integration-tests/config/broker-b-host.conf" "$repo_root/integration-tests/config/broker-auth.conf" "$repo_root/integration-tests/build-official-rocketmq-5.3.4-amd64.sh" "$repo_root/integration-tests/docker/rocketmq-5.3.4-amd64.Dockerfile" "$repo_root/integration-tests/docker/rocketmq-5.3.4-entrypoint.sh" <<'PY'
 import hashlib
 import sys
 from pathlib import Path
@@ -873,6 +892,11 @@ for filename in sys.argv[1:]:
     print(f"sha256 {hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
 PY
 } >"$evidence_dir/toolchain.txt" 2>&1
+if [[ "$scenario_id" == "P16-V02" ]]; then
+    docker image inspect "$auth_broker_image" \
+        --format 'P16 auth Broker image {{.Id}} / {{.Os}}/{{.Architecture}}' \
+        >>"$evidence_dir/toolchain.txt" 2>&1
+fi
 if [[ "$scenario_id" == "P17-V02" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker COMPOSE_PROJECT_NAME=$project_name bash tests/differential/run.sh --scenario P17-V02
@@ -890,7 +914,8 @@ python3 tests/differential/check_p17_admin_query.py verify <evidence>
 EOF
 elif [[ "$scenario_id" == "P16-V02" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
-ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=tls-auth COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+bash integration-tests/build-official-rocketmq-5.3.4-amd64.sh
+ROCKETMQ_AUTH_BROKER_IMAGE=$auth_broker_image ROCKETMQ_AUTH_BROKER_PLATFORM=linux/amd64 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=tls-auth COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 python3 tests/differential/acl_tampering_proxy.py --upstream $broker_addr --ready-file <evidence>/acl-proxy-ready.txt --log-file <evidence>/acl-proxy-events.tsv
 python3 tests/differential/tls_broker_proxy.py --upstream $broker_addr --cert <evidence>/tls/server.pem --key <evidence>/tls/server.key --client-ca <evidence>/tls/ca.pem --ready-file <evidence>/tls-proxy-ready.txt --log-file <evidence>/tls-proxy-events.tsv
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="auth-{valid,wrong-secret,tampered} <broker-or-acl-proxy>" exec:java@live-p16-security-probe
