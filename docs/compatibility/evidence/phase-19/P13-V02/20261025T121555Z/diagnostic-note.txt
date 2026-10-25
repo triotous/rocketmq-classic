@@ -1,0 +1,3 @@
+This clean-source diagnostic run compiled the Java 5.5.1 and Rust live probes, created the isolated two-Broker 5.3.4 project, provisioned the scenario topic and six lifecycle groups, set all Java/Rust POP groups to POP request mode, and seeded Java messages on broker-a queues 0 and 1.
+
+Despite pre-seed mode setup, Java's first POP for the expiry group returned POLLING_NOT_FOUND. No lifecycle assertion passed and Rust consumption did not run. The runner removed the topic, containers, network, and both volumes. The manifest remains pending; the actual send result and POP response fields need investigation before another full lifecycle attempt.

@@ -315,10 +315,12 @@ and Java queue 0/1 messages. Java's first immediate POP returned
 `POLLING_NOT_FOUND`; no lifecycle assertion passed and Rust consumption did
 not run. That probe omitted per-group POP request-mode setup. The retry
 `20261025T121249Z` used `23a3131e` (`source_code_dirty=false`) and set POP mode
-immediately before each POP, but also returned `POLLING_NOT_FOUND`: the groups
-were first switched after Java had seeded the messages, so the Broker had
-initialized their starting offsets past those messages. Both runs removed the
-topic, containers, network, and volumes. Evidence is under
-[`20261025T121016Z`](evidence/phase-19/P13-V02/20261025T121016Z/) and
-[`20261025T121249Z`](evidence/phase-19/P13-V02/20261025T121249Z/). The
+immediately before each POP, but also returned `POLLING_NOT_FOUND`. A third
+run `20261025T121555Z` on `dcee59c3` prepared both clients' POP modes before
+seeding and returned the same response. No attempt passed a lifecycle
+assertion or started Rust consumption. All runs removed the topic, containers,
+network, and volumes. Evidence is under
+[`20261025T121016Z`](evidence/phase-19/P13-V02/20261025T121016Z/),
+[`20261025T121249Z`](evidence/phase-19/P13-V02/20261025T121249Z/), and
+[`20261025T121555Z`](evidence/phase-19/P13-V02/20261025T121555Z/). The
 manifest remains pending and coverage remains 25/37, with 12 cases pending.
