@@ -10841,3 +10841,22 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   `P7-V03`, `P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`,
   `P16-V02`, and `P17-V02`. Full local gates, reverse audit, and owner manual
   evidence remain pending.
+
+## P19-04 P7-V03 clean-source retry and deadline pass — 2026-10-25 (`0656dabc`)
+
+- [x] Clean-source run `20261025T150708Z` on committed revision
+  `0656dabc02247ac0965b24b3d5d27a360b32ca1f` passed against the pinned
+  unmodified RocketMQ 5.3.4 image. Java 5.5.1 and Rust each received injected
+  retryable code-16 responses from both Brokers, avoided the previously failed
+  Broker, and succeeded on attempt three with a stable body and unique ID.
+  Both then hit the 900 ms deadline against a delayed real Broker response.
+  Evidence is under
+  `docs/compatibility/evidence/phase-19/P7-V03/20261025T150708Z/`.
+- [x] Metadata records `source_code_dirty=false`, exit status 0, and duration
+  91 seconds. The runner deleted the scenario topic from both Brokers and
+  removed the isolated containers, NameServer, volumes, and network. Filtered
+  Docker queries found no project resources.
+- [ ] Live coverage is now 30/37. Seven runnerless cases remain:
+  `P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`, and
+  `P17-V02`. Full local gates, reverse audit, and owner manual evidence remain
+  pending.

@@ -358,8 +358,12 @@ remain assigned to Phase 16.
   TCP loopback cases in `scripts/phase7-producer-scripted-tests.sh`: two-broker
   retry, response policy, oneway, explicit queue/selector/batch modes, body/ID
   preservation, and lost-ack duplicate delivery. All five loopback cases passed.
-- **P7-V02–V04:** PENDING_PHASE_19, as specified by the plan. Do not mark them
-  passed before the Docker server 5.3.4 handoff.
+- **P7-V02:** LIVE_VERIFIED — clean-source high-level send modes passed against
+  Broker 5.3.4; see [run evidence](evidence/phase-19/P7-V02/20261025T094705Z/).
+- **P7-V03:** LIVE_VERIFIED — clean-source two-Broker retry and send-deadline
+  checks passed; see [run evidence](evidence/phase-19/P7-V03/20261025T150708Z/).
+- **P7-V04:** LIVE_VERIFIED — clean-source producer lifecycle checks passed;
+  see [run evidence](evidence/phase-19/P7-V04/20261025T141436Z/).
 
 The producer detector's local probe adapter has direct scripted RPC coverage
 for the queue-0 request fields, Broker error response, and missing/invalid
@@ -368,7 +372,7 @@ for the queue-0 request fields, Broker error response, and missing/invalid
 in `crates/rocketmq-classic-core/tests/rpc.rs`: the peer verifies GET_MAX_OFFSET,
 topic, queue ID 0, and `committed=true`, and the test checks valid, Broker-error,
 missing-offset, and invalid-offset outcomes. The focused test passes. This local
-check does not change P7-V02–V04's Phase 19 live Broker status.
+check does not change the Phase 19 live Broker evidence recorded above.
 
 The dedicated offline Java producer fixture generator and its drift verification
 pass. `mvn -f compat/java-reference/pom.xml verify` also passed, including the

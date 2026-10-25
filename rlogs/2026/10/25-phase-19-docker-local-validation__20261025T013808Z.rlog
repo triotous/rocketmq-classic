@@ -448,3 +448,11 @@
 - The second clean replay confirmed Broker permission changes were unsuitable for a deterministic send error: Java lost its route and Rust's Broker accepted the send. The runner no longer changes Broker permissions; that earlier diagnostic and its commands remain preserved verbatim.
 - The current proxy tracks the request `opaque` for a send-only deadline delay, so background heartbeat responses cannot consume the 1,800 ms delay. The archived command template now records both proxy flags and the synthetic response setup.
 - The 15:00:01 failed replay evidence has been retained for the retry attempt and proxy logs. The next committed implementation revision will be clean-replayed before any pass status is recorded.
+
+## P19-04 P7-V03 clean-source retry and deadline pass — 2026-10-25 (`0656dabc`)
+
+- Clean-source run `20261025T150708Z` on committed revision `0656dabc02247ac0965b24b3d5d27a360b32ca1f` passed against the pinned unmodified RocketMQ 5.3.4 image. Both Java 5.5.1 and Rust received injected code-16 `NO_PERMISSION` responses from both Brokers, retried on the other Broker, then succeeded on attempt three with the original body and one stable unique ID.
+- Each client then timed out after one send attempt at about 900 ms while the proxy delayed the matching real Broker response by 1,800 ms. Evidence is retained under `docs/compatibility/evidence/phase-19/P7-V03/20261025T150708Z/`; metadata records `source_code_dirty=false`, exit 0, and 91 seconds.
+- The runner deleted `compat_p7_retry` from both Brokers and removed the isolated containers, NameServer, volumes, and network. Filtered Docker container/volume/network queries returned no project resources.
+- Updated the manifest and current compatibility/server/release summaries to 30/37 passing, with seven runnerless scenarios remaining. The full local gate, P18-V01/P19-V03/P19-V04 audits, and owner manual checks remain open.
+- The post-pass manifest validator reports 37 scenarios, 30 PASS, and seven PENDING_PHASE_19 (`P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`, `P17-V02`). `run.sh --check-all` failed closed with those seven IDs before starting Docker; the full local gate remains pending implementation of their runners.

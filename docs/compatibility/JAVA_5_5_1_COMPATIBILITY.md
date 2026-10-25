@@ -9,7 +9,7 @@ remains in progress.
 
 ## Phase 19 live status — 2026-10-25
 
-Twenty-nine of 37 registered local scenarios have passing Java 5.5.1/Rust
+Thirty of 37 registered local scenarios have passing Java 5.5.1/Rust
 evidence against the pinned 5.3.4 image. Four consumer cases cover reciprocal
 offset updates and queries, a found pull with message-body comparison, and an
 empty pull; `P5-V02-route` covers matching results for an existing and missing
@@ -32,6 +32,9 @@ request/reply directions with matching correlation and reply metadata.
 `P15-V03` verifies both request/reply directions on two Brokers, both clients'
 no-responder timeouts, and late replies after timeout with one callback and no
 retained correlation.
+`P7-V03` verifies both clients retry across two Brokers after retryable
+`NO_PERMISSION` responses, preserve the body and unique message ID, and then
+time out at 900 ms against a delayed real Broker response.
 `P5-V02-producer` matches raw V1, V2, batch, one-way reply V1/V2, and
 end-transaction RPC outcomes.
 `P5-V02-consumer` matches raw pull/Lite pull, offset update/query,
@@ -54,8 +57,8 @@ accepts a CA-trusted wrong-host certificate because its TLS handler does not
 receive a peer hostname; Rust rejects it. P7-V04 now has clean-source live
 evidence for 20 sends over three Java and Rust producer cycles with zero
 pending requests, connections, and owned task groups after every shutdown.
-Eight live cases remain pending: `P7-V03`, `P10-V03`, `P11-V03`, `P11-V04`,
-`P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02`.
+Seven live cases remain pending: `P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`,
+`P14-V03`, `P16-V02`, and `P17-V02`.
 `P13-V02` and `P5-V02-extensions` now have clean Java/Rust evidence; the
 latter records the two unsupported Lite request paths on 5.3.4 and separate
 positive Lite success evidence on 5.5.0. This does
