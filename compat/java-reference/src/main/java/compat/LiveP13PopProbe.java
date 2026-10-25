@@ -85,16 +85,18 @@ public final class LiveP13PopProbe {
                         .findFirst()
                         .orElseThrow(() -> new IllegalStateException("route omitted " + BROKER_NAME + ":" + requested));
                 }, requestedQueue);
-                long maxOffset = api.getMaxOffset(brokerAddress,
-                    new MessageQueue(topic, BROKER_NAME, queueId), 10_000);
                 if (sent == null || !"SEND_OK".equals(sent.getSendStatus().name())
-                    || sent.getMessageQueue().getQueueId() != queueId
-                    || maxOffset <= sent.getQueueOffset()) {
-                    throw new IllegalStateException("seed send was not committed to the requested queue: " + sent
+                    || sent.getMessageQueue().getQueueId() != queueId) {
+                    throw new IllegalStateException("seed send did not use the requested queue: " + sent);
+                }
+                long maxOffset = awaitMaxOffset(api, brokerAddress,
+                    new MessageQueue(topic, BROKER_NAME, queueId), sent.getQueueOffset());
+                if (maxOffset <= sent.getQueueOffset()) {
+                    throw new IllegalStateException("seed send offset was not visible on the requested queue: " + sent
                         + " maxOffset=" + maxOffset);
                 }
                 System.out.printf("P13\tseed\t%s\t%d\t%d\t%d%n",
-                    body, queueId, sent.getQueueOffset(), maxOffset);
+                    body, sent.getMessageQueue().getQueueId(), sent.getQueueOffset(), maxOffset);
             }
         } finally {
             producer.shutdown();
@@ -128,6 +130,20 @@ public final class LiveP13PopProbe {
         if (!brokerAddress.equals(client.findBrokerAddressInPublish(BROKER_NAME))) {
             throw new IllegalStateException("producer did not adopt host Broker address " + brokerAddress);
         }
+    }
+
+    private static long awaitMaxOffset(MQClientAPIImpl api, String brokerAddress, MessageQueue queue,
+        long sentOffset) throws Exception {
+        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long maxOffset;
+        do {
+            maxOffset = api.getMaxOffset(brokerAddress, queue, 10_000);
+            if (maxOffset > sentOffset) {
+                return maxOffset;
+            }
+            TimeUnit.MILLISECONDS.sleep(100);
+        } while (System.nanoTime() < deadlineNanos);
+        return maxOffset;
     }
 
     private static void consume(String brokerAddress, String topic, String language) throws Exception {
