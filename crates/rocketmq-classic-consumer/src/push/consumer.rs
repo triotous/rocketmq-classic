@@ -3280,12 +3280,19 @@ impl PushConsumer {
             .pull_message(&broker_address, &header, deadline)
             .await
             .map_err(|error| self.pull_retry_error_from_rpc(error))?;
+        // A long-poll can finish after `subscribe` has replaced this topic's
+        // expression. Filter its response with the current local subscription
+        // so an in-flight request cannot deliver messages from the old one.
+        let result_subscription = read_lock(&self.subscriptions)
+            .get(topic)
+            .cloned()
+            .unwrap_or_else(|| subscription.clone());
         let mut processed = self
             .pull_api
             .process_pull_result(
                 queue,
                 pull_result,
-                subscription,
+                &result_subscription,
                 DecodeOptions {
                     read_body: client_config.decode_read_body(),
                     decompress_body: client_config.decode_decompress_body(),
