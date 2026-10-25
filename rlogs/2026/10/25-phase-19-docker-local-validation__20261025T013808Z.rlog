@@ -197,3 +197,8 @@
 
 - Clean-source run `20261025T122748Z` on `e2c71402` switched seeding to Java's route-aware queue selector and rewrote the Docker-only Broker address in the local producer route to the host-mapped endpoint. Queue 0 succeeded with `SEND_OK`, queue ID 0, offset 0, and max offset 1. Queue 1 also returned `SEND_OK` on queue ID 1 at offset 0, but the immediate max-offset query still returned 0, so the seed guard stopped before POP. No P13 lifecycle assertion passed and Rust consumption did not run. Evidence is under `docs/compatibility/evidence/phase-19/P13-V02/20261025T122748Z/`.
 - The runner removed the scenario topic and isolated Compose resources. P13 remains pending and coverage remains 25/37 PASS with 12 pending. The next seed revision will wait briefly for Broker max-offset visibility to converge after `SEND_OK` before starting lifecycle checks. No production, remote checkout, or owner environment was accessed.
+
+## P19 P13-V02 verified-seed POP retry — 2026-10-25
+
+- Clean-source run `20261025T123103Z` on `f81b9c79` passed Java seeding on queues 0 and 1, each with `SEND_OK`, offset 0, and max offset 1. The first Java POP still returned `POLLING_NOT_FOUND`; no lifecycle assertion passed and Rust consumption did not run. Evidence is under `docs/compatibility/evidence/phase-19/P13-V02/20261025T123103Z/`.
+- The run was cleaned up. POP mode is already prepared before seeding, so the next probe will remove the duplicate mode change inside each POP operation and explicitly set `initMode=0` for both clients. P13 remains pending; coverage remains 25/37 PASS with 12 pending. No production, remote checkout, or owner environment was accessed.

@@ -340,3 +340,11 @@ guard stopped before POP. No lifecycle assertion passed and Rust consumption
 did not run. The runner removed the topic and Compose resources. Evidence is
 under [`20261025T122748Z`](evidence/phase-19/P13-V02/20261025T122748Z/). The
 next attempt will allow the Broker's max-offset view to catch up after send.
+
+The next clean-source run `20261025T123103Z` on `f81b9c79` confirmed both
+queue seeds with `SEND_OK` and max offset 1. Java's first POP still returned
+`POLLING_NOT_FOUND`; no lifecycle assertion passed and Rust consumption did
+not run. The runner removed the topic and Compose resources. Evidence is under
+[`20261025T123103Z`](evidence/phase-19/P13-V02/20261025T123103Z/). The next
+probe will avoid repeating the request-mode update after seeding and will set
+the POP init mode explicitly to the queue minimum.

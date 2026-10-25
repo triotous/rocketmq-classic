@@ -1,0 +1,3 @@
+P13	prepare	compat_p13_pop_java_expiry	POP
+P13	prepare	compat_p13_pop_java_change	POP
+P13	prepare	compat_p13_pop_java_mixed	POP

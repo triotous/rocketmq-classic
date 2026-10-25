@@ -10706,6 +10706,9 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   max offset advanced, but queue 1's immediate max-offset read still returned
   zero after `SEND_OK`. The run stopped before POP and cleaned the isolated
   resources. The next attempt will wait for Broker offset visibility.
+- [ ] Run `20261025T123103Z` passed both seed checks at max offset 1, then Java
+  POP returned `POLLING_NOT_FOUND`. The next probe will use only the pre-seed
+  POP mode setup and explicitly set `initMode=0`.
 - [x] The runner deleted the scenario topic and removed its isolated
   two-Broker containers, network, and volumes. Coverage remains 25/37 PASS
   with 12 Phase 19 scenarios pending.
