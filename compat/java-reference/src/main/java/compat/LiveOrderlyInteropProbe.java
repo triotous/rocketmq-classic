@@ -32,6 +32,9 @@ public final class LiveOrderlyInteropProbe {
         if (args.length == 9 && "consumer".equals(args[0])) {
             consume(args[1], args[2], args[3], Path.of(args[4]), Path.of(args[5]),
                 Path.of(args[6]), Path.of(args[7]), Path.of(args[8]));
+            // exec:java shares Maven's JVM; terminate it after a successful orderly shutdown
+            // so RocketMQ's idle scheduled worker cannot keep the isolated probe alive.
+            System.exit(0);
             return;
         }
         throw new IllegalArgumentException(
