@@ -4,11 +4,11 @@ use std::{
 };
 
 use rocketmq_classic::{
-    ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, LocalTransactionState, MessageSelector,
-    Producer, ProducerConfig, ProducerError, PullConsumer, PullConsumerConfig, PushConsumer,
-    PushConsumerConfig, PushMessageListener, RequestFutureHolder, SendMessageContext,
-    SendMessageHook, TransactionCallbackError, TransactionListener, TransactionProducer,
-    create_reply_message,
+    ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
+    ConsumeOrderlyStatus, LocalTransactionState, MessageSelector, Producer, ProducerConfig,
+    ProducerError, PullConsumer, PullConsumerConfig, PushConsumer, PushConsumerConfig,
+    PushMessageListener, RequestFutureHolder, SendMessageContext, SendMessageHook,
+    TransactionCallbackError, TransactionListener, TransactionProducer, create_reply_message,
 };
 use rocketmq_classic_common::message::{
     DecodeOptions, Message, MessageExt, MessageQueue, decode_many_as_client_compatible,
@@ -95,6 +95,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 &arguments[4],
                 &arguments[5],
                 &arguments[6],
+            )
+            .await
+        }
+        Some("p12-orderly") if arguments.len() == 9 => {
+            p12_orderly_probe(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                P12OrderlyProbeFiles {
+                    ownership: &arguments[4],
+                    ready: &arguments[5],
+                    stop: &arguments[6],
+                    exited: &arguments[7],
+                    marker_dir: &arguments[8],
+                },
             )
             .await
         }
@@ -304,7 +319,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p10-push <namesrv-address> <topic> <group> <ready-file> <failure-go-file> | p11-mixed-group <namesrv-address> <topic> <group> <ownership-file> <stop-file> <exited-file> | p11-push <namesrv-address> <topic> <group> <body> <ready-file> | p11-producer <namesrv-address> <topic> <producer-group> <body> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume|p5-extension-lite-pop <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-timeout|p19-late-timeout <namesrv-address> <topic> <producer-group> <body> <timeout-ms> <hold-ms> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> [delay-ms] | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-query-named <broker-address> <broker-name> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p10-push <namesrv-address> <topic> <group> <ready-file> <failure-go-file> | p11-mixed-group <namesrv-address> <topic> <group> <ownership-file> <stop-file> <exited-file> | p12-orderly <namesrv-address> <topic> <group> <ownership-file> <ready-file> <stop-file> <exited-file> <marker-dir> | p11-push <namesrv-address> <topic> <group> <body> <ready-file> | p11-producer <namesrv-address> <topic> <producer-group> <body> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume|p5-extension-lite-pop <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-timeout|p19-late-timeout <namesrv-address> <topic> <producer-group> <body> <timeout-ms> <hold-ms> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> [delay-ms] | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-query-named <broker-address> <broker-name> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -640,6 +655,126 @@ async fn p11_mixed_group_probe(
                 return Err("timed out waiting for the P11 stop gate".into());
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        Ok(())
+    }
+    .await;
+    let shutdown = consumer.shutdown().await;
+    write_p11_ownership(&ownership_path, &[])?;
+    std::fs::write(&exited_path, "exited\n")?;
+    operation?;
+    shutdown?;
+    Ok(())
+}
+
+struct P12OrderlyProbeFiles<'a> {
+    ownership: &'a str,
+    ready: &'a str,
+    stop: &'a str,
+    exited: &'a str,
+    marker_dir: &'a str,
+}
+
+async fn p12_orderly_probe(
+    namesrv_address: &str,
+    topic: &str,
+    consumer_group: &str,
+    files: P12OrderlyProbeFiles<'_>,
+) -> Result<(), Box<dyn Error>> {
+    let mut config = PushConsumerConfig::new(consumer_group)?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    config
+        .client_config_mut()
+        .set_instance_name(Some("a-p12-rust".to_owned()));
+    config.client_config_mut().set_mq_client_api_timeout(5_000);
+    config.set_consume_from_where(ConsumeFromWhere::ConsumeFromFirstOffset);
+    config.set_pull_batch_size(1);
+    config.set_consume_message_batch_max_size(1);
+
+    let consumer = Arc::new(PushConsumer::new(config));
+    let marker_dir = Path::new(files.marker_dir).to_owned();
+    consumer
+        .set_message_listener(PushMessageListener::orderly(
+            move |messages: Vec<MessageExt>, context: ConsumeOrderlyContext| {
+                let marker_dir = marker_dir.clone();
+                Box::pin(async move {
+                    for message in messages {
+                        let body = String::from_utf8_lossy(message.body().as_ref()).into_owned();
+                        let broker = message.broker_name().unwrap_or_default().to_owned();
+                        let queue_id = message.queue_id();
+                        let offset = message.queue_offset();
+                        println!(
+                            "P12\tCALLBACK\trust\t{body}\t{broker}\t{queue_id}\t{offset}\tBEGIN"
+                        );
+                        let marker = marker_dir
+                            .join(format!("rust-{broker}-{queue_id}-{offset}-{body}.seen"));
+                        if let Err(error) = std::fs::write(&marker, "seen\n") {
+                            eprintln!("P12 marker write failed: {error}");
+                            return (
+                                Some(ConsumeOrderlyStatus::SuspendCurrentQueueAMoment),
+                                context,
+                            );
+                        }
+                        println!(
+                            "P12\tCALLBACK\trust\t{body}\t{broker}\t{queue_id}\t{offset}\tEND"
+                        );
+                    }
+                    (Some(ConsumeOrderlyStatus::Success), context)
+                })
+            },
+        ))
+        .await?;
+    consumer.subscribe(topic, "*").await?;
+    consumer.start().await?;
+
+    let ownership_path = Path::new(files.ownership).to_owned();
+    let ready_path = Path::new(files.ready).to_owned();
+    let stop_path = Path::new(files.stop).to_owned();
+    let exited_path = Path::new(files.exited).to_owned();
+    std::fs::write(&ready_path, "ready\n")?;
+    let operation: Result<(), Box<dyn Error>> = async {
+        let deadline = Instant::now() + Duration::from_secs(150);
+        loop {
+            let running_info = consumer.consumer_running_info().await?;
+            let mut owned = running_info
+                .get_mq_table()
+                .map(|table| {
+                    table.with(|rows| {
+                        rows.iter()
+                            .filter(|(queue, _)| queue.topic() == Some(topic))
+                            .map(|(queue, info)| {
+                                format!(
+                                    "{}|{}|{}|{}",
+                                    queue.topic().unwrap_or_default(),
+                                    queue.broker_name().unwrap_or_default(),
+                                    queue.queue_id(),
+                                    info.is_locked()
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .unwrap_or_default();
+            owned.sort();
+            write_p11_ownership(&ownership_path, &owned)?;
+            println!(
+                "P12\tSNAPSHOT\trust\t{}\t{}",
+                owned.len(),
+                if owned.is_empty() {
+                    "-".to_owned()
+                } else {
+                    owned.join(",")
+                }
+            );
+            if stop_path.exists() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                return Err("timed out waiting for the P12 stop gate".into());
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
         }
         Ok(())
     }

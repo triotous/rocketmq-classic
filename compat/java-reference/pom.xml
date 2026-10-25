@@ -103,6 +103,10 @@
             <configuration><mainClass>compat.LiveMixedGroupProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-orderly-interop-probe</id>
+            <configuration><mainClass>compat.LiveOrderlyInteropProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>live-push-interop-probe</id>
             <configuration><mainClass>compat.LivePushInteropProbe</mainClass></configuration>
           </execution>

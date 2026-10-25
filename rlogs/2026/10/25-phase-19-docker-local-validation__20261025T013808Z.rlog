@@ -519,3 +519,10 @@
 - Updated the manifest and current compatibility summaries to 33/37 live PASS.
   `run.sh --check-all` should fail closed before Docker with only
   `P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02` remaining.
+
+## P19-05 P12-V03 runner implementation — 2026-10-25
+
+- Added a host-routed two-Broker orderly-consumer scenario with one queue per Broker, explicit starting offsets, and Java-seeded slow/following message pairs. Java's two callbacks remain gated while Rust joins and takes a transferred queue; the runner checks lock ownership, per-queue redelivery/order, offsets before and after handoff, callback release, both client shutdowns, and fresh lock/unlock success on both Brokers.
+- Added P12 runner registration and fail-closed manifest input checks, isolated topic/group creation and cleanup, a Java 5.5.1 orderly probe, and a Rust orderly probe. The scenario uses a bounded 1-second unlock-delay property and retains the pinned unmodified RocketMQ 5.3.4 image.
+- Static checks pass: Maven Java compile, Rust integration live-client build, Rust fmt check, strict integration-client Clippy, Bash syntax, Python checker compile and file-state checks, and `git diff --check`.
+- `run.sh --check-all` recognizes P12-V03 and fails closed before Docker with only P14-V03, P16-V02, and P17-V02 still lacking runners. Clean-source P12 replay is pending after the implementation commit.

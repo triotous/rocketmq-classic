@@ -179,6 +179,19 @@ for scenario in selected:
         ]
     ):
         raise SystemExit("P11-V04 Push interoperability inputs differ from the reviewed live case")
+    if scenario_id == "P12-V03" and (
+        profile != "two-broker"
+        or inputs.get("topic") != "compat_p12_orderly"
+        or inputs.get("group") != "compat_p12_orderly"
+        or inputs.get("clients") != ["java-5.5.1", "rust"]
+        or inputs.get("checks") != [
+            "orderly-lock-contention", "slow-callback-rebalance",
+            "no-stale-offset-commit", "shutdown-cleanup",
+            "broker-lock-expiry-convergence"
+        ]
+        or scenario.get("assertions") != inputs.get("checks")
+    ):
+        raise SystemExit("P12-V03 orderly-consumer inputs differ from the reviewed live case")
     if scenario_id == "P5-V02-producer" and inputs.get("methods") != [
         "send-v1", "send-v2", "batch", "reply-v1", "reply-v2", "end-transaction"
     ]:
@@ -230,7 +243,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P5-V02-extensions" "P0-V03" "P6-V04" "P7-V02" "P7-V03" "P7-V04" "P9-V03" "P10-V03" "P11-V03" "P11-V04" "P13-V02" "REQ-001-request-reply-success" "P15-V03")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P5-V02-extensions" "P0-V03" "P6-V04" "P7-V02" "P7-V03" "P7-V04" "P9-V03" "P10-V03" "P11-V03" "P11-V04" "P12-V03" "P13-V02" "REQ-001-request-reply-success" "P15-V03")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -300,7 +313,7 @@ if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
 fi
 case "$profile:$scenario_id" in
     basic:*) ;;
-    two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c|two-broker:PROD-005-send-timeout|two-broker:P5-V02-consumer|two-broker:P10-V03|two-broker:P11-V03|two-broker:P11-V04|two-broker:P13-V02) ;;
+    two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c|two-broker:PROD-005-send-timeout|two-broker:P5-V02-consumer|two-broker:P10-V03|two-broker:P11-V03|two-broker:P11-V04|two-broker:P12-V03|two-broker:P13-V02) ;;
     two-broker-host:P7-V03|two-broker-host:P7-V04|two-broker-host:P15-V03) ;;
     transaction:TX-001-commit|transaction:TX-002-rollback) ;;
     tls:P3-V04) ;;
@@ -449,6 +462,12 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    P12-V03:compat_p12_orderly)
+        if [[ "$profile" != "two-broker" || "$consumer_group" != "compat_p12_orderly" ]]; then
+            echo "P12-V03 requires the two-Broker profile and the reviewed orderly consumer group" >&2
+            exit 3
+        fi
+        ;;
     P7-V04:compat_p7_lifecycle)
         if [[ "$profile" != "two-broker-host" ]]; then
             echo "P7-V04 requires the host-routed two-Broker profile" >&2
@@ -496,7 +515,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P5-V02-extensions" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P7-V03" && "$scenario_id" != "P7-V04" && "$scenario_id" != "P9-V03" && "$scenario_id" != "P10-V03" && "$scenario_id" != "P11-V03" && "$scenario_id" != "P11-V04" && "$scenario_id" != "P13-V02" && "$scenario_id" != "REQ-001-request-reply-success" && "$scenario_id" != "P15-V03" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P5-V02-extensions" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P7-V03" && "$scenario_id" != "P7-V04" && "$scenario_id" != "P9-V03" && "$scenario_id" != "P10-V03" && "$scenario_id" != "P11-V03" && "$scenario_id" != "P11-V04" && "$scenario_id" != "P12-V03" && "$scenario_id" != "P13-V02" && "$scenario_id" != "REQ-001-request-reply-success" && "$scenario_id" != "P15-V03" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -509,7 +528,7 @@ if [[ "${ROCKETMQ_PROFILE:-}" != "$profile" ]]; then
     exit 2
 fi
 manifest_profile="$profile"
-if [[ "$scenario_id" == "P10-V03" || "$scenario_id" == "P11-V03" || "$scenario_id" == "P11-V04" ]]; then
+if [[ "$scenario_id" == "P10-V03" || "$scenario_id" == "P11-V03" || "$scenario_id" == "P11-V04" || "$scenario_id" == "P12-V03" ]]; then
     # The manifest topology is two Brokers. Host-run probes need reachable
     # addresses from the two-Broker Compose variant.
     profile="two-broker-host"
@@ -603,6 +622,7 @@ broker_addr="127.0.0.1:${ROCKETMQ_BROKER_HOST_PORT}"
 code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/pom.xml
     compat/java-reference/src/main/java/compat/LiveMixedGroupProbe.java
+    compat/java-reference/src/main/java/compat/LiveOrderlyInteropProbe.java
     compat/java-reference/src/main/java/compat/LivePushInteropProbe.java
     compat/java-reference/src/main/java/compat/LiveRouteProbe.java
     compat/java-reference/src/main/java/compat/LiveP3RemotingProbe.java
@@ -624,7 +644,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
     integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf integration-tests/config/broker-tx.conf integration-tests/config/broker-host.conf integration-tests/config/broker-a-host.conf integration-tests/config/broker-b-host.conf
     integration-tests/setup.sh integration-tests/cleanup.sh
-    tests/differential/compare.py tests/differential/run.sh tests/differential/check_mixed_ownership.py tests/differential/check_p11_push.py)
+    tests/differential/compare.py tests/differential/run.sh tests/differential/check_mixed_ownership.py tests/differential/check_p11_push.py tests/differential/check_p12_orderly.py)
 if [[ -n "$(git -C "$repo_root" status --porcelain -- "${code_dirty_paths[@]}")" ]]; then
     source_code_dirty=true
 else
@@ -719,6 +739,10 @@ fi
 if [[ "$scenario_id" == "P11-V04" ]]; then
     printf 'consumer_group=%s\ntopic_queues=broker-a:0,broker-b:0\njava_producer_body=p11-java-to-rust-retry\nrust_producer_body=p11-rust-to-java-retry\nlistener_reconsume_counts=0,1\nmax_reconsume_times=1\nshutdown_cycles_per_client=3\noffset_queries=Java-and-Rust-per-broker\nretry_topic=%%RETRY%%%s\n' \
         "$consumer_group" "$consumer_group" >>"$evidence_dir/metadata.txt"
+fi
+if [[ "$scenario_id" == "P12-V03" ]]; then
+    printf 'consumer_group=%s\ntopic_queues=broker-a:0,broker-b:0\njava_client_id_suffix=z-p12-java\nrust_client_id_suffix=a-p12-rust\nmessages_per_queue=p12-slow,p12-next\nunlock_delay_ms=1000\nslow_callback=held-until-rust-commits\nshutdown_lock_probe=broker-a:0,broker-b:0\n' \
+        "$consumer_group" >>"$evidence_dir/metadata.txt"
 fi
 if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
     printf 'topic=%s\nsend_timeout_ms=%s\nproxy_response_delay_ms=600\nexpected_committed_messages=2\n' "$topic" "$timeout_ms" \
@@ -884,6 +908,29 @@ python3 tests/differential/check_mixed_ownership.py java-only $topic <java-owner
 python3 tests/differential/check_mixed_ownership.py joined $topic <java-ownership-file> <rust-ownership-file> <java-exited-file> 90
 python3 tests/differential/check_mixed_ownership.py rust-only $topic <java-ownership-file> <rust-ownership-file> <java-exited-file> 90
 The host-routed two-Broker Compose profile is used because the clients run on the host and need reachable advertised Broker addresses. The ownership checker requires four stable samples within 90 seconds at each membership transition; transient redelivery is allowed while assignments converge.
+EOF
+elif [[ "$scenario_id" == "P12-V03" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateTopic -b 127.0.0.1:50911 -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateTopic -b 127.0.0.1:50921 -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateSubGroup -b 127.0.0.1:50911 -g $consumer_group -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateSubGroup -b 127.0.0.1:50921 -g $consumer_group -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="update 127.0.0.1:50911 $consumer_group $topic 0 0" exec:java@live-consumer-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="update 127.0.0.1:50921 $consumer_group $topic 0 0" exec:java@live-consumer-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed $namesrv_addr $topic broker-a 0 p12-slow-a" exec:java@live-orderly-interop-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed $namesrv_addr $topic broker-a 0 p12-next-a" exec:java@live-orderly-interop-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed $namesrv_addr $topic broker-b 0 p12-slow-b" exec:java@live-orderly-interop-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed $namesrv_addr $topic broker-b 0 p12-next-b" exec:java@live-orderly-interop-probe
+JAVA_TOOL_OPTIONS=-Drocketmq.client.unlockDelayTimeMills=1000 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic $consumer_group <java-ownership> <java-ready> <java-stop> <marker-dir> <release-file>" exec:java@live-orderly-interop-probe
+env rocketmq.client.unlockDelayTimeMills=1000 target/debug/live_client p12-orderly $namesrv_addr $topic $consumer_group <rust-ownership> <rust-ready> <rust-stop> <rust-exited> <marker-dir>
+target/debug/live_client offset-query-named 127.0.0.1:50911 broker-a $consumer_group $topic 0
+target/debug/live_client offset-query-named 127.0.0.1:50921 broker-b $consumer_group $topic 0
+python3 tests/differential/check_p12_orderly.py held <marker-dir> <java-ownership> $topic 30
+target/debug/live_client offset-query-named 127.0.0.1:50911 broker-a $consumer_group $topic 0
+target/debug/live_client offset-query-named 127.0.0.1:50921 broker-b $consumer_group $topic 0
+python3 tests/differential/check_p12_orderly.py handoff <marker-dir> <rust-ownership> $topic 90
+After Rust advances its queue to offset 2, stop Rust while Java's older callbacks remain gated, release those callbacks, stop Java, then query both offsets and probe/release both locks with a fresh client ID. This leaves no live offset writer to mask a stale Java completion. Java and Rust use an explicit 1-second orderly unlock-delay property; the Broker remains the unmodified 5.3.4 image.
 EOF
 elif [[ "$scenario_id" == "P10-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -1103,6 +1150,9 @@ p7_probe_pid=""
 p10_probe_pid=""
 p11_java_pid=""
 p11_rust_pid=""
+p12_java_pid=""
+p12_rust_pid=""
+group_created=false
 cleanup() {
     status=$?
     trap - EXIT
@@ -1137,6 +1187,12 @@ cleanup() {
             wait "$p11_probe_pid" 2>/dev/null
         fi
     done
+    for p12_probe_pid in "$p12_java_pid" "$p12_rust_pid"; do
+        if [[ -n "$p12_probe_pid" ]] && kill -0 "$p12_probe_pid" 2>/dev/null; then
+            kill "$p12_probe_pid" 2>/dev/null
+            wait "$p12_probe_pid" 2>/dev/null
+        fi
+    done
     if [[ "$scenario_id" == "P13-V02" ]]; then
         "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 broker broker-b \
             >"$evidence_dir/broker-logs.log" 2>&1
@@ -1154,9 +1210,23 @@ cleanup() {
             } >>"$evidence_dir/broker-internal-logs.log" 2>&1
         done
     fi
-if [[ "$scenario_id" == "P7-V03" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P10-V03" || "$scenario_id" == "P11-V03" || "$scenario_id" == "P11-V04" || "$scenario_id" == "P15-V03" ]]; then
+    if [[ "$scenario_id" == "P7-V03" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P10-V03" || "$scenario_id" == "P11-V03" || "$scenario_id" == "P11-V04" || "$scenario_id" == "P12-V03" || "$scenario_id" == "P15-V03" ]]; then
         "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 broker-a-host broker-b-host \
             >"$evidence_dir/broker-logs.log" 2>&1
+    fi
+    if [[ "$scenario_id" == "P12-V03" && "$group_created" == true ]]; then
+        : >"$evidence_dir/group-cleanup.log"
+        for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
+            topic_service="${broker_admin_target%%:*}"
+            topic_broker="${broker_admin_target#*:}"
+            "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin deleteSubGroup -b "$topic_broker" -g "$consumer_group" -n namesrv:9876 \
+                >>"$evidence_dir/group-cleanup.log" 2>&1
+            group_delete_status=$?
+            if ((group_delete_status)); then
+                status=1
+                echo "Scenario consumer-group cleanup failed for $consumer_group on $topic_broker; see $evidence_dir/group-cleanup.log" >&2
+            fi
+        done
     fi
     if [[ "$topic_created" == true ]]; then
         : >"$evidence_dir/topic-cleanup.log"
@@ -1312,11 +1382,11 @@ if [[ "$scenario_id" == "P5-V02-extensions" ]]; then
     done
 fi
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P3-V04" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P5-V02-producer" || "$scenario_id" == "P5-V02-consumer" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P7-V03" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "P10-V03" || "$scenario_id" == "P11-V03" || "$scenario_id" == "P11-V04" || "$scenario_id" == "P13-V02" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P3-V04" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P5-V02-producer" || "$scenario_id" == "P5-V02-consumer" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P7-V03" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "P10-V03" || "$scenario_id" == "P11-V03" || "$scenario_id" == "P11-V04" || "$scenario_id" == "P12-V03" || "$scenario_id" == "P13-V02" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     topic_queue_count=4
-    if [[ "$scenario_id" == "P3-V04" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V03" || "$scenario_id" == "P9-V03" || "$scenario_id" == "P10-V03" || "$scenario_id" == "P11-V04" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "P5-V02-consumer" ]]; then
+    if [[ "$scenario_id" == "P3-V04" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V03" || "$scenario_id" == "P9-V03" || "$scenario_id" == "P10-V03" || "$scenario_id" == "P11-V04" || "$scenario_id" == "P12-V03" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "P5-V02-consumer" ]]; then
         topic_queue_count=1
     elif [[ "$scenario_id" == "REBAL-001-average-10q-3c" ]]; then
         topic_queue_count=5
@@ -1453,6 +1523,19 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
             topic_service="${broker_admin_target%%:*}"
             topic_broker="${broker_admin_target#*:}"
             if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateSubGroup -b "$topic_broker" -g "$consumer_group" -r 1 -q 1 -n namesrv:9876 \
+                >>"$evidence_dir/group-create.log" 2>&1; then
+                cat "$evidence_dir/group-create.log" >&2
+                exit 1
+            fi
+        done
+    elif [[ "$scenario_id" == "P12-V03" ]]; then
+        echo "Creating scenario-owned orderly consumer group on both Brokers"
+        group_created=true
+        : >"$evidence_dir/group-create.log"
+        for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
+            topic_service="${broker_admin_target%%:*}"
+            topic_broker="${broker_admin_target#*:}"
+            if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateSubGroup -b "$topic_broker" -g "$consumer_group" -n namesrv:9876 \
                 >>"$evidence_dir/group-create.log" 2>&1; then
                 cat "$evidence_dir/group-create.log" >&2
                 exit 1
@@ -2425,6 +2508,225 @@ elif [[ "$scenario_id" == "P11-V04" ]]; then
         exit 1
     fi
     printf 'PASS P11-V04: Java producer to Rust Push and Rust producer to Java Push each retried once, committed matching Broker offsets, and completed three shutdown cycles without retained scheduler tasks\n' \
+        | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "P12-V03" ]]; then
+    marker_dir="$evidence_dir/markers"
+    java_ownership="$evidence_dir/java-orderly-ownership.txt"
+    rust_ownership="$evidence_dir/rust-orderly-ownership.txt"
+    java_ready="$evidence_dir/java-orderly-ready"
+    rust_ready="$evidence_dir/rust-orderly-ready"
+    java_stop="$evidence_dir/java-orderly-stop"
+    rust_stop="$evidence_dir/rust-orderly-stop"
+    rust_exited="$evidence_dir/rust-orderly-exited"
+    release_gate="$evidence_dir/java-slow-callback-release"
+    mkdir -p "$marker_dir"
+    rm -f "$java_ownership" "$rust_ownership" "$java_ready" "$rust_ready" \
+        "$java_stop" "$rust_stop" "$rust_exited" "$release_gate"
+
+    echo "Initializing the two Broker offsets and seeding one slow plus one following message per queue"
+    : >"$evidence_dir/seed.log"
+    for broker_target in "broker-a:127.0.0.1:50911:a" "broker-b:127.0.0.1:50921:b"; do
+        broker_name="${broker_target%%:*}"
+        broker_tail="${broker_target#*:}"
+        broker_address="${broker_tail%:*}"
+        suffix="${broker_tail##*:}"
+        if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+            -Dexec.args="update $broker_address $consumer_group $topic 0 0" \
+            exec:java@live-consumer-probe >>"$evidence_dir/seed.log" 2>&1; then
+            cat "$evidence_dir/seed.log" >&2
+            exit 1
+        fi
+        for message_body in "p12-slow-$suffix" "p12-next-$suffix"; do
+            if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+                -Dexec.args="seed $namesrv_addr $topic $broker_name 0 $message_body" \
+                exec:java@live-orderly-interop-probe >>"$evidence_dir/seed.log" 2>&1; then
+                cat "$evidence_dir/seed.log" >&2
+                exit 1
+            fi
+        done
+    done
+
+    echo "Starting Java orderly ownership and holding its callbacks before Rust joins"
+    JAVA_TOOL_OPTIONS="-Drocketmq.client.unlockDelayTimeMills=1000" \
+        mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="$namesrv_addr $topic $consumer_group $java_ownership $java_ready $java_stop $marker_dir $release_gate" \
+        exec:java@live-orderly-interop-probe \
+        >"$evidence_dir/java-p12-orderly.tsv" 2>"$evidence_dir/java-p12-orderly.stderr" &
+    p12_java_pid="$!"
+    for _ in {1..900}; do
+        if [[ -s "$java_ready" ]]; then
+            break
+        fi
+        if ! kill -0 "$p12_java_pid" 2>/dev/null; then
+            wait "$p12_java_pid" 2>/dev/null || true
+            p12_java_pid=""
+            cat "$evidence_dir/java-p12-orderly.tsv" "$evidence_dir/java-p12-orderly.stderr" 2>/dev/null >&2 || true
+            exit 1
+        fi
+        sleep 0.1
+    done
+    if [[ ! -s "$java_ready" ]]; then
+        echo "Java orderly consumer did not become ready" >&2
+        exit 1
+    fi
+    if ! python3 "$repo_root/tests/differential/check_p12_orderly.py" held \
+        "$marker_dir" "$java_ownership" "$topic" 45 \
+        >"$evidence_dir/java-lock-contention.tsv" 2>&1; then
+        cat "$evidence_dir/java-lock-contention.tsv" "$evidence_dir/java-p12-orderly.tsv" \
+            "$evidence_dir/java-p12-orderly.stderr" >&2
+        exit 1
+    fi
+    for broker_target in "broker-a:127.0.0.1:50911" "broker-b:127.0.0.1:50921"; do
+        broker_name="${broker_target%%:*}"
+        broker_address="${broker_target#*:}"
+        if ! "$repo_root/target/debug/live_client" offset-query-named "$broker_address" \
+            "$broker_name" "$consumer_group" "$topic" 0 \
+            >"$evidence_dir/offset-before-rust-$broker_name.tsv" \
+            2>"$evidence_dir/offset-before-rust-$broker_name.stderr" \
+            || ! python3 "$repo_root/tests/differential/check_p12_orderly.py" offset \
+                "$evidence_dir/offset-before-rust-$broker_name.tsv" 0 \
+                >"$evidence_dir/offset-before-rust-$broker_name-check.tsv" 2>&1; then
+            cat "$evidence_dir/offset-before-rust-$broker_name.tsv" \
+                "$evidence_dir/offset-before-rust-$broker_name.stderr" \
+                "$evidence_dir/offset-before-rust-$broker_name-check.tsv" >&2 2>/dev/null || true
+            exit 1
+        fi
+    done
+
+    echo "Starting Rust orderly consumer; the older Java callbacks remain gated"
+    env rocketmq.client.unlockDelayTimeMills=1000 \
+        "$repo_root/target/debug/live_client" p12-orderly "$namesrv_addr" "$topic" \
+        "$consumer_group" "$rust_ownership" "$rust_ready" "$rust_stop" "$rust_exited" "$marker_dir" \
+        >"$evidence_dir/rust-p12-orderly.tsv" 2>"$evidence_dir/rust-p12-orderly.stderr" &
+    p12_rust_pid="$!"
+    for _ in {1..900}; do
+        if [[ -s "$rust_ready" ]]; then
+            break
+        fi
+        if ! kill -0 "$p12_rust_pid" 2>/dev/null; then
+            wait "$p12_rust_pid" 2>/dev/null || true
+            p12_rust_pid=""
+            cat "$evidence_dir/rust-p12-orderly.tsv" "$evidence_dir/rust-p12-orderly.stderr" 2>/dev/null >&2 || true
+            exit 1
+        fi
+        sleep 0.1
+    done
+    if [[ ! -s "$rust_ready" ]]; then
+        echo "Rust orderly consumer did not become ready" >&2
+        exit 1
+    fi
+    if ! python3 "$repo_root/tests/differential/check_p12_orderly.py" handoff \
+        "$marker_dir" "$rust_ownership" "$topic" 90 \
+        >"$evidence_dir/slow-callback-handoff.tsv" 2>&1; then
+        cat "$evidence_dir/slow-callback-handoff.tsv" "$evidence_dir/java-p12-orderly.tsv" \
+            "$evidence_dir/rust-p12-orderly.tsv" "$evidence_dir/java-p12-orderly.stderr" \
+            "$evidence_dir/rust-p12-orderly.stderr" >&2
+        exit 1
+    fi
+    handoff_broker="$(awk -F '\t' '/^P12\tHANDOFF/ { split($3, queue, ":"); print queue[1] }' "$evidence_dir/slow-callback-handoff.tsv")"
+    case "$handoff_broker" in
+        broker-a) handoff_address=127.0.0.1:50911 ;;
+        broker-b) handoff_address=127.0.0.1:50921 ;;
+        *) echo "P12 handoff checker did not report a Broker queue" >&2; exit 1 ;;
+    esac
+
+    query_p12_offset() {
+        local broker_name="$1"
+        local address="$2"
+        local output="$3"
+        "$repo_root/target/debug/live_client" offset-query-named "$address" "$broker_name" \
+            "$consumer_group" "$topic" 0 >"$output" 2>"${output%.tsv}.stderr"
+    }
+    wait_p12_offset() {
+        local broker_name="$1"
+        local address="$2"
+        local expected="$3"
+        local suffix="$4"
+        local output="$evidence_dir/offset-$suffix.tsv"
+        for _ in {1..80}; do
+            if query_p12_offset "$broker_name" "$address" "$output" \
+                && python3 "$repo_root/tests/differential/check_p12_orderly.py" offset "$output" "$expected" \
+                    >"$evidence_dir/offset-$suffix-check.tsv" 2>&1; then
+                return 0
+            fi
+            sleep 0.5
+        done
+        cat "$output" "${output%.tsv}.stderr" "$evidence_dir/offset-$suffix-check.tsv" >&2 2>/dev/null || true
+        echo "P12 Broker offset did not converge to $expected for $broker_name:0" >&2
+        return 1
+    }
+    if ! wait_p12_offset "$handoff_broker" "$handoff_address" 2 rust-owner-committed; then
+        exit 1
+    fi
+
+    echo "Stopping Rust while Java's old callbacks remain gated, so a later stale commit cannot be masked by Rust"
+    : >"$rust_stop"
+    if ! wait "$p12_rust_pid"; then
+        p12_rust_pid=""
+        cat "$evidence_dir/rust-p12-orderly.tsv" "$evidence_dir/rust-p12-orderly.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    p12_rust_pid=""
+    if [[ ! -s "$rust_exited" ]]; then
+        echo "Rust orderly consumer did not complete shutdown" >&2
+        exit 1
+    fi
+    if ! python3 "$repo_root/tests/differential/check_p12_orderly.py" java-still-held "$marker_dir" \
+        >"$evidence_dir/java-still-held.tsv" 2>&1; then
+        cat "$evidence_dir/java-still-held.tsv" "$evidence_dir/java-p12-orderly.tsv" \
+            "$evidence_dir/java-p12-orderly.stderr" >&2
+        exit 1
+    fi
+
+    echo "Releasing Java's obsolete callbacks and checking the Broker offsets after both consumers stop"
+    : >"$release_gate"
+    if ! python3 "$repo_root/tests/differential/check_p12_orderly.py" java-ended "$marker_dir" 30 \
+        >"$evidence_dir/java-callback-release.tsv" 2>&1; then
+        cat "$evidence_dir/java-callback-release.tsv" "$evidence_dir/java-p12-orderly.tsv" \
+            "$evidence_dir/rust-p12-orderly.tsv" >&2
+        exit 1
+    fi
+    : >"$java_stop"
+    if ! wait "$p12_java_pid"; then
+        p12_java_pid=""
+        cat "$evidence_dir/java-p12-orderly.tsv" "$evidence_dir/java-p12-orderly.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    p12_java_pid=""
+    if [[ ! -s "$evidence_dir/java-exited" ]]; then
+        echo "Java orderly consumer did not complete shutdown" >&2
+        exit 1
+    fi
+    if ! wait_p12_offset broker-a 127.0.0.1:50911 2 broker-a-final; then
+        exit 1
+    fi
+    if ! wait_p12_offset broker-b 127.0.0.1:50921 2 broker-b-final; then
+        exit 1
+    fi
+
+    wait_for_p12_lock() {
+        local broker_name="$1"
+        local address="$2"
+        local lock_output="$evidence_dir/lock-$broker_name.tsv"
+        local unlock_output="$evidence_dir/unlock-$broker_name.tsv"
+        for _ in {1..40}; do
+            if "$repo_root/target/debug/live_client" lock "$address" "$consumer_group" \
+                p12-cleanup-probe "$topic" "$broker_name" 0 >"$lock_output" 2>"${lock_output%.tsv}.stderr" \
+                && rg -q '^LOCK\ttrue\t' "$lock_output"; then
+                "$repo_root/target/debug/live_client" unlock "$address" "$consumer_group" \
+                    p12-cleanup-probe "$topic" "$broker_name" 0 >"$unlock_output" 2>"${unlock_output%.tsv}.stderr" \
+                    || return 1
+                rg -q '^UNLOCK\tOK$' "$unlock_output" && return 0
+            fi
+            sleep 1
+        done
+        cat "$lock_output" "${lock_output%.tsv}.stderr" "$unlock_output" "${unlock_output%.tsv}.stderr" >&2 2>/dev/null || true
+        echo "P12 Broker lock did not converge after consumer shutdown for $broker_name:0" >&2
+        return 1
+    }
+    wait_for_p12_lock broker-a 127.0.0.1:50911 || exit 1
+    wait_for_p12_lock broker-b 127.0.0.1:50921 || exit 1
+    printf 'PASS P12-V03: Java held orderly callbacks on both Brokers while Rust joined; Rust acquired the transferred Broker lock, processed the redelivered message and its successor, and advanced the offset to 2 before Java returned; stale completion did not regress either offset, both consumers shut down, and both Broker queues became lockable and releasable\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P10-V03" ]]; then
     p10_ready_file="$evidence_dir/rust-ready"
