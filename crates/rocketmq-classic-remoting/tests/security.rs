@@ -137,7 +137,7 @@ fn tls_config_file_path_uses_initial_system_property_snapshot() {
 }
 
 #[tokio::test]
-async fn expired_server_certificate_is_rejected_with_trust_and_name_checks_enabled() {
+async fn expired_server_certificate_is_rejected_with_java_chain_validation_enabled() {
     let ca_key = KeyPair::generate().unwrap();
     let mut ca_params = CertificateParams::new(Vec::new()).unwrap();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);

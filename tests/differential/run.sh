@@ -215,7 +215,8 @@ for scenario in selected:
         profile != "tls-auth"
         or inputs.get("checks") != [
             "signed-request-accepted", "wrong-secret-rejected", "tampered-body-rejected",
-            "trusted-ca-accepted", "wrong-hostname-rejected", "untrusted-ca-rejected",
+            "trusted-ca-accepted", "wrong-hostname-accepted-with-trusted-ca",
+            "untrusted-ca-rejected",
             "missing-client-certificate-rejected"
         ]
         or scenario.get("assertions") != inputs.get("checks")
@@ -843,7 +844,7 @@ if [[ "$scenario_id" == "P16-V02" ]]; then
     auth_broker_image_id="$(docker image inspect "$auth_broker_image" --format '{{.Id}}')"
     printf 'name_server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8\nauth_broker_image=%s\nauth_broker_image_id=%s\nauth_broker_platform=linux/amd64\nauth_broker_base_image=%s\nserver_distribution=Apache RocketMQ 5.3.4 binary release\nserver_distribution_sha512=88508d5480421ce1582e56aa2e3b6e28ea6b88418cf618fd79a78f996a7ae853ee1ea98780377235ed396ce2bc82b4f3d88a838c72076760466702d881bfc6ae\n' \
         "$auth_broker_image" "$auth_broker_image_id" "$auth_broker_base_image" >>"$evidence_dir/metadata.txt"
-    printf 'checks=signed-request-accepted,wrong-secret-rejected,tampered-body-rejected,trusted-ca-accepted,wrong-hostname-rejected,untrusted-ca-rejected,missing-client-certificate-rejected\nmutual_tls=true\ninsecure_tls_bypass=false\ncredentials=per-run-random-synthetic-and-redacted\n' \
+    printf 'checks=signed-request-accepted,wrong-secret-rejected,tampered-body-rejected,trusted-ca-accepted,wrong-hostname-accepted-with-trusted-ca,untrusted-ca-rejected,missing-client-certificate-rejected\nmutual_tls=true\ninsecure_tls_bypass=false\ncredentials=per-run-random-synthetic-and-redacted\n' \
         >>"$evidence_dir/metadata.txt"
 fi
 if [[ "$scenario_id" == "P17-V02" ]]; then
@@ -1181,7 +1182,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 2 -config <evidence>/ca.cnf -key
 openssl req -new -newkey rsa:2048 -nodes -config <evidence>/server-req.cnf -keyout <evidence>/server.key -out <evidence>/server.csr
 openssl x509 -req -in <evidence>/server.csr -CA <evidence>/ca.pem -CAkey <evidence>/ca.key -set_serial 1 -days 2 -sha256 -extfile <evidence>/server-ext.cnf -extensions server_cert -out <evidence>/server.pem
 python3 tests/differential/tls_broker_proxy.py --upstream $broker_addr --cert <evidence>/server.pem --key <evidence>/server.key --ready-file <evidence>/tls-proxy-ready.txt --log-file <evidence>/tls-proxy.tsv
-Java and Rust TLS calls use the trusted CA, then independently test a wrong-host certificate and an untrusted CA; Rust rejects both while Java 5.5.1 accepts the wrong host because its Netty TLS handler has no peer hostname; all clients shut down before the next probe.
+Java and Rust TLS calls use the trusted CA, then independently test a trusted wrong-host certificate and an untrusted CA; both accept the trusted wrong-host certificate without endpoint identification and reject the untrusted CA; all clients shut down before the next probe.
 EOF
 elif [[ "$scenario_id" == "P0-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -1705,7 +1706,7 @@ if [[ "$scenario_id" == "P16-V02" ]]; then
                 p16_tls_key="-"
             fi
             p16_tls_outcome=REJECTED
-            if [[ "$mode" == "trusted" || ( "$language" == "java" && "$mode" == "wrong-host" ) ]]; then
+            if [[ "$mode" == "trusted" || "$mode" == "wrong-host" ]]; then
                 p16_tls_outcome=ACCEPTED
             fi
             printf -v expected 'P16\tTLS\t%s\t%s\t0\t0\t0' "$mode" "$p16_tls_outcome"
@@ -1734,7 +1735,7 @@ if [[ "$scenario_id" == "P16-V02" ]]; then
         wait "$p16_proxy_pid" 2>/dev/null || true
     done
     p16_proxy_pids=()
-    printf 'PASS P16-V02: Java 5.5.1 and Rust accepted valid ACL signatures and rejected wrong secrets and tampered heartbeat bodies; mutual TLS accepted trusted clients and rejected untrusted CAs and missing client certificates; Rust rejected the trusted wrong-host certificate while Java 5.5.1 accepted its trusted chain without hostname verification\n' \
+    printf 'PASS P16-V02: Java 5.5.1 and Rust accepted valid ACL signatures and rejected wrong secrets and tampered heartbeat bodies; mutual TLS accepted trusted clients and trusted wrong-host certificates without endpoint identification, and rejected untrusted CAs and missing client certificates\n' \
         | tee "$evidence_dir/result.txt"
     exit 0
 fi
@@ -4518,7 +4519,7 @@ EOF
         rust_expected_outcome=accepted
         if [[ "$mode" == "wrong-host" ]]; then
             tls_addr="$tls_ip_addr"
-            rust_expected_outcome=rejected
+            rust_expected_outcome=accepted
         elif [[ "$mode" == "untrusted" ]]; then
             ca_path="$evidence_dir/untrusted-ca.pem"
             rust_expected_outcome=rejected
@@ -4557,7 +4558,7 @@ from pathlib import Path
 root = Path(sys.argv[1])
 expected = {
     "java": {"trusted": "ACCEPTED", "wrong-host": "ACCEPTED", "untrusted": "REJECTED"},
-    "rust": {"trusted": "ACCEPTED", "wrong-host": "REJECTED", "untrusted": "REJECTED"},
+    "rust": {"trusted": "ACCEPTED", "wrong-host": "ACCEPTED", "untrusted": "REJECTED"},
 }
 
 def parse(path, kind, client=None):
@@ -4582,25 +4583,21 @@ for mode in expected["java"]:
     rust = parse(root / f"rust-p3-{mode}.tsv", "tls", "rust")
     if java[0] != mode or rust[0] != mode:
         raise SystemExit(f"Java/Rust TLS mode differs for {mode}: {java!r} != {rust!r}")
-    if mode != "wrong-host" and java != rust:
+    if java != rust:
         raise SystemExit(f"Java/Rust TLS trust outcomes differ for {mode}: {java!r} != {rust!r}")
-if parse(root / "java-p3-wrong-host.tsv", "tls", "java")[1] != "ACCEPTED":
-    raise SystemExit("Java 5.5.1 verified mode did not preserve its observed hostname behavior")
-if parse(root / "rust-p3-wrong-host.tsv", "tls", "rust")[1] != "REJECTED":
-    raise SystemExit("Rust verified mode accepted a certificate for the wrong hostname")
 
 proxy_rows = [line.split("\t") for line in (root / "tls-proxy.tsv").read_text().splitlines()]
 accepted = sum(len(row) >= 2 and row[1] == "TLS_ACCEPTED" for row in proxy_rows)
 closed = sum(len(row) >= 2 and row[1] == "CONNECTION_CLOSED" for row in proxy_rows)
 rejected = sum(len(row) >= 2 and row[1].startswith("HANDSHAKE_REJECTED:") for row in proxy_rows)
-if (accepted, closed, rejected) != (3, 3, 3):
-    raise SystemExit(f"TLS proxy observed accepted/closed/rejected {(accepted, closed, rejected)!r}, expected (3, 3, 3)")
+if (accepted, closed, rejected) != (4, 4, 2):
+    raise SystemExit(f"TLS proxy observed accepted/closed/rejected {(accepted, closed, rejected)!r}, expected (4, 4, 2)")
 PY
     then
         echo "P3-V04 raw route, TLS trust checks, or shutdown lifecycle did not match" >&2
         exit 1
     fi
-    printf 'PASS P3-V04: Java and Rust invoked a live NameServer route and accepted the trusted TLS Broker path; both rejected the untrusted CA, Rust rejected the wrong-host certificate, Java 5.5.1 accepted it without endpoint identification, and all clients shut down with no pending requests, channels, or worker tasks\n' \
+    printf 'PASS P3-V04: Java and Rust invoked a live NameServer route, accepted trusted CA chains with matching and wrong hostnames, rejected the untrusted CA, and shut down with no pending requests, channels, or worker tasks\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P6-V04" ]]; then
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \

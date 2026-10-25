@@ -1277,7 +1277,7 @@ async fn p16_tls(
     if counts.pending_requests != 0 || counts.connections != 0 || counts.owned_tasks != 0 {
         return Err(format!("TLS shutdown retained resources: {counts:?}").into());
     }
-    let expected = mode == "trusted";
+    let expected = mode == "trusted" || mode == "wrong-host";
     if accepted != expected {
         return Err(format!("unexpected TLS outcome for {mode}: {accepted}").into());
     }

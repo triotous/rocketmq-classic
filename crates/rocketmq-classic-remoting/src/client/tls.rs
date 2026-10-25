@@ -19,7 +19,8 @@ use tokio_rustls::rustls::client::danger::{
 use tokio_rustls::rustls::pki_types::{ServerName, UnixTime};
 use tokio_rustls::rustls::{
     ClientConfig, DigitallySignedStruct, Error, RootCertStore, SignatureScheme,
-    pki_types::CertificateDer,
+    client::verify_server_cert_signed_by_trust_anchor, crypto::WebPkiSupportedAlgorithms,
+    pki_types::CertificateDer, server::ParsedCertificate,
 };
 
 use rocketmq_classic_protocol::codes::JavaEnumLookupError;
@@ -265,11 +266,12 @@ pub struct TlsConfig {
     /// Java `tls.protocols` property snapshot, applied to Java-compatible
     /// client TLS contexts. Unsupported protocol names fail context construction.
     pub protocols: Option<String>,
-    /// Mirrors Java's `tls.test.mode.enable` (default `true`); true skips server trust and hostname checks.
+    /// Mirrors Java's `tls.test.mode.enable` (default `true`); true skips server trust checks.
     /// This is insecure and should be disabled outside Java-compatible test configurations.
     pub test_mode: bool,
     /// Mirrors Java's `tls.client.authServer` (default `false`); effective only when test mode is disabled.
-    /// False disables server trust and hostname checks, matching Java's trust-all behavior.
+    /// False disables server trust checks. True verifies the certificate chain; Java 5.5.1 does not
+    /// verify the server hostname in either mode.
     pub auth_server: bool,
     /// Java `tls.client.keyPassword`; used for encrypted PKCS#8 files.
     pub key_password: Option<String>,
@@ -436,6 +438,7 @@ impl TlsConfig {
         let verify_server = !self.test_mode && self.auth_server;
         let default_builder = ClientConfig::builder();
         let mut crypto_provider = (**default_builder.crypto_provider()).clone();
+        let signature_algorithms = crypto_provider.signature_verification_algorithms;
         if let Some(ciphers) = self.ciphers.as_deref() {
             let available_suites = crypto_provider.cipher_suites.clone();
             crypto_provider.cipher_suites = ciphers
@@ -477,7 +480,15 @@ impl TlsConfig {
                     ));
                 }
             }
-            builder.with_root_certificates(roots)
+            // Java's pinned Netty client uses the configured trust manager but
+            // does not enable endpoint identification. Verify the certificate
+            // chain and validity while preserving that hostname behavior.
+            builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(ChainOnlyServerVerifier {
+                    roots,
+                    signature_algorithms,
+                }))
         } else {
             builder
                 .dangerous()
@@ -828,6 +839,73 @@ fn unescape_java_property(value: &str) -> Result<String, TransportError> {
 
 #[derive(Debug)]
 struct TrustAllServerVerifier;
+
+struct ChainOnlyServerVerifier {
+    roots: RootCertStore,
+    signature_algorithms: WebPkiSupportedAlgorithms,
+}
+
+impl fmt::Debug for ChainOnlyServerVerifier {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChainOnlyServerVerifier")
+            .field("root_count", &self.roots.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl ServerCertVerifier for ChainOnlyServerVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, Error> {
+        let certificate = ParsedCertificate::try_from(end_entity)?;
+        verify_server_cert_signed_by_trust_anchor(
+            &certificate,
+            &self.roots,
+            intermediates,
+            now,
+            self.signature_algorithms.all,
+        )?;
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, Error> {
+        tokio_rustls::rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.signature_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, Error> {
+        tokio_rustls::rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.signature_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.signature_algorithms.supported_schemes()
+    }
+}
 
 impl ServerCertVerifier for TrustAllServerVerifier {
     fn verify_server_cert(

@@ -112,10 +112,10 @@ profile, then checks no-responder timeouts in both clients and late replies
 after timeout without a second callback or retained correlation.
 `P3-V04` invokes a raw route on the local NameServer, then sends Java and Rust
 RocketMQ requests through a locally generated TLS terminator that forwards to
-the disposable plain Broker. Java 5.5.1 verifies the CA chain but accepts a
-trusted wrong-host certificate; Rust verifies the host and rejects it. Both
-clients reject an untrusted CA and report zero retained remoting resources at
-shutdown. `P7-V04` uses two host-routed Brokers to send 20 messages in each of
+the disposable plain Broker. Both clients verify the configured CA chain,
+accept the trusted certificate with a wrong hostname as Java 5.5.1 does, reject
+an untrusted CA, and report zero retained remoting resources at shutdown.
+`P7-V04` uses two host-routed Brokers to send 20 messages in each of
 three producer start/shutdown cycles and checks that pending requests,
 connections, and task groups return to zero each time.
 `P11-V04` sends Java messages through Rust Push on Broker A and Rust messages

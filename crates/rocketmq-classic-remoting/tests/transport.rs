@@ -2384,7 +2384,7 @@ async fn p3_outbound_rpc_hook_runs_before_oneway_admission_wait() {
 }
 
 #[tokio::test]
-async fn p3_u01_tls_verifies_ca_and_hostname_without_insecure_fallback() {
+async fn p3_u01_tls_verifies_ca_and_matches_java_hostname_behavior() {
     let certificate = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
     let cert_pem = certificate.cert.pem();
     let mut ca = TlsConfig::default();
@@ -2443,13 +2443,7 @@ async fn p3_u01_tls_verifies_ca_and_hostname_without_insecure_fallback() {
             Instant::now() + Duration::from_secs(2),
         )
         .await;
-    assert!(matches!(
-        result,
-        Err(TransportError::ConnectRequest {
-            remote_addr,
-            cause: Some(_),
-        }) if remote_addr == format!("127.0.0.1:{port}")
-    ));
+    assert!(result.unwrap().is_response());
     bad_name.shutdown().await;
     peer.await.unwrap();
 }
