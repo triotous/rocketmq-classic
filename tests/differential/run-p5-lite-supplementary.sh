@@ -168,14 +168,21 @@ if ! "${compose[@]}" up --detach --wait --wait-timeout 180 >"$evidence_dir/setup
     exit 1
 fi
 started=true
-if ! "${compose[@]}" exec --no-TTY broker ./mqadmin clusterList -n namesrv:9876 \
-    >"$evidence_dir/server-version.log" 2>&1; then
-    status=1
-    exit 1
-fi
+registered=false
+: >"$evidence_dir/server-version.log"
+for attempt in {1..90}; do
+    if output="$("${compose[@]}" exec --no-TTY broker ./mqadmin clusterList -n namesrv:9876 2>&1)" \
+        && [[ "$output" == *"broker-a"* ]]; then
+        printf '%s\n' "$output" >"$evidence_dir/server-version.log"
+        registered=true
+        break
+    fi
+    printf '%s\n' "$output" >"$evidence_dir/server-version.log"
+    sleep 1
+done
 cat "$evidence_dir/server-version.log"
-if ! rg -q 'V5_5_0' "$evidence_dir/server-version.log"; then
-    echo "Expected Broker 5.5.0 in clusterList output" >&2
+if [[ "$registered" != true ]] || ! rg -q 'V5_5_0' "$evidence_dir/server-version.log"; then
+    echo "Broker 5.5.0 did not register before the bounded readiness deadline" >&2
     status=1
     exit 1
 fi

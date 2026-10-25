@@ -287,3 +287,8 @@
 ## P19-05 supplementary runner portability correction — 2026-10-25
 
 - The first supplementary runner invocation stopped before creating evidence or Docker resources because macOS Bash 3.2 does not support the `${var,,}` lowercase expansion. Changed run-ID normalization to portable `tr`; shell syntax and whitespace checks pass. No scenario result is claimed.
+
+## P19-05 supplementary readiness retry — 2026-10-25
+
+- Run `20261025T133006Z` started the pinned official 5.5.0 NameServer and Broker; Broker logs report `broker[broker-a, broker:10911] boot success`. The first `clusterList` ran before NameServer registration completed and returned only its header. No Lite operation ran. The trap removed the Compose containers, network, and volume; filtered resource checks returned no project resources.
+- Added up to 90 seconds of bounded `clusterList` polling before checking actual version `V5_5_0`. Shell syntax and whitespace checks pass; the clean retry follows this infrastructure correction.
