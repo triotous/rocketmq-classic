@@ -121,7 +121,8 @@ for scenario in selected:
     profile = scenario.get("profile")
     inputs = scenario.get("inputs", {})
     topic = inputs.get("topic", "-")
-    producer_group = inputs.get("producer_group", inputs.get("group", inputs.get("transaction_group", "-")))
+    producer_group = inputs.get("producer_group", inputs.get("transaction_group", inputs.get("group", "-")))
+    consumer_group = inputs.get("consumer_group", inputs.get("group", "-"))
     body = inputs.get("body", "-")
     key_prefix = inputs.get("key_prefix", "-")
     java_expected_max_offset = inputs.get("java_expected_max_offset", "-")
@@ -145,7 +146,7 @@ for scenario in selected:
         f"{java_expected_max_offset}\t{rust_expected_max_offset}\t"
         f"{java_expected_queue_offset}\t{rust_expected_queue_offset}\t{message_count}\t"
         f"{java_offset}\t{rust_offset}\t{queue_id}\t{pull_offset}\t{missing_topic}\t"
-        f"{queue_count}\t{consumer_ids}"
+        f"{queue_count}\t{consumer_ids}\t{consumer_group}"
     )
 PY
 then
@@ -159,7 +160,7 @@ fi
 
 implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route")
 unsupported=()
-while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids; do
+while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
     for implemented_id in "${implemented[@]}"; do
         if [[ "$scenario_id" == "$implemented_id" ]]; then
@@ -194,7 +195,7 @@ if [[ "$selection" != "scenario" ]]; then
     exit 0
 fi
 
-IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids <"$selected_file"
+IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group <"$selected_file"
 case "$profile:$scenario_id" in
     basic:*) ;;
     two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c) ;;
@@ -278,10 +279,11 @@ case "$scenario_id:$topic" in
         ;;
     TX-001-commit:compat_phase0_tx|TX-002-rollback:compat_phase0_tx)
         expected_transaction_key="compat_tx_commit"
+        expected_consumer_group="compat_phase0_tx_consumer_group"
         if [[ "$scenario_id" == "TX-002-rollback" ]]; then
             expected_transaction_key="compat_tx_rollback"
         fi
-        if [[ "$profile" != "transaction" || "$producer_group" != "compat_phase0_tx_group" || "$key_prefix" != "$expected_transaction_key" || "$body" != "transaction-body" ]]; then
+        if [[ "$profile" != "transaction" || "$producer_group" != "compat_phase0_tx_group" || "$consumer_group" != "$expected_consumer_group" || "$key_prefix" != "$expected_transaction_key" || "$body" != "transaction-body" ]]; then
             echo "Transaction metadata differs from the reviewed local commit/rollback cases" >&2
             exit 3
         fi
@@ -436,6 +438,9 @@ if [[ "$scenario_id" == "REBAL-001-average-10q-3c" ]]; then
     printf 'topic=%s\nqueue_count=%s\nconsumer_ids=%s\n' "$topic" "$queue_count" "$consumer_ids" \
         >>"$evidence_dir/metadata.txt"
 fi
+if [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" ]]; then
+    printf 'consumer_group=%s\n' "$consumer_group" >>"$evidence_dir/metadata.txt"
+fi
 {
     uname -srm
     cargo --version
@@ -485,9 +490,12 @@ elif [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback"
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec $broker_service ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec $broker_service ./mqadmin updateSubGroup -c RocketMQLocalTest -g $consumer_group -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic $producer_group $transaction_decision ${key_prefix}_java $body" exec:java@live-transaction-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- transaction $namesrv_addr $topic $producer_group $transaction_decision ${key_prefix}_rust $body
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- max-offset $broker_addr $topic 0
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="pull $broker_addr $consumer_group $topic 0 0" exec:java@live-consumer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- pull $broker_addr $consumer_group $topic 0 0
 EOF
 elif [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -696,7 +704,14 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
     fi
     if [[ "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" ]]; then
         echo "Creating scenario-owned subscription group $producer_group"
-        if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$producer_group" -n namesrv:9876 \
+        if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$producer_group" -n namesrv:9876 \
+            >"$evidence_dir/group-create.log" 2>&1; then
+            cat "$evidence_dir/group-create.log" >&2
+            exit 1
+        fi
+    elif [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" ]]; then
+        echo "Creating scenario-owned consumer group $consumer_group"
+        if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$consumer_group" -n namesrv:9876 \
             >"$evidence_dir/group-create.log" 2>&1; then
             cat "$evidence_dir/group-create.log" >&2
             exit 1
@@ -1396,8 +1411,54 @@ elif [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback"
         echo "Broker queue max offset differs from expected $expected_max_offset" >&2
         exit 1
     fi
-    printf 'PASS %s: Java/Rust decisions matched and Broker queue max offset was %s\n' \
-        "$scenario_id" "$expected_max_offset" | tee "$evidence_dir/result.txt"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="pull $broker_addr $consumer_group $topic 0 0" exec:java@live-consumer-probe \
+        >"$evidence_dir/java-pull.tsv" 2>"$evidence_dir/java-pull.stderr"; then
+        cat "$evidence_dir/java-pull.stderr" >&2
+        exit 1
+    fi
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        pull "$broker_addr" "$consumer_group" "$topic" 0 0 \
+        >"$evidence_dir/rust-pull.tsv" 2>"$evidence_dir/rust-pull.stderr"; then
+        cat "$evidence_dir/rust-pull.stderr" >&2
+        exit 1
+    fi
+    if ! cmp -s "$evidence_dir/java-pull.tsv" "$evidence_dir/rust-pull.tsv"; then
+        diff -u "$evidence_dir/java-pull.tsv" "$evidence_dir/rust-pull.tsv" \
+            >"$evidence_dir/pull-diff.txt" || true
+        cat "$evidence_dir/pull-diff.txt" >&2
+        exit 1
+    fi
+    if ! python3 - "$evidence_dir/java-pull.tsv" "$scenario_id" <<'PY'
+import sys
+from pathlib import Path
+
+row = Path(sys.argv[1]).read_text().rstrip("\n").split("\t")
+scenario_id = sys.argv[2]
+if len(row) != 7 or row[0] != "PULL" or any(not value.isdecimal() for value in row[2:6]):
+    raise SystemExit("transaction consumer pull has an invalid shape")
+if row[6] and (len(row[6]) % 2 or any(ch not in "0123456789abcdef" for ch in row[6])):
+    raise SystemExit("transaction pull body must be lowercase hexadecimal")
+if scenario_id == "TX-001-commit":
+    if row[1] != "FOUND" or row[2:6] != ["2", "0", "2", "0"]:
+        raise SystemExit("commit pull must return both committed messages at offsets 0..2")
+    if bytes.fromhex(row[6]).count(b"transaction-body") < 2:
+        raise SystemExit("commit pull does not contain both transaction message bodies")
+else:
+    if row[1] != "NO_NEW_MSG" or row[2:6] != ["0", "0", "0", "0"] or row[6]:
+        raise SystemExit("rollback pull must return no message and retain empty queue offsets")
+PY
+    then
+        echo "Java/Rust transaction pull output does not satisfy the visibility assertion" >&2
+        exit 1
+    fi
+    if [[ "$scenario_id" == "TX-001-commit" ]]; then
+        printf 'PASS %s: Java/Rust commits matched; both committed messages were visible and max offset was %s\n' \
+            "$scenario_id" "$expected_max_offset" | tee "$evidence_dir/result.txt"
+    else
+        printf 'PASS %s: Java/Rust rollbacks matched; no message was visible and max offset was %s\n' \
+            "$scenario_id" "$expected_max_offset" | tee "$evidence_dir/result.txt"
+    fi
 elif [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "ROUTE-002-topic-not-exist" || "$scenario_id" == "P5-V02-route" ]]; then
     route_topics=("$topic")
     if [[ "$scenario_id" == "P5-V02-route" ]]; then
