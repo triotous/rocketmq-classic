@@ -10806,3 +10806,20 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   remaining project resources. This supplementary result does not modify the
   required 5.3.4 `P5-V02-extensions` manifest row or establish production
   support. Ten runnerless manifest cases remain pending.
+
+## P19-04 P7-V04 clean-source lifecycle pass — 2026-10-25 (`816e2e10`)
+
+- [x] Clean-source run `20261025T141436Z` on
+  `816e2e10a30408aa4303b923a99892e6be4b06c5` passed against the pinned
+  unmodified RocketMQ 5.3.4 image. Java 5.5.1 and Rust each sent 20 messages
+  in three producer start/shutdown cycles; pending requests, connections, and
+  owned task groups were zero after each cycle. Evidence is under
+  `docs/compatibility/evidence/phase-19/P7-V04/20261025T141436Z/`.
+- [x] The runner deleted the scenario topic from both host-routed Brokers and
+  removed the isolated containers, NameServer, volumes, and network. Exit
+  status 0, duration 88 seconds, `source_code_dirty=false`; filtered Docker
+  queries found no project resources.
+- [ ] Live coverage is now 28/37. Nine cases remain without runners:
+  `P7-V03`, `P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`,
+  `P15-V03`, `P16-V02`, and `P17-V02`. Full local gates and owner manual
+  evidence remain pending.

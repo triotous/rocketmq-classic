@@ -48,8 +48,11 @@ both clients report timeout, and verifies each message is committed once by
 matching Java/Rust pull results. `P3-V04` compares raw NameServer routing, CA
 trust, and client shutdown through a local TLS-terminating proxy. Java 5.5.1
 accepts a CA-trusted wrong-host certificate because its TLS handler does not
-receive a peer hostname; Rust rejects it. Ten cases remain pending: `P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`,
-`P11-V04`, `P12-V03`, `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`.
+receive a peer hostname; Rust rejects it. P7-V04 now has clean-source live
+evidence for 20 sends over three Java and Rust producer cycles with zero
+pending requests, connections, and owned task groups after every shutdown.
+Nine live cases remain pending: `P7-V03`, `P10-V03`, `P11-V03`, `P11-V04`,
+`P12-V03`, `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`.
 `P13-V02` and `P5-V02-extensions` now have clean Java/Rust evidence; the
 latter records the two unsupported Lite request paths on 5.3.4 and separate
 positive Lite success evidence on 5.5.0. This does

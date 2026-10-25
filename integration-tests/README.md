@@ -140,10 +140,9 @@ topics, containers, network, and volume after the run. Toolchain,
 configuration, output, and cleanup evidence is stored under
 `docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
 after comparison and cleanup both succeed. The runner implements 28 of 37
-cases; 27 have passed and `P7-V04` awaits its first clean-source live run: the
-two Phase 0 route cases, `P0-V03`, `P3-V04`,
+cases, and all 28 have passed: the two Phase 0 route cases, `P0-V03`, `P3-V04`,
 `P5-V02-route`, `P5-V02-producer`, `P5-V02-consumer`, `P5-V02-extensions`,
-`P6-V04`, `P7-V02`, `P9-V03`, `P13-V02`,
+`P6-V04`, `P7-V02`, `P7-V04`, `P9-V03`, `P13-V02`,
 `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, `HEARTBEAT-001`,
 `PROD-001-sync-send` through `PROD-004-batch-send`, `PROD-005-send-timeout`, and
 `CONS-001-query-offset` through `CONS-004-update-offset`, plus
@@ -226,15 +225,14 @@ It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
 produce a `BLOCKED` result with the missing IDs in the archived log; the full
 matrix cannot report success until all IDs have passing evidence. Currently
-27 of 37 live cases have passing evidence; nine remain without runners:
+28 of 37 live cases have passing evidence; nine remain without runners:
 `P7-V03`, `P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`,
 `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`. `P5-V02-extensions`
 passed the 5.3.4 parity case with matching unsupported responses for Lite
 subscription and Lite POP; positive Lite success-path coverage passed
 separately on the official 5.5.0 image and is not part of the 5.3.4 manifest
 count.
-`P7-V04` has a runner but still needs a clean-source live run. The remaining
-two-Broker cases, ACL/feature profiles, and a fresh
+The remaining two-Broker cases, ACL/feature profiles, and a fresh
 `run-local.sh --all` pass remain pending. The last full local run predates
 several later runner additions and must be rerun against the current revision.
 Starting a profile by itself does not mark a scenario passed.

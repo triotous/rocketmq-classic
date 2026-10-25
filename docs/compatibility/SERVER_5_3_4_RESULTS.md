@@ -57,12 +57,14 @@ TLS/auth, ACL, failover, or stress coverage.
 
 ## Pending local server coverage
 
-The scenario manifest contains 37 live cases; 27 pass. The eight basic
+The scenario manifest contains 37 live cases; 28 pass. The eight basic
 route/heartbeat/send scenarios above, `P3-V04`, four consumer cases, the P5
 route row, `P6-V04`, `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, and
 the two transaction rows passed. `P0-V03` also passes as an aggregate over
 eleven clean constituent runs, `P7-V02` covers high-level producer send modes,
-and `P9-V03` covers manual pull and offset resume.
+and `P9-V03` covers manual pull and offset resume. `P7-V04` passed three
+Java and Rust producer start/shutdown cycles with 20 sends each and zero
+pending requests, connections, or owned task groups after every shutdown.
 `REQ-001-request-reply-success` checks both cross-language request/reply
 directions; `PROD-005-send-timeout` checks commit visibility after a timed-out
 send. `P5-V02-extensions` compares matching Java/Rust heartbeat, heartbeat V2,
@@ -85,10 +87,10 @@ introduced Lite Mode. This supplementary success does not change the 5.3.4
 baseline or by itself establish production support.
 `P13-V02` compares the Java/Rust POP receipt lifecycle on two Brokers,
 including delivery, expiry redelivery, ACK, invisibility changes, mixed queue
-mapping, and malformed receipt rejection. Ten remain pending:
-`P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`,
-`P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`. The two-Broker
-profile covers lock/unlock and average
+mapping, and malformed receipt rejection. Nine remain pending:
+`P7-V03`, `P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`,
+`P15-V03`, `P16-V02`, and `P17-V02`. The two-Broker
+profiles cover producer lifecycle, lock/unlock, and average
 queue assignment; retry, query, and broader interoperability coverage,
 Broker-native TLS/auth, ACL, and feature-specific profiles remain incomplete.
 No server limitation is inferred from an unrun case. Phase 19

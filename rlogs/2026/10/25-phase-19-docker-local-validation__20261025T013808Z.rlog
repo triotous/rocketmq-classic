@@ -371,3 +371,21 @@
   differential manifest validation, and `git diff --check` passed. The
   fail-closed coverage check now identifies nine cases without runners; the
   complete local gate remains pending.
+
+## P19-04 P7-V04 clean-source pass — 2026-10-25 (`816e2e10`)
+
+- Clean-source run `20261025T141436Z` on
+  `816e2e10a30408aa4303b923a99892e6be4b06c5` passed against the pinned
+  unmodified 5.3.4 image. Java 5.5.1 and Rust each sent 20 messages in three
+  producer start/shutdown cycles. Every cycle reported zero pending requests,
+  connections, and owned task groups. Evidence:
+  `docs/compatibility/evidence/phase-19/P7-V04/20261025T141436Z/`.
+- `source_code_dirty=false`, exit status 0, duration 88 seconds. The runner
+  deleted the topic directly from both host-routed Brokers, then removed the
+  isolated containers, NameServer, volumes, and network. Filtered Docker
+  queries returned no project resources. The manifest now records P7-V04
+  PASS; live coverage is 28/37, with nine cases still missing runners.
+- `python3 tests/differential/compare.py --validate-manifest`, Bash syntax,
+  formatting, and whitespace checks pass. `run-local.sh --all` and final
+  Phase 19 acceptance remain pending the rest of the local matrix and manual
+  owner evidence.
