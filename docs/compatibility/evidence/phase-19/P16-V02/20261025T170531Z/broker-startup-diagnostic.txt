@@ -1,0 +1,18 @@
+P16-V02 local Broker startup diagnostic
+
+Run: 20261025T170531Z
+Pinned image: apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+Host and image platform: macOS arm64 / linux/arm64
+Result: the ACL-enabled Broker exited with status 255 before client probes started.
+
+Sanitized Broker startup cause:
+
+  java.lang.ExceptionInInitializerError
+    at org.apache.rocketmq.auth.authentication.provider.LocalAuthenticationMetadataProvider.<clinit>
+  Caused by: java.lang.RuntimeException: librocksdbjni-linux-aarch64.so was not found inside JAR.
+
+The pinned image resolved as linux/arm64. A local retry with
+DOCKER_DEFAULT_PLATFORM=linux/amd64 failed before container startup because the
+image does not provide linux/amd64. The pinned image was not modified or
+replaced. Compose cleanup removed this run's containers, volume, and network;
+filtered Docker resource queries were empty. P16-V02 remains pending.
