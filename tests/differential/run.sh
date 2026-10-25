@@ -834,9 +834,10 @@ if [[ "$scenario_id" == "P14-V03" ]]; then
         "$consumer_group" >>"$evidence_dir/metadata.txt"
 fi
 if [[ "$scenario_id" == "P16-V02" ]]; then
+    auth_broker_base_image=eclipse-temurin:8-jdk@sha256:a0c061a98b00f4ec24a33296dd491efabf5ad948607f60ef382a295024279068
     auth_broker_image_id="$(docker image inspect "$auth_broker_image" --format '{{.Id}}')"
-    printf 'name_server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8\nauth_broker_image=%s\nauth_broker_image_id=%s\nauth_broker_platform=linux/amd64\nauth_broker_base_image=eclipse-temurin:8-jre@sha256:acfd157ba9dc5b7cbfd2bd2391bc206a6d23e6ddbba564eb89cf60e77de77831\nserver_distribution=Apache RocketMQ 5.3.4 binary release\nserver_distribution_sha512=88508d5480421ce1582e56aa2e3b6e28ea6b88418cf618fd79a78f996a7ae853ee1ea98780377235ed396ce2bc82b4f3d88a838c72076760466702d881bfc6ae\n' \
-        "$auth_broker_image" "$auth_broker_image_id" >>"$evidence_dir/metadata.txt"
+    printf 'name_server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8\nauth_broker_image=%s\nauth_broker_image_id=%s\nauth_broker_platform=linux/amd64\nauth_broker_base_image=%s\nserver_distribution=Apache RocketMQ 5.3.4 binary release\nserver_distribution_sha512=88508d5480421ce1582e56aa2e3b6e28ea6b88418cf618fd79a78f996a7ae853ee1ea98780377235ed396ce2bc82b4f3d88a838c72076760466702d881bfc6ae\n' \
+        "$auth_broker_image" "$auth_broker_image_id" "$auth_broker_base_image" >>"$evidence_dir/metadata.txt"
     printf 'checks=signed-request-accepted,wrong-secret-rejected,tampered-body-rejected,trusted-ca-accepted,wrong-hostname-rejected,untrusted-ca-rejected,missing-client-certificate-rejected\nmutual_tls=true\ninsecure_tls_bypass=false\ncredentials=per-run-random-synthetic-and-redacted\n' \
         >>"$evidence_dir/metadata.txt"
 fi
@@ -1348,6 +1349,11 @@ cleanup() {
             wait "$p12_probe_pid" 2>/dev/null
         fi
     done
+    if [[ "$scenario_id" == "P16-V02" ]]; then
+        "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 namesrv broker-auth 2>&1 \
+            | python3 -c 'import sys; text=sys.stdin.read(); text=text.replace(sys.argv[1], "[REDACTED]").replace(sys.argv[2], "[REDACTED]"); sys.stdout.write(text)' \
+                "$P16_ACCESS_KEY" "$P16_SECRET_KEY" >"$evidence_dir/broker-logs.log"
+    fi
     if [[ "$scenario_id" == "P13-V02" ]]; then
         "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 broker broker-b \
             >"$evidence_dir/broker-logs.log" 2>&1

@@ -1,4 +1,4 @@
-FROM eclipse-temurin:8-jre@sha256:acfd157ba9dc5b7cbfd2bd2391bc206a6d23e6ddbba564eb89cf60e77de77831
+FROM eclipse-temurin:8-jdk@sha256:a0c061a98b00f4ec24a33296dd491efabf5ad948607f60ef382a295024279068
 
 RUN groupadd --gid 3000 rocketmq \
     && useradd --uid 3000 --gid 3000 --home-dir /home/rocketmq --create-home \

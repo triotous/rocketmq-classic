@@ -1,0 +1,13 @@
+P16-V02 amd64 distribution-container startup diagnostic — 2026-10-25
+
+The official RocketMQ 5.3.4 binary distribution and RocksDB JNI library loaded
+from the linux/amd64 container. The first locally built wrapper image used a
+Temurin 8 JRE, but the unmodified `bin/runbroker.sh` infers JAVA_HOME on Linux
+through `which javac`. With no JDK compiler present, it reported that JAVA_HOME
+was not set and exited before the Broker started. The image base is being
+changed to a digest-pinned Temurin 8 JDK. This run is diagnostic only and is
+not a PASS.
+
+An isolated diagnostic Compose project reproduced and captured this cause,
+then removed all project resources and synthetic credentials. Filtered Docker
+container, volume, and network queries returned no resources.

@@ -249,7 +249,7 @@ from both Brokers.
 
 P16-V02 uses the pinned 5.3.4 NameServer and a local container built from the
 official Apache 5.3.4 binary distribution. The builder checks the published
-SHA-512 before extracting the archive and pins its amd64 Temurin 8 base image.
+SHA-512 before extracting the archive and pins its amd64 Temurin 8 JDK base image.
 The official 5.3.4 distribution contains the Linux x86_64 RocksDB JNI library
 used by the ACL metadata provider; the pinned linux/arm64 Docker image does not
 contain a Linux ARM64 native library. Docker amd64 emulation is required on an
