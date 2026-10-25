@@ -10709,6 +10709,9 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [ ] Run `20261025T123103Z` passed both seed checks at max offset 1, then Java
   POP returned `POLLING_NOT_FOUND`. The next probe will use only the pre-seed
   POP mode setup and explicitly set `initMode=0`.
+- [ ] Run `20261025T123522Z` used the pre-seed mode and `initMode=0`, passed both
+  seed checks, and still returned `POLLING_NOT_FOUND`. Capture queue min/max and
+  group offset in the next diagnostic.
 - [x] The runner deleted the scenario topic and removed its isolated
   two-Broker containers, network, and volumes. Coverage remains 25/37 PASS
   with 12 Phase 19 scenarios pending.

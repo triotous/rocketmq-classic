@@ -348,3 +348,11 @@ not run. The runner removed the topic and Compose resources. Evidence is under
 [`20261025T123103Z`](evidence/phase-19/P13-V02/20261025T123103Z/). The next
 probe will avoid repeating the request-mode update after seeding and will set
 the POP init mode explicitly to the queue minimum.
+
+Run `20261025T123522Z` on `6a240da4` applied that change and again passed both
+seed checks, but Java's first queue 0 POP returned `POLLING_NOT_FOUND`. No
+lifecycle assertion passed and Rust consumption did not run. The runner removed
+the topic and Compose resources; evidence is under
+[`20261025T123522Z`](evidence/phase-19/P13-V02/20261025T123522Z/). The next
+diagnostic will record min/max queue offsets and the POP group's committed
+offset around the request.

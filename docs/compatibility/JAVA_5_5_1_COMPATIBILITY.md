@@ -51,10 +51,10 @@ sent to the requested queues; queue 0's offset was visible immediately, while
 queue 1 returned `SEND_OK` but its immediate max-offset query was still zero.
 The first five diagnostic runs were cleaned up. A sixth run passed both queue
 seed checks with max offset 1, but Java POP still returned `POLLING_NOT_FOUND`.
-The POP operation still repeated the request-mode update after seeding; the next
-probe will rely on the pre-seed setup and explicitly request init mode 0. All
-six diagnostic runs were cleaned up. P13 remains pending while the live POP
-exchange is investigated. This does
+The POP operation was changed to use the pre-seed mode and explicitly request
+init mode 0; it returned the same result. All seven diagnostic runs were
+cleaned up. P13 remains pending while queue offsets and the group's committed
+offset are captured around the live POP request. This does
 not close the broader P18-V01 public API/settings/flow reverse audit or establish
 full client parity. See
 [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server
