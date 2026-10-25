@@ -14,6 +14,7 @@ use rocketmq_classic_common::message::{
     decode_message_id, encode_compact_messages, encode_properties,
 };
 use rocketmq_classic_common::sysflag::pull::{build_pull_sys_flag, build_pull_sys_flag_with_lite};
+use rocketmq_classic_consumer::PopReceipt;
 use rocketmq_classic_consumer::rebalance::{
     AllocateMessageQueueAveragely, AllocateMessageQueueStrategy,
 };
@@ -24,11 +25,16 @@ use rocketmq_classic_core::api::{
 use rocketmq_classic_core::unique_id::UniqueIdGenerator;
 use rocketmq_classic_protocol::{
     SharedValue,
-    body::{LockBatchRequestBody, UnlockBatchRequestBody},
+    body::{
+        LiteSubscriptionAction, LiteSubscriptionCtlRequestBody, LiteSubscriptionDto,
+        LiteSubscriptionDtoSet, LockBatchRequestBody, MessageRequestMode,
+        QueryAssignmentRequestBody, SetMessageRequestModeRequestBody, UnlockBatchRequestBody,
+    },
     header::{
         ConsumerSendMsgBackRequestHeader, EndTransactionRequestHeader, GetMaxOffsetRequestHeader,
-        PullMessageRequestHeader, QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1,
-        UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
+        PopLiteMessageRequestHeader, PopMessageRequestHeader, PullMessageRequestHeader,
+        QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1,
+        UnregisterClientRequestHeader, UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
     heartbeat::{
         ConsumeFromWhere, ConsumeType, ConsumerData, HeartbeatData, MessageModel, ProducerData,
@@ -60,6 +66,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Some("p5-consumer") if arguments.len() == 5 => {
             p5_consumer(&arguments[1], &arguments[2], &arguments[3], &arguments[4]).await
+        }
+        Some("p5-extension-prepare") if arguments.len() == 4 => {
+            p5_extensions(&arguments[1], &arguments[2], &arguments[3], true).await
+        }
+        Some("p5-extension-consume") if arguments.len() == 4 => {
+            p5_extensions(&arguments[1], &arguments[2], &arguments[3], false).await
         }
         Some("p6-shared-runtime") if arguments.len() == 6 => {
             shared_runtime_probe(
@@ -197,7 +209,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -1684,6 +1696,308 @@ async fn p5_consumer(
     .await;
     remoting.shutdown().await;
     operation
+}
+
+async fn p5_extensions(
+    broker_address: &str,
+    topic: &str,
+    group_prefix: &str,
+    prepare_only: bool,
+) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    if let Err(error) = remoting.start() {
+        remoting.shutdown().await;
+        return Err(error.into());
+    }
+    let api = MQClientApi::new(remoting.clone());
+    let client_id = format!("compat-p5-rust-{group_prefix}");
+    let base_group = format!("{group_prefix}_base");
+    let lite_group = format!("{group_prefix}_lite");
+    let operation = async {
+        if prepare_only {
+            let heartbeat = HeartbeatData {
+                client_id: Some(client_id.clone()),
+                ..HeartbeatData::default()
+            };
+            let mut subscription =
+                SubscriptionData::new(Some(topic.to_owned()), Some("*".to_owned()));
+            subscription.set_expression_type(Some("TAG".to_owned()));
+            let consumer = ConsumerData {
+                group_name: Some(base_group.clone()),
+                consume_type: Some(ConsumeType::ConsumeActively),
+                message_model: Some(MessageModel::Clustering),
+                consume_from_where: Some(ConsumeFromWhere::ConsumeFromFirstOffset),
+                subscription_data_set: Some(SharedValue::from(HashSet::from([Some(
+                    SharedValue::from(subscription),
+                )]))),
+                ..ConsumerData::default()
+            };
+            heartbeat
+                .consumer_data_set
+                .as_ref()
+                .expect("default heartbeat initializes consumer set")
+                .with_mut(|consumers| {
+                    consumers.insert(Some(SharedValue::from(consumer)));
+                });
+
+            let heartbeat_version = api
+                .send_heartbeat(
+                    broker_address,
+                    &heartbeat,
+                    Instant::now() + Duration::from_secs(10),
+                )
+                .await?;
+            println!("P5E\theartbeat\tOK\t{heartbeat_version}");
+            let heartbeat_v2 = api
+                .send_heartbeat_v2(
+                    broker_address,
+                    &heartbeat,
+                    Instant::now() + Duration::from_secs(10),
+                )
+                .await?;
+            println!(
+                "P5E\theartbeat-v2\tOK\t{}\t{}\t{}",
+                heartbeat_v2.version,
+                heartbeat_v2.is_sub_change,
+                heartbeat_v2.is_support_heartbeat_v2
+            );
+
+            let mut assignment_request = QueryAssignmentRequestBody::default();
+            assignment_request.set_topic(Some(topic.to_owned()));
+            assignment_request.set_consumer_group(Some(base_group.clone()));
+            assignment_request.set_client_id(Some(client_id.clone()));
+            assignment_request.set_strategy_name(Some("AVG".to_owned()));
+            assignment_request.set_message_model(Some(MessageModel::Clustering));
+            let assignments = api
+                .query_assignment(
+                    broker_address,
+                    &assignment_request,
+                    Instant::now() + Duration::from_secs(10),
+                )
+                .await?;
+            let assignment_count = assignments
+                .get_message_queue_assignments()
+                .map_or(0, |items| items.snapshot().len());
+            println!("P5E\tassignment\tOK\t{assignment_count}");
+
+            let mut request_mode = SetMessageRequestModeRequestBody::default();
+            request_mode.set_topic(Some(topic.to_owned()));
+            request_mode.set_consumer_group(Some(base_group.clone()));
+            request_mode.set_mode(Some(MessageRequestMode::Pop));
+            request_mode.set_pop_share_queue_num(1);
+            api.set_message_request_mode(
+                broker_address,
+                &request_mode,
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await?;
+            println!("P5E\trequest-mode\tOK");
+
+            let lite_topic = "entries";
+            let lite_subscription = LiteSubscriptionDto {
+                action: Some(LiteSubscriptionAction::CompleteAdd),
+                client_id: Some(client_id.clone()),
+                group: Some(lite_group.clone()),
+                topic: Some(topic.to_owned()),
+                lite_topic_set: Some(SharedValue::from(std::collections::BTreeSet::from([Some(
+                    lite_topic.to_owned(),
+                )]))),
+                version: 0,
+                ..LiteSubscriptionDto::default()
+            };
+            let body = LiteSubscriptionCtlRequestBody {
+                subscription_set: Some(SharedValue::from(LiteSubscriptionDtoSet::from([Some(
+                    SharedValue::from(lite_subscription),
+                )]))),
+            };
+            api.lite_subscription_ctl(
+                broker_address,
+                &body,
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await?;
+            println!("P5E\tlite-subscription\tOK");
+
+            let mut unregister = UnregisterClientRequestHeader::default();
+            unregister.set_client_id(client_id);
+            unregister.set_producer_group(None);
+            unregister.set_consumer_group(Some(base_group));
+            api.unregister_client(
+                broker_address,
+                &unregister,
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await?;
+            println!("P5E\tunregister\tOK");
+        } else {
+            let lite_topic = format!("%LMQ%{topic}%entries");
+            let pop_group = format!("{group_prefix}_pop");
+            let pop = p5_extension_pop(&api, broker_address, topic, &pop_group, &client_id, false)
+                .await?;
+            require_pop_body(&pop.0, "p5-extension-seed", "POP")?;
+            println!("P5E\tpop\tFOUND\t{}", encode_hex(pop.0[0].body().as_ref()));
+
+            let lite = p5_extension_pop(
+                &api,
+                broker_address,
+                &lite_topic,
+                &lite_group,
+                &client_id,
+                true,
+            )
+            .await?;
+            require_pop_body(&lite.0, "p5-extension-lite", "POP-LITE")?;
+            println!(
+                "P5E\tpop-lite\tFOUND\t{}",
+                encode_hex(lite.0[0].body().as_ref())
+            );
+
+            let ack_group = format!("{group_prefix}_ack");
+            let acked =
+                p5_extension_pop(&api, broker_address, topic, &ack_group, &client_id, false)
+                    .await?;
+            require_pop_body(&acked.0, "p5-extension-seed", "ACK POP")?;
+            let ack_receipt = pop_receipt(&acked.0[0])?;
+            let ack = api
+                .ack_message(
+                    broker_address,
+                    &ack_receipt.ack_header(topic, &ack_group),
+                    Instant::now() + Duration::from_secs(10),
+                )
+                .await?;
+            println!("P5E\tack\t{}", ack.name());
+
+            let batch_group = format!("{group_prefix}_batch_ack");
+            let batch =
+                p5_extension_pop(&api, broker_address, topic, &batch_group, &client_id, false)
+                    .await?;
+            require_pop_body(&batch.0, "p5-extension-seed", "BATCH ACK POP")?;
+            let batch_receipt = pop_receipt(&batch.0[0])?.raw().to_owned();
+            let batch_status = rocketmq_classic_consumer::pop::batch_ack_message_from_extra_info(
+                &api,
+                broker_address,
+                Some(topic),
+                Some(&batch_group),
+                Some(&[Some(batch_receipt)]),
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await?;
+            println!("P5E\tbatch-ack\t{}", batch_status.name());
+
+            let change_group = format!("{group_prefix}_change");
+            let changed = p5_extension_pop(
+                &api,
+                broker_address,
+                topic,
+                &change_group,
+                &client_id,
+                false,
+            )
+            .await?;
+            require_pop_body(&changed.0, "p5-extension-seed", "CHANGE INVISIBLE POP")?;
+            let receipt = pop_receipt(&changed.0[0])?;
+            let result = api
+                .change_invisible_time(
+                    broker_address,
+                    receipt.broker_name(),
+                    &receipt.change_invisible_header(topic, &change_group, 120_000),
+                    Instant::now() + Duration::from_secs(10),
+                )
+                .await?;
+            if result.pop_time.is_none()
+                || result.invisible_time.is_none()
+                || result.revive_qid.is_none()
+            {
+                return Err("change-invisible-time omitted successful response metadata".into());
+            }
+            println!(
+                "P5E\tchange-invisible-time\t{}\tMETADATA",
+                result.status.name()
+            );
+        }
+        Ok::<(), Box<dyn Error>>(())
+    }
+    .await;
+    remoting.shutdown().await;
+    operation
+}
+
+async fn p5_extension_pop(
+    api: &MQClientApi,
+    broker_address: &str,
+    topic: &str,
+    group: &str,
+    client_id: &str,
+    lite: bool,
+) -> Result<(Vec<MessageExt>,), Box<dyn Error>> {
+    let now = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_millis(),
+    )?;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let raw = if lite {
+        let mut header = PopLiteMessageRequestHeader::default();
+        header.set_client_id(Some(client_id.to_owned()));
+        header.set_consumer_group(Some(group.to_owned()));
+        header.set_topic(Some(topic.to_owned()));
+        header.set_max_msg_num(1);
+        header.set_invisible_time(60_000);
+        header.set_poll_time(0);
+        header.set_born_time(now);
+        let reply = api
+            .pop_lite_message(broker_address, &header, deadline)
+            .await?;
+        if reply.status.name() != "FOUND" {
+            return Err(format!("lite POP returned {}", reply.status.name()).into());
+        }
+        reply.raw_messages
+    } else {
+        let mut header = PopMessageRequestHeader::default();
+        header.set_consumer_group(Some(group.to_owned()));
+        header.set_topic(Some(topic.to_owned()));
+        header.set_queue_id(0);
+        header.set_max_msg_nums(1);
+        header.set_invisible_time(60_000);
+        header.set_poll_time(0);
+        header.set_born_time(now);
+        header.set_exp_type(Some("TAG".to_owned()));
+        header.set_exp(Some("*".to_owned()));
+        let reply = api.pop_message(broker_address, &header, deadline).await?;
+        if reply.status.name() != "FOUND" {
+            return Err(format!("POP returned {}", reply.status.name()).into());
+        }
+        reply.raw_messages
+    }
+    .ok_or("successful POP omitted message bytes")?;
+    let messages = decode_many_as_client_compatible(&raw, DecodeOptions::default());
+    if messages.is_empty() {
+        return Err("successful POP returned no decoded message".into());
+    }
+    Ok((messages,))
+}
+
+fn require_pop_body(
+    messages: &[MessageExt],
+    expected: &str,
+    operation: &str,
+) -> Result<(), Box<dyn Error>> {
+    if messages
+        .iter()
+        .any(|message| message.body().as_ref() == expected.as_bytes())
+    {
+        Ok(())
+    } else {
+        Err(format!("{operation} returned messages without expected body {expected:?}").into())
+    }
+}
+
+fn pop_receipt(message: &MessageExt) -> Result<PopReceipt, Box<dyn Error>> {
+    let properties = message.properties();
+    let raw = properties
+        .get("POP_CK")
+        .ok_or("POP message omitted POP_CK receipt")?;
+    Ok(PopReceipt::parse(raw.clone())?)
 }
 
 async fn p5_pull(

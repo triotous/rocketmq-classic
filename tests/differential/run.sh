@@ -138,6 +138,11 @@ for scenario in selected:
         "send-back", "lock", "unlock"
     ]:
         raise SystemExit("P5 consumer method inventory differs from the reviewed live case")
+    if scenario_id == "P5-V02-extensions" and inputs.get("methods") != [
+        "heartbeat", "heartbeat-v2", "unregister", "assignment", "request-mode",
+        "lite-subscription", "pop", "pop-lite", "ack", "batch-ack", "change-invisible-time"
+    ]:
+        raise SystemExit("P5 extension method inventory differs from the reviewed live case")
     producer_group = inputs.get("producer_group", inputs.get("transaction_group", inputs.get("group", "-")))
     consumer_group = inputs.get("consumer_group", inputs.get("group", "-"))
     body = inputs.get("body", "-")
@@ -175,7 +180,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P0-V03" "P6-V04" "P7-V02" "P9-V03" "REQ-001-request-reply-success")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P5-V02-extensions" "P0-V03" "P6-V04" "P7-V02" "P9-V03" "REQ-001-request-reply-success")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -280,6 +285,12 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    P5-V02-extensions:compat_p5_extension)
+        if [[ "$profile" != "basic" || "$consumer_group" != "compat_p5_extension" ]]; then
+            echo "P5 extension RPC coverage requires the basic profile and scenario group" >&2
+            exit 3
+        fi
+        ;;
     CONS-001-query-offset:compat_phase0_query_offset)
         if [[ "$producer_group" != "compat_phase0_query_group" || "$java_offset" != "17" || "$rust_offset" != "23" || "$queue_id" != "0" ]]; then
             echo "Consumer-offset metadata differs from the reviewed reciprocal update/query case" >&2
@@ -374,7 +385,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P9-V03" && "$scenario_id" != "REQ-001-request-reply-success" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P5-V02-extensions" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P9-V03" && "$scenario_id" != "REQ-001-request-reply-success" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -457,6 +468,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveHeartbeatProbe.java
     compat/java-reference/src/main/java/compat/LiveProducerProbe.java
     compat/java-reference/src/main/java/compat/LiveP5ProducerProbe.java
+    compat/java-reference/src/main/java/compat/LiveP5ExtensionsProbe.java
     compat/java-reference/src/main/java/compat/LiveConsumerProbe.java
     compat/java-reference/src/main/java/compat/LiveRebalanceProbe.java
     compat/java-reference/src/main/java/compat/LiveTransactionProbe.java
@@ -558,6 +570,11 @@ if [[ "$scenario_id" == "P5-V02-consumer" ]]; then
     printf 'topic=%s\nconsumer_group=%s\njava_client_id=compat-p5-java-consumer\nrust_client_id=compat-p5-rust-consumer\nmethods=pull,lite-pull,query-offset,update-offset,consumer-list,send-back,lock,unlock\n' "$topic" "$consumer_group" \
         >>"$evidence_dir/metadata.txt"
 fi
+if [[ "$scenario_id" == "P5-V02-extensions" ]]; then
+    printf 'topic=%s\nlite_topic=%%LMQ%%%s%%entries\nconsumer_group_prefix=%s\njava_group_prefix=%s_java\nrust_group_prefix=%s_rust\nmethods=heartbeat,heartbeat-v2,unregister,assignment,request-mode,lite-subscription,pop,pop-lite,ack,batch-ack,change-invisible-time\n' \
+        "$topic" "$topic" "$consumer_group" "$consumer_group" "$consumer_group" \
+        >>"$evidence_dir/metadata.txt"
+fi
 {
     uname -srm
     cargo --version
@@ -629,6 +646,17 @@ docker compose --project-name $project_name --file integration-tests/compose.yam
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g ${consumer_group}_rust -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic compat_p6_producer_a compat_p6_producer_b $consumer_group" exec:java@live-shared-runtime-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p6-shared-runtime $namesrv_addr $topic compat_p6_producer_a compat_p6_producer_b $consumer_group
+EOF
+elif [[ "$scenario_id" == "P5-V02-extensions" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="prepare $broker_addr $topic ${consumer_group}_java" exec:java@live-p5-extensions-probe
+target/debug/live_client p5-extension-prepare $broker_addr $topic ${consumer_group}_rust
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="send $broker_addr $topic p5-extension-seed" exec:java@live-producer-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="send $broker_addr %LMQ%${topic}%entries p5-extension-lite" exec:java@live-producer-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="consume $broker_addr $topic ${consumer_group}_java" exec:java@live-p5-extensions-probe
+target/debug/live_client p5-extension-consume $broker_addr $topic ${consumer_group}_rust
 EOF
 elif [[ "$scenario_id" == "P9-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -794,6 +822,9 @@ EOF
 fi
 topic_created=false
 topic_cleanup_list=("$topic")
+if [[ "$scenario_id" == "P5-V02-extensions" ]]; then
+    topic_cleanup_list+=("%LMQ%${topic}%entries")
+fi
 if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     topic_cleanup_list+=("$rust_request_topic")
 fi
@@ -926,6 +957,27 @@ else
     fi
 fi
 cat "$evidence_dir/setup.log"
+
+if [[ "$scenario_id" == "P5-V02-extensions" ]]; then
+    echo "Creating the one-queue extension topic and isolated Java/Rust POP groups"
+    topic_created=true
+    if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateTopic -c RocketMQLocalTest -t "$topic" -r 1 -w 1 -n namesrv:9876 \
+        >"$evidence_dir/topic-create.log" 2>&1; then
+        cat "$evidence_dir/topic-create.log" >&2
+        exit 1
+    fi
+    : >"$evidence_dir/group-create.log"
+    for language in java rust; do
+        for suffix in base lite pop ack batch_ack change; do
+            extension_group="${consumer_group}_${language}_${suffix}"
+            if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$extension_group" -n namesrv:9876 \
+                >>"$evidence_dir/group-create.log" 2>&1; then
+                cat "$evidence_dir/group-create.log" >&2
+                exit 1
+            fi
+        done
+    done
+fi
 
 if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P3-V04" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P5-V02-producer" || "$scenario_id" == "P5-V02-consumer" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     echo "Creating scenario-owned topic $topic"
@@ -1611,6 +1663,110 @@ PY
         exit 1
     fi
     printf 'PASS P5-V02-consumer: Java and Rust matched pull, lite-pull, offset, consumer-list, send-back, lock and unlock RPC outcomes\n' \
+        | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "P5-V02-extensions" ]]; then
+    for client in java rust; do
+        client_group="${consumer_group}_${client}"
+        if [[ "$client" == "java" ]]; then
+            if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+                -Dexec.args="prepare $broker_addr $topic $client_group" \
+                exec:java@live-p5-extensions-probe >"$evidence_dir/java-p5-extension-prepare.tsv" \
+                2>"$evidence_dir/java-p5-extension-prepare.stderr"; then
+                cat "$evidence_dir/java-p5-extension-prepare.tsv" "$evidence_dir/java-p5-extension-prepare.stderr" 2>/dev/null >&2 || true
+                exit 1
+            fi
+        else
+            if ! "$repo_root/target/debug/live_client" p5-extension-prepare "$broker_addr" "$topic" "$client_group" \
+                >"$evidence_dir/rust-p5-extension-prepare.tsv" 2>"$evidence_dir/rust-p5-extension-prepare.stderr"; then
+                cat "$evidence_dir/rust-p5-extension-prepare.tsv" "$evidence_dir/rust-p5-extension-prepare.stderr" 2>/dev/null >&2 || true
+                exit 1
+            fi
+        fi
+    done
+    lite_topic="%LMQ%${topic}%entries"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="send $broker_addr $topic p5-extension-seed" \
+        exec:java@live-producer-probe >"$evidence_dir/java-extension-seed.tsv" \
+        2>"$evidence_dir/java-extension-seed.stderr"; then
+        cat "$evidence_dir/java-extension-seed.tsv" "$evidence_dir/java-extension-seed.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="send $broker_addr $lite_topic p5-extension-lite" \
+        exec:java@live-producer-probe >"$evidence_dir/java-extension-lite-seed.tsv" \
+        2>"$evidence_dir/java-extension-lite-seed.stderr"; then
+        cat "$evidence_dir/java-extension-lite-seed.tsv" "$evidence_dir/java-extension-lite-seed.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    for client in java rust; do
+        client_group="${consumer_group}_${client}"
+        if [[ "$client" == "java" ]]; then
+            if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+                -Dexec.args="consume $broker_addr $topic $client_group" \
+                exec:java@live-p5-extensions-probe >"$evidence_dir/java-p5-extension-consume.tsv" \
+                2>"$evidence_dir/java-p5-extension-consume.stderr"; then
+                cat "$evidence_dir/java-p5-extension-consume.tsv" "$evidence_dir/java-p5-extension-consume.stderr" 2>/dev/null >&2 || true
+                exit 1
+            fi
+        else
+            if ! "$repo_root/target/debug/live_client" p5-extension-consume "$broker_addr" "$topic" "$client_group" \
+                >"$evidence_dir/rust-p5-extension-consume.tsv" 2>"$evidence_dir/rust-p5-extension-consume.stderr"; then
+                cat "$evidence_dir/rust-p5-extension-consume.tsv" "$evidence_dir/rust-p5-extension-consume.stderr" 2>/dev/null >&2 || true
+                exit 1
+            fi
+        fi
+    done
+    if ! python3 - "$evidence_dir" <<'PY'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+methods = {
+    "heartbeat", "heartbeat-v2", "unregister", "assignment", "request-mode",
+    "lite-subscription", "pop", "pop-lite", "ack", "batch-ack", "change-invisible-time",
+}
+expected_bodies = {
+    "pop": b"p5-extension-seed".hex(),
+    "pop-lite": b"p5-extension-lite".hex(),
+}
+
+def read(prefix):
+    paths = [root / f"{prefix}-p5-extension-prepare.tsv", root / f"{prefix}-p5-extension-consume.tsv"]
+    rows = {}
+    for path in paths:
+        for line in path.read_text().splitlines():
+            fields = line.split("\t")
+            if len(fields) < 3 or fields[0] != "P5E" or fields[1] not in methods:
+                raise SystemExit(f"{path}: malformed or unregistered extension result {fields!r}")
+            if fields[1] in rows:
+                raise SystemExit(f"{path}: duplicate {fields[1]} result")
+            rows[fields[1]] = fields[2:]
+    if set(rows) != methods:
+        raise SystemExit(f"{prefix}: expected {sorted(methods)}, got {sorted(rows)}")
+    if rows["heartbeat"][0] != "OK" or rows["heartbeat-v2"][0] != "OK":
+        raise SystemExit(f"{prefix}: heartbeat result was not successful")
+    if rows["unregister"] != ["OK"] or rows["request-mode"] != ["OK"] or rows["lite-subscription"] != ["OK"]:
+        raise SystemExit(f"{prefix}: synchronous extension operation failed: {rows!r}")
+    for name, body in expected_bodies.items():
+        if rows[name] != ["FOUND", body]:
+            raise SystemExit(f"{prefix}: {name} did not return the seeded message: {rows[name]!r}")
+    if rows["ack"] != ["OK"] or rows["batch-ack"] != ["OK"]:
+        raise SystemExit(f"{prefix}: ACK result was not successful: {rows!r}")
+    if rows["change-invisible-time"] != ["OK", "METADATA"]:
+        raise SystemExit(f"{prefix}: invisibility change omitted successful metadata: {rows!r}")
+    return rows
+
+java = read("java")
+rust = read("rust")
+for method in methods:
+    if java[method] != rust[method]:
+        raise SystemExit(f"Java/Rust {method} outcomes differ: {java[method]!r} vs {rust[method]!r}")
+PY
+    then
+        echo "Java/Rust P5 extension outcomes or seeded POP results differ" >&2
+        exit 1
+    fi
+    printf 'PASS P5-V02-extensions: Java and Rust matched heartbeat, assignment, request-mode, Lite subscription, POP, ACK, and invisibility-change results\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
     echo "Delaying each direct Broker response beyond the Java/Rust 100 ms send deadline"
