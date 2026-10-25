@@ -686,7 +686,7 @@ mvn -q -f compat/java-reference/pom.xml -Dexec.args="route $namesrv_addr $topic"
 target/debug/live_client p3-raw-route $namesrv_addr $topic
 openssl req -x509 -newkey rsa:2048 -nodes -days 2 -config <evidence>/ca.cnf -keyout <evidence>/ca.key -out <evidence>/ca.pem
 openssl req -new -newkey rsa:2048 -nodes -config <evidence>/server-req.cnf -keyout <evidence>/server.key -out <evidence>/server.csr
-openssl x509 -req -in <evidence>/server.csr -CA <evidence>/ca.pem -CAkey <evidence>/ca.key -CAcreateserial -days 2 -sha256 -extfile <evidence>/server-ext.cnf -extensions server_cert -out <evidence>/server.pem
+openssl x509 -req -in <evidence>/server.csr -CA <evidence>/ca.pem -CAkey <evidence>/ca.key -set_serial 1 -days 2 -sha256 -extfile <evidence>/server-ext.cnf -extensions server_cert -out <evidence>/server.pem
 python3 tests/differential/tls_broker_proxy.py --upstream $broker_addr --cert <evidence>/server.pem --key <evidence>/server.key --ready-file <evidence>/tls-proxy-ready.txt --log-file <evidence>/tls-proxy.tsv
 Java and Rust TLS calls use the trusted CA, then independently reject a trusted wrong-host certificate and an untrusted CA; each client shuts down before the next probe.
 EOF
@@ -2304,7 +2304,7 @@ EOF
         -config "$evidence_dir/server-req.cnf" -keyout "$evidence_dir/server.key" \
         -out "$evidence_dir/server.csr" >"$evidence_dir/server-generate.log" 2>&1
     openssl x509 -req -in "$evidence_dir/server.csr" \
-        -CA "$evidence_dir/ca.pem" -CAkey "$evidence_dir/ca.key" -CAcreateserial \
+        -CA "$evidence_dir/ca.pem" -CAkey "$evidence_dir/ca.key" -set_serial 1 \
         -days 2 -sha256 -extfile "$evidence_dir/server-ext.cnf" \
         -extensions server_cert -out "$evidence_dir/server.pem" \
         >"$evidence_dir/server-sign.log" 2>&1
