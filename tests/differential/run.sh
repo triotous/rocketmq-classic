@@ -158,7 +158,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route" "P0-V03" "P7-V02")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route" "P0-V03" "P6-V04" "P7-V02")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -200,7 +200,7 @@ case "$profile:$scenario_id" in
     basic:*) ;;
     two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c) ;;
     transaction:TX-001-commit|transaction:TX-002-rollback) ;;
-    host-routed:P7-V02) ;;
+    host-routed:P6-V04|host-routed:P7-V02) ;;
     *)
         echo "Scenario metadata differs from the implemented profile" >&2
         exit 3
@@ -295,6 +295,12 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    P6-V04:compat_p6_shared)
+        if [[ "$profile" != "host-routed" || "$consumer_group" != "compat_p6_consumer" ]]; then
+            echo "P6-V04 metadata differs from the reviewed shared-runtime case" >&2
+            exit 3
+        fi
+        ;;
     P0-V03:-)
         if [[ "$profile" != "basic" ]]; then
             echo "P0-V03 must use the reviewed basic-profile aggregate" >&2
@@ -306,7 +312,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P7-V02" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -391,6 +397,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveRebalanceProbe.java
     compat/java-reference/src/main/java/compat/LiveTransactionProbe.java
     compat/java-reference/src/main/java/compat/LiveHighLevelProducerProbe.java
+    compat/java-reference/src/main/java/compat/LiveSharedRuntimeProbe.java
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
     integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf integration-tests/config/broker-tx.conf integration-tests/config/broker-host.conf
     integration-tests/setup.sh integration-tests/cleanup.sh
@@ -525,6 +532,14 @@ ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=host-routed COMPOSE_
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic" exec:java@live-high-level-producer-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p7-producer $namesrv_addr $topic
+EOF
+elif [[ "$scenario_id" == "P6-V04" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=host-routed COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g $consumer_group -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic compat_p6_producer_a compat_p6_producer_b $consumer_group" exec:java@live-shared-runtime-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p6-shared-runtime $namesrv_addr $topic compat_p6_producer_a compat_p6_producer_b $consumer_group
 EOF
 elif [[ "$scenario_id" == "P0-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -736,11 +751,13 @@ else
 fi
 cat "$evidence_dir/setup.log"
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P7-V02" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     topic_queue_count=4
-    if [[ "$scenario_id" == "REBAL-001-average-10q-3c" ]]; then
+    if [[ "$scenario_id" == "P6-V04" ]]; then
+        topic_queue_count=1
+    elif [[ "$scenario_id" == "REBAL-001-average-10q-3c" ]]; then
         topic_queue_count=5
     elif [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" ]]; then
         topic_queue_count=1
@@ -757,7 +774,7 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
             cat "$evidence_dir/group-create.log" >&2
             exit 1
         fi
-    elif [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" ]]; then
+    elif [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P6-V04" ]]; then
         echo "Creating scenario-owned consumer group $consumer_group"
         if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$consumer_group" -n namesrv:9876 \
             >"$evidence_dir/group-create.log" 2>&1; then
@@ -1507,6 +1524,71 @@ PY
         printf 'PASS %s: Java/Rust rollbacks matched; no message was visible and max offset was %s\n' \
             "$scenario_id" "$expected_max_offset" | tee "$evidence_dir/result.txt"
     fi
+elif [[ "$scenario_id" == "P6-V04" ]]; then
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="$namesrv_addr $topic compat_p6_producer_a compat_p6_producer_b $consumer_group" \
+        exec:java@live-shared-runtime-probe \
+        >"$evidence_dir/java-shared-runtime.tsv" \
+        2>"$evidence_dir/java-shared-runtime.stderr"; then
+        cat "$evidence_dir/java-shared-runtime.tsv" "$evidence_dir/java-shared-runtime.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        p6-shared-runtime "$namesrv_addr" "$topic" \
+        compat_p6_producer_a compat_p6_producer_b "$consumer_group" \
+        >"$evidence_dir/rust-shared-runtime.tsv" \
+        2>"$evidence_dir/rust-shared-runtime.stderr"; then
+        cat "$evidence_dir/rust-shared-runtime.tsv" "$evidence_dir/rust-shared-runtime.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! python3 - "$evidence_dir/java-shared-runtime.tsv" \
+        "$evidence_dir/rust-shared-runtime.tsv" <<'PY'
+import sys
+from pathlib import Path
+
+expected_received = [
+    "p6-before-change",
+    "p6-keep-after-change",
+    "p6-survivor-after-unregister",
+]
+
+def parse(path):
+    received = []
+    markers = {}
+    for line in Path(path).read_text().splitlines():
+        if not line.startswith("P6\t"):
+            continue
+        row = line.split("\t")
+        if len(row) != 3:
+            raise SystemExit(f"invalid shared-runtime result row: {line}")
+        if row[1] == "RECEIVED":
+            received.append(row[2])
+        elif row[1] in markers:
+            raise SystemExit(f"duplicate shared-runtime marker: {line}")
+        else:
+            markers[row[1]] = row[2]
+    if received != expected_received:
+        raise SystemExit(f"unexpected consumed messages: {received!r}")
+    expected_markers = {
+        "SUBSCRIPTION": "*->KEEP",
+        "UNREGISTER": "compat_p6_producer_a",
+        "SURVIVOR": "SEND_OK",
+    }
+    if markers != expected_markers:
+        raise SystemExit(f"shared-runtime lifecycle markers differ: {markers!r}")
+    return received, markers
+
+java = parse(sys.argv[1])
+rust = parse(sys.argv[2])
+if java != rust:
+    raise SystemExit(f"Java/Rust shared-runtime results differ: {java!r} != {rust!r}")
+PY
+    then
+        echo "Java/Rust shared-runtime behavior does not satisfy P6-V04" >&2
+        exit 1
+    fi
+    printf 'PASS P6-V04: Java and Rust applied the new subscription, filtered the old tag, and retained the surviving producer\n' \
+        | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P7-V02" ]]; then
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
         -Dexec.args="$namesrv_addr $topic" exec:java@live-high-level-producer-probe \

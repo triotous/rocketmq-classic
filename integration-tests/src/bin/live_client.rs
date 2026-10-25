@@ -3,8 +3,9 @@ use std::{
 };
 
 use rocketmq_classic::{
-    LocalTransactionState, Producer, ProducerConfig, ProducerError, TransactionCallbackError,
-    TransactionListener, TransactionProducer,
+    ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, LocalTransactionState, Producer,
+    ProducerConfig, ProducerError, PushConsumer, PushConsumerConfig, PushMessageListener,
+    TransactionCallbackError, TransactionListener, TransactionProducer,
 };
 use rocketmq_classic_common::message::{
     Message, MessageExt, MessageQueue, decode_message_id, encode_compact_messages,
@@ -41,6 +42,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Some("p7-producer") if arguments.len() == 3 => {
             high_level_producer_modes(&arguments[1], &arguments[2]).await
+        }
+        Some("p6-shared-runtime") if arguments.len() == 6 => {
+            shared_runtime_probe(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                &arguments[5],
+            )
+            .await
         }
         Some("transaction") if arguments.len() == 7 => {
             transaction(
@@ -141,7 +152,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -421,6 +432,154 @@ async fn high_level_producer_modes(
     let shutdown = producer.shutdown().await;
     shutdown?;
     result
+}
+
+async fn shared_runtime_probe(
+    namesrv_address: &str,
+    topic: &str,
+    producer_group_a: &str,
+    producer_group_b: &str,
+    consumer_group: &str,
+) -> Result<(), Box<dyn Error>> {
+    let mut producer_config_a = ProducerConfig::new(producer_group_a)?;
+    producer_config_a
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    producer_config_a.set_send_timeout_millis(10_000);
+    let producer_a = Arc::new(Producer::new(producer_config_a));
+
+    let mut producer_config_b = ProducerConfig::new(producer_group_b)?;
+    producer_config_b
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    producer_config_b.set_send_timeout_millis(10_000);
+    let producer_b = Arc::new(Producer::new(producer_config_b));
+
+    let mut consumer_config = PushConsumerConfig::new(consumer_group)?;
+    consumer_config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    let consumer = Arc::new(PushConsumer::new(consumer_config));
+    let (observed_tx, mut observed_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    consumer
+        .set_message_listener(PushMessageListener::concurrently(
+            move |messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| {
+                let observed_tx = observed_tx.clone();
+                async move {
+                    for message in messages {
+                        let body = String::from_utf8_lossy(message.body().as_ref()).into_owned();
+                        let _ = observed_tx.send(body);
+                    }
+                    (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                }
+            },
+        ))
+        .await?;
+    consumer.subscribe(topic, "*").await?;
+
+    let mut producer_a_started = false;
+    let mut producer_b_started = false;
+    let mut consumer_started = false;
+    let mut producer_a_stopped = false;
+    let result: Result<(), Box<dyn Error>> = async {
+        producer_a.start().await?;
+        producer_a_started = true;
+        producer_b.start().await?;
+        producer_b_started = true;
+        consumer.start().await?;
+        consumer_started = true;
+
+        send_tagged(&producer_a, topic, "DROP", "p6-before-change").await?;
+        expect_consumed(&mut observed_rx, "p6-before-change").await?;
+
+        consumer.subscribe(topic, "KEEP").await?;
+        println!("P6\tSUBSCRIPTION\t*->KEEP");
+        send_tagged(&producer_a, topic, "DROP", "p6-filtered-after-change").await?;
+        send_tagged(&producer_a, topic, "KEEP", "p6-keep-after-change").await?;
+        expect_consumed(&mut observed_rx, "p6-keep-after-change").await?;
+
+        producer_a.shutdown().await?;
+        producer_a_stopped = true;
+        println!("P6\tUNREGISTER\t{producer_group_a}");
+        send_tagged(&producer_b, topic, "KEEP", "p6-survivor-after-unregister").await?;
+        println!("P6\tSURVIVOR\tSEND_OK");
+        expect_consumed(&mut observed_rx, "p6-survivor-after-unregister").await?;
+
+        match tokio::time::timeout(Duration::from_millis(1_500), observed_rx.recv()).await {
+            Err(_) => {}
+            Ok(Some(unexpected)) => {
+                return Err(std::io::Error::other(format!(
+                    "unexpected post-change delivery: {unexpected}"
+                ))
+                .into());
+            }
+            Ok(None) => return Err("push-consumer observation channel closed".into()),
+        }
+        Ok(())
+    }
+    .await;
+
+    let mut cleanup_failures = Vec::new();
+    if consumer_started {
+        if let Err(error) = consumer.shutdown().await {
+            cleanup_failures.push(format!("consumer shutdown: {error}"));
+        }
+    }
+    if producer_b_started {
+        if let Err(error) = producer_b.shutdown().await {
+            cleanup_failures.push(format!("producer B shutdown: {error}"));
+        }
+    }
+    if producer_a_started && !producer_a_stopped {
+        if let Err(error) = producer_a.shutdown().await {
+            cleanup_failures.push(format!("producer A shutdown: {error}"));
+        }
+    }
+
+    result?;
+    if !cleanup_failures.is_empty() {
+        return Err(cleanup_failures.join("; ").into());
+    }
+    Ok(())
+}
+
+async fn send_tagged(
+    producer: &Producer,
+    topic: &str,
+    tag: &str,
+    body: &str,
+) -> Result<(), Box<dyn Error>> {
+    let mut message = Message::with_tags(
+        Some(topic.to_owned()),
+        Some(tag.to_owned()),
+        Some(body.as_bytes().to_vec()),
+    );
+    let result = producer.send(&mut message).await?;
+    if result.status.name() != "SEND_OK" {
+        return Err(std::io::Error::other(format!(
+            "send of {body} returned {}",
+            result.status.name()
+        ))
+        .into());
+    }
+    Ok(())
+}
+
+async fn expect_consumed(
+    received: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
+    expected: &str,
+) -> Result<(), Box<dyn Error>> {
+    let actual = tokio::time::timeout(Duration::from_secs(15), received.recv())
+        .await?
+        .ok_or_else(|| std::io::Error::other("push-consumer observation channel closed"))?;
+    if actual != expected {
+        return Err(std::io::Error::other(format!(
+            "expected consumed body {expected} but received {actual}"
+        ))
+        .into());
+    }
+    println!("P6\tRECEIVED\t{actual}");
+    Ok(())
 }
 
 async fn oneway_send(
