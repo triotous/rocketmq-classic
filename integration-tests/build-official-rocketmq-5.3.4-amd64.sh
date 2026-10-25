@@ -30,9 +30,9 @@ expected = sys.argv[3].lower()
 checksum_body = checksum_file.read_text().split(":", 1)[-1]
 published = "".join(re.findall(r"[0-9a-fA-F]{8}", checksum_body)).lower()
 actual = hashlib.sha512(archive.read_bytes()).hexdigest()
-print(f"official_distribution={archive.name}")
-print(f"published_sha512={published}")
-print(f"actual_sha512={actual}")
+print(f"official_distribution={archive.name}", file=sys.stderr)
+print(f"published_sha512={published}", file=sys.stderr)
+print(f"actual_sha512={actual}", file=sys.stderr)
 if published != expected or actual != expected:
     raise SystemExit("Apache RocketMQ 5.3.4 binary distribution SHA-512 verification failed")
 PY
