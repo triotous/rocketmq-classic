@@ -22,6 +22,7 @@ use rocketmq_classic_core::api::{
     MQClientApi,
     producer::{SendKind, SendMode},
 };
+use rocketmq_classic_core::error::RpcError;
 use rocketmq_classic_core::unique_id::UniqueIdGenerator;
 use rocketmq_classic_protocol::{
     SharedValue,
@@ -30,6 +31,7 @@ use rocketmq_classic_protocol::{
         LiteSubscriptionDtoSet, LockBatchRequestBody, MessageRequestMode,
         QueryAssignmentRequestBody, SetMessageRequestModeRequestBody, UnlockBatchRequestBody,
     },
+    codes::{request, response},
     header::{
         ConsumerSendMsgBackRequestHeader, EndTransactionRequestHeader, GetMaxOffsetRequestHeader,
         PopLiteMessageRequestHeader, PopMessageRequestHeader, PullMessageRequestHeader,
@@ -2107,13 +2109,30 @@ async fn p5_extensions(
                     SharedValue::from(lite_subscription),
                 )]))),
             };
-            api.lite_subscription_ctl(
-                broker_address,
-                &body,
-                Instant::now() + Duration::from_secs(10),
-            )
-            .await?;
-            println!("P5E\tlite-subscription\tOK");
+            let subscription_result = api
+                .lite_subscription_ctl(
+                    broker_address,
+                    &body,
+                    Instant::now() + Duration::from_secs(10),
+                )
+                .await;
+            match subscription_result {
+                Ok(()) => println!("P5E\tlite-subscription\tOK"),
+                Err(RpcError::Response {
+                    request_code,
+                    code,
+                    remark,
+                    ..
+                }) if request_code == request::LITE_SUBSCRIPTION_CTL
+                    && code == response::REQUEST_CODE_NOT_SUPPORTED
+                    && remark.as_deref().is_some_and(|remark| {
+                        remark.trim() == "request type 200071 not supported"
+                    }) =>
+                {
+                    println!("P5E\tlite-subscription\tUNSUPPORTED\t200071\t3");
+                }
+                Err(error) => return Err(error.into()),
+            }
 
             let mut unregister = UnregisterClientRequestHeader::default();
             unregister.set_client_id(client_id);
@@ -2134,7 +2153,7 @@ async fn p5_extensions(
             require_pop_body(&pop.0, "p5-extension-seed", "POP")?;
             println!("P5E\tpop\tFOUND\t{}", encode_hex(pop.0[0].body().as_ref()));
 
-            let lite = p5_extension_pop(
+            match p5_extension_pop(
                 &api,
                 broker_address,
                 &lite_topic,
@@ -2142,12 +2161,25 @@ async fn p5_extensions(
                 &client_id,
                 true,
             )
-            .await?;
-            require_pop_body(&lite.0, "p5-extension-lite", "POP-LITE")?;
-            println!(
-                "P5E\tpop-lite\tFOUND\t{}",
-                encode_hex(lite.0[0].body().as_ref())
-            );
+            .await
+            {
+                Ok(lite) => {
+                    require_pop_body(&lite.0, "p5-extension-lite", "POP-LITE")?;
+                    println!(
+                        "P5E\tpop-lite\tFOUND\t{}",
+                        encode_hex(lite.0[0].body().as_ref())
+                    );
+                }
+                Err(error)
+                    if is_unsupported_extension_request(
+                        error.as_ref(),
+                        request::POP_LITE_MESSAGE,
+                    ) =>
+                {
+                    println!("P5E\tpop-lite\tUNSUPPORTED\t200070\t3");
+                }
+                Err(error) => return Err(error),
+            }
 
             let ack_group = format!("{group_prefix}_ack");
             let acked =
@@ -2219,6 +2251,22 @@ async fn p5_extensions(
     operation
 }
 
+fn is_unsupported_extension_request(error: &(dyn Error + 'static), request_code: i32) -> bool {
+    matches!(
+        error.downcast_ref::<RpcError>(),
+        Some(RpcError::Response {
+            request_code: response_request_code,
+            code,
+            remark,
+            ..
+        }) if *response_request_code == request_code
+            && *code == response::REQUEST_CODE_NOT_SUPPORTED
+            && remark.as_deref().is_some_and(|remark| {
+                remark.trim() == format!("request type {request_code} not supported")
+            })
+    )
+}
+
 async fn p5_extension_pop(
     api: &MQClientApi,
     broker_address: &str,
@@ -2233,6 +2281,7 @@ async fn p5_extension_pop(
             .as_millis(),
     )?;
     let deadline = Instant::now() + Duration::from_secs(15);
+    let mut pop_header = None;
     let raw = if lite {
         let mut header = PopLiteMessageRequestHeader::default();
         header.set_client_id(Some(client_id.to_owned()));
@@ -2264,12 +2313,40 @@ async fn p5_extension_pop(
         if reply.status.name() != "FOUND" {
             return Err(format!("POP returned {}", reply.status.name()).into());
         }
+        pop_header = reply.header;
         reply.raw_messages
     }
     .ok_or("successful POP omitted message bytes")?;
-    let messages = decode_many_as_client_compatible(&raw, DecodeOptions::default());
+    let mut messages = decode_many_as_client_compatible(&raw, DecodeOptions::default());
     if messages.is_empty() {
         return Err("successful POP returned no decoded message".into());
+    }
+    if !lite {
+        let response_header = pop_header.ok_or("successful POP omitted response header")?;
+        let message = &mut messages[0];
+        if message.properties().get("POP_CK").is_none() {
+            let start_offsets = p13_pop_offset_info(
+                response_header.get_start_offset_info(),
+                0,
+                "startOffsetInfo",
+            )?;
+            let message_offsets =
+                p13_pop_offset_info(response_header.get_msg_offset_info(), 0, "msgOffsetInfo")?;
+            let checkpoint_offset = *start_offsets
+                .first()
+                .ok_or("POP startOffsetInfo omitted checkpoint offset")?;
+            let message_offset = message_offsets
+                .into_iter()
+                .find(|offset| *offset == message.queue_offset())
+                .ok_or("POP msgOffsetInfo omitted the returned queue offset")?;
+            let raw_receipt = format!(
+                "{checkpoint_offset} {} {} {} 0 broker-a 0 {message_offset}",
+                response_header.get_pop_time(),
+                response_header.get_invisible_time(),
+                response_header.get_revive_qid(),
+            );
+            message.set_system_property("POP_CK", raw_receipt)?;
+        }
     }
     Ok((messages,))
 }

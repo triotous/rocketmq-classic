@@ -662,6 +662,7 @@ elif [[ "$scenario_id" == "P5-V02-extensions" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t %LMQ%${topic}%entries -r 1 -w 1 -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="prepare $broker_addr $topic ${consumer_group}_java" exec:java@live-p5-extensions-probe
 target/debug/live_client p5-extension-prepare $broker_addr $topic ${consumer_group}_rust
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="send $broker_addr $topic p5-extension-seed" exec:java@live-producer-probe
@@ -1001,6 +1002,11 @@ if [[ "$scenario_id" == "P5-V02-extensions" ]]; then
     topic_created=true
     if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateTopic -c RocketMQLocalTest -t "$topic" -r 1 -w 1 -n namesrv:9876 \
         >"$evidence_dir/topic-create.log" 2>&1; then
+        cat "$evidence_dir/topic-create.log" >&2
+        exit 1
+    fi
+    if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateTopic -c RocketMQLocalTest -t "%LMQ%${topic}%entries" -r 1 -w 1 -n namesrv:9876 \
+        >>"$evidence_dir/topic-create.log" 2>&1; then
         cat "$evidence_dir/topic-create.log" >&2
         exit 1
     fi
@@ -1778,7 +1784,6 @@ methods = {
 }
 expected_bodies = {
     "pop": b"p5-extension-seed".hex(),
-    "pop-lite": b"p5-extension-lite".hex(),
 }
 
 def read(prefix):
@@ -1796,8 +1801,12 @@ def read(prefix):
         raise SystemExit(f"{prefix}: expected {sorted(methods)}, got {sorted(rows)}")
     if rows["heartbeat"][0] != "OK" or rows["heartbeat-v2"][0] != "OK":
         raise SystemExit(f"{prefix}: heartbeat result was not successful")
-    if rows["unregister"] != ["OK"] or rows["request-mode"] != ["OK"] or rows["lite-subscription"] != ["OK"]:
+    if rows["unregister"] != ["OK"] or rows["request-mode"] != ["OK"]:
         raise SystemExit(f"{prefix}: synchronous extension operation failed: {rows!r}")
+    if rows["lite-subscription"] != ["UNSUPPORTED", "200071", "3"]:
+        raise SystemExit(f"{prefix}: Lite subscription did not return the pinned 5.3.4 unsupported response: {rows['lite-subscription']!r}")
+    if rows["pop-lite"] != ["UNSUPPORTED", "200070", "3"]:
+        raise SystemExit(f"{prefix}: Lite POP did not return the pinned 5.3.4 unsupported response: {rows['pop-lite']!r}")
     for name, body in expected_bodies.items():
         if rows[name] != ["FOUND", body]:
             raise SystemExit(f"{prefix}: {name} did not return the seeded message: {rows[name]!r}")

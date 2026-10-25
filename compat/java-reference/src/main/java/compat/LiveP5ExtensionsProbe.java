@@ -3,11 +3,13 @@ package compat;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.consumer.AckResult;
 import org.apache.rocketmq.client.consumer.PopResult;
+import org.apache.rocketmq.client.exception.MQBrokerException;
 import org.apache.rocketmq.client.impl.mqclient.MQClientAPIExt;
 import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
 import org.apache.rocketmq.common.lite.LiteSubscriptionAction;
@@ -95,8 +97,15 @@ public final class LiveP5ExtensionsProbe {
             .setTopic(topic)
             .setLiteTopicSet(Collections.singleton("entries"))
             .setVersion(0);
-        api.syncLiteSubscriptionAsync(brokerAddress, lite, 10_000).get(15, TimeUnit.SECONDS);
-        System.out.println("P5E\tlite-subscription\tOK");
+        try {
+            api.syncLiteSubscriptionAsync(brokerAddress, lite, 10_000).get(15, TimeUnit.SECONDS);
+            System.out.println("P5E\tlite-subscription\tOK");
+        } catch (ExecutionException error) {
+            if (!isUnsupportedRequest(error, 200071)) {
+                throw error;
+            }
+            System.out.println("P5E\tlite-subscription\tUNSUPPORTED\t200071\t3");
+        }
 
         api.unregisterClient(brokerAddress, clientId, null, baseGroup, 10_000);
         System.out.println("P5E\tunregister\tOK");
@@ -110,9 +119,16 @@ public final class LiveP5ExtensionsProbe {
         System.out.printf("P5E\tpop\tFOUND\t%s%n", hex(message.getBody()));
 
         String liteTopic = "%LMQ%" + topic + "%entries";
-        MessageExt lite = pop(api, brokerAddress, liteTopic, groupPrefix + "_lite", clientId, true,
-            "p5-extension-lite");
-        System.out.printf("P5E\tpop-lite\tFOUND\t%s%n", hex(lite.getBody()));
+        try {
+            MessageExt lite = pop(api, brokerAddress, liteTopic, groupPrefix + "_lite", clientId, true,
+                "p5-extension-lite");
+            System.out.printf("P5E\tpop-lite\tFOUND\t%s%n", hex(lite.getBody()));
+        } catch (ExecutionException error) {
+            if (!isUnsupportedRequest(error, 200070)) {
+                throw error;
+            }
+            System.out.println("P5E\tpop-lite\tUNSUPPORTED\t200070\t3");
+        }
 
         String ackGroup = groupPrefix + "_ack";
         MessageExt ackMessage = pop(api, brokerAddress, topic, ackGroup, clientId, false,
@@ -206,5 +222,16 @@ public final class LiveP5ExtensionsProbe {
         StringBuilder result = new StringBuilder(value.length * 2);
         for (byte item : value) result.append(String.format("%02x", item));
         return result.toString();
+    }
+
+    private static boolean isUnsupportedRequest(ExecutionException error, int requestCode) {
+        Throwable cause = error.getCause();
+        if (!(cause instanceof MQBrokerException)) {
+            return false;
+        }
+        MQBrokerException brokerError = (MQBrokerException) cause;
+        return brokerError.getResponseCode() == 3
+            && ("request type " + requestCode + " not supported").equals(
+                brokerError.getErrorMessage().trim());
     }
 }

@@ -254,3 +254,10 @@
   `P5-V02-extensions` remains blocked by Broker 5.3.4 rejecting Lite
   subscription request 200071. No production, remote checkout, push, or remote
   CI was accessed.
+
+## P19 P5-V02-extensions response comparison — 2026-10-25
+
+- Updated the Java/Rust probes to record 5.3.4's response code 3 for unsupported Lite subscription request 200071 and Lite POP request 200070, then continue the independent standard POP, ACK, batch ACK, and visibility-change checks. The Rust standard POP probe now decorates `POP_CK` from the response header like Java `MQClientAPIExt`.
+- `20261025T131017Z` matched Java/Rust prepare responses and standard POP, then stopped at Java's unsupported Lite POP before Rust consume. `20261025T131349Z` matched both unsupported Lite responses and Java completed ACK/batch ACK/change; Rust stopped because its live probe omitted response-header receipt decoration. Both failures cleaned their topics and Compose resources; full evidence is archived under `docs/compatibility/evidence/phase-19/P5-V02-extensions/`.
+- `20261025T131708Z` passed all P5 extension assertions, matching both unsupported Lite requests and successful heartbeat, heartbeat V2, assignment, request-mode, standard POP, ACK, batch ACK, and visibility-change outcomes. The archived run has `source_code_dirty=true`; it remains diagnostic until the clean-source replay. The manifest row was restored to PENDING_PHASE_19 for that replay.
+- The passing run deleted the parent and derived Lite topics and removed its containers, network, and volume. No production or remote environment was accessed.
