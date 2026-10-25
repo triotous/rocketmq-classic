@@ -86,7 +86,7 @@ per-input/branch review.
 
 The Push POP defaults are queue wait-ACK threshold 96, invisibility 60000 ms, and POP batch count 32. The Java `ExtraInfoUtil` fixture records the unmodified receipt string and each decoded routing/offset field. `PopResult` exposes `FOUND`, `NO_NEW_MSG`, `POLLING_FULL`, and `POLLING_NOT_FOUND` plus pop time, invisibility, remaining count and message list.
 
-Typed request/response bodies and low-level POP/ACK RPCs are already present in protocol/core crates. The Rust tree has a Lite scheduler/polling facade with consume trace dispatch and a Push POP worker/receipt path, backed by pinned Java fixtures, state tests, controlled expiry checks and scripted peers. Local P13-V01 and P13-V03 Lite API/configuration gates and P13-U01 expiry/redelivery/replacement checks are covered. P13-V02 remains pending as a Phase 19 live Broker/Docker gate; local scripted POP success, expiry, malformed receipt, mixed-queue, ACK and replacement evidence is recorded above and does not count as live evidence. The first attempt omitted POP mode setup, the second set mode too late, and the third prepared both Java and Rust groups before seeding but still got `POLLING_NOT_FOUND`. A fourth attempt found that direct Java queue 0 seeding was returned on queue 1. A fifth used the route-aware selector and exposed the max-offset visibility delay. A sixth passed both seed checks with max offset 1 but Java POP still returned `POLLING_NOT_FOUND`. A seventh passed the same seed checks and used only the pre-seed request mode with init mode 0, but POP still returned `POLLING_NOT_FOUND`. An eighth capture showed queue 0 min/max offsets `0/1` while the Java POP group already had committed offset 1 before the first POP request. A ninth showed all six group offsets were `NOT_FOUND` after prepare and seeding, then 1 before Java POP. The next runner will initialize each scenario group at offset 0 after seeding and verify that starting point.
+Typed request/response bodies and low-level POP/ACK RPCs are already present in protocol/core crates. The Rust tree has a Lite scheduler/polling facade with consume trace dispatch and a Push POP worker/receipt path, backed by pinned Java fixtures, state tests, controlled expiry checks and scripted peers. Local P13-V01 and P13-V03 Lite API/configuration gates and P13-U01 expiry/redelivery/replacement checks are covered. P13-V02 now passes as a Phase 19 live Broker/Docker gate; its local scripted POP evidence and live Java/Rust comparison are recorded above. The first attempt omitted POP mode setup, the second set mode too late, and the third prepared both Java and Rust groups before seeding but still got `POLLING_NOT_FOUND`. A fourth attempt found that direct Java queue 0 seeding was returned on queue 1. A fifth used the route-aware selector and exposed the max-offset visibility delay. A sixth passed both seed checks with max offset 1 but Java POP still returned `POLLING_NOT_FOUND`. A seventh passed the same seed checks and used only the pre-seed request mode with init mode 0, but POP still returned `POLLING_NOT_FOUND`. An eighth capture showed queue 0 min/max offsets `0/1` while the Java POP group already had committed offset 1 before the first POP request. A ninth showed all six group offsets were `NOT_FOUND` after prepare and seeding, then 1 before Java POP. Run `20261025T124657Z` verified the explicit post-seed reset; later runs traced initial delivery and expiry redelivery, ending with the successful Java/Rust run recorded below.
 
 Run `20261025T124657Z` verified offset 0 for both queues of all six Java/Rust
 groups after seeding, but the separate Java consume process observed offset 1
@@ -97,11 +97,15 @@ Run `20261025T125153Z` clarifies the offset reset result: Java's first POP
 request began at offset 0 and returned the seeded message. Offset 1 appeared
 afterward; the following expiry redelivery request returned
 `POLLING_NOT_FOUND`. Earlier failure diagnostics identify the failing request,
-not necessarily the initial delivery. The current blocker is redelivery timing
-or revive processing, not initial seed consumption.
+not necessarily the initial delivery. In that run, the remaining failure was expiry redelivery rather than initial
+seed consumption.
 
 Run `20261025T125713Z` passed all seven Java lifecycle assertions, including
 expiry redelivery after a 6-second wait. Rust received a POP message but the
 live low-level probe omitted Java's response-header-to-`POP_CK` decoration and
 stopped before Rust lifecycle assertions. The probe now applies this mapping;
-a clean Java/Rust run remains required.
+the subsequent clean Java/Rust run passed.
+
+## Phase 19 live Broker result
+
+Clean-source run `20261025T130156Z` on `99d2dc68484ab8de43da86b997dc20dc49267c3c` passed `P13-V02`. Java and Rust matched delivery, expiry redelivery, ACK, visibility change, replacement receipt ACK, mixed queue mapping (`0,1`), and malformed receipt rejection. The manifest records PASS, bringing live coverage to 26/37 with 11 cases pending. The runner removed the topic, containers, network, and volumes. Archived evidence is in [`20261025T130156Z`](evidence/phase-19/P13-V02/20261025T130156Z/).

@@ -9,7 +9,7 @@ remains in progress.
 
 ## Phase 19 live status — 2026-10-25
 
-Twenty-five of 37 registered local scenarios have passing Java 5.5.1/Rust
+Twenty-six of 37 registered local scenarios have passing Java 5.5.1/Rust
 evidence against the pinned 5.3.4 image. Four consumer cases cover reciprocal
 offset updates and queries, a found pull with message-body comparison, and an
 empty pull; `P5-V02-route` covers matching results for an existing and missing
@@ -38,26 +38,12 @@ both clients report timeout, and verifies each message is committed once by
 matching Java/Rust pull results. `P3-V04` compares raw NameServer routing, CA
 trust, and client shutdown through a local TLS-terminating proxy. Java 5.5.1
 accepts a CA-trusted wrong-host certificate because its TLS handler does not
-receive a peer hostname; Rust rejects it. The 12 pending cases include
-`P5-V02-extensions`; its first attempt completed heartbeat, heartbeat V2,
-assignment, and request-mode calls, then Broker 5.3.4 rejected Lite
-subscription request 200071 as unsupported. A first `P13-V02` attempt seeded
-two queues but Java POP returned `POLLING_NOT_FOUND`; the next set each group
-to POP mode immediately before POP but still returned `POLLING_NOT_FOUND`.
-A third run prepared both clients' POP groups before seeding and got the same
-response. A fourth stopped before POP when a direct Java send requested queue
-0 but the Broker returned queue 1. A fifth used the route-aware selector and
-sent to the requested queues; queue 0's offset was visible immediately, while
-queue 1 returned `SEND_OK` but its immediate max-offset query was still zero.
-The first five diagnostic runs were cleaned up. A sixth run passed both queue
-seed checks with max offset 1, but Java POP still returned `POLLING_NOT_FOUND`.
-The POP operation was changed to use the pre-seed mode and explicitly request
-init mode 0; it returned the same result. An eighth run captured queue 0
-min/max offsets `0/1` and group offset 1 before and after the first POP. A ninth
-run showed the group offset was `NOT_FOUND` after prepare and each seed, then
-was 1 before POP. All nine diagnostic runs were cleaned up. The next probe will
-initialize the scenario group offsets to 0 after seeding and verify them before
-POP. P13 remains pending. This does
+receive a peer hostname; Rust rejects it. Eleven cases remain pending: `P5-V02-extensions`, `P7-V03`, `P7-V04`,
+`P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`, `P15-V03`,
+`P16-V02`, and `P17-V02`. Broker 5.3.4 rejected Lite subscription
+request 200071 as unsupported in the `P5-V02-extensions` attempt.
+`P13-V02` now passes the Java/Rust POP lifecycle; its earlier offset and
+redelivery diagnostics are run history. This does
 not close the broader P18-V01 public API/settings/flow reverse audit or establish
 full client parity. See
 [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server
@@ -68,7 +54,7 @@ P13 follow-up: run `20261025T124657Z` initialized and verified offset 0 on
 both queues for all six groups after seeding. The separate Java consume probe
 observed offset 1 before its first POP and again returned
 `POLLING_NOT_FOUND`; the exact transition after reset remains unlocalized.
-All ten P13 diagnostic runs were cleaned up. P13-V02 remains pending.
+All ten P13 diagnostic runs were cleaned up. At that point, P13-V02 remained pending; run `20261025T130156Z` below records the later pass.
 
 Phase 18 Fastjson U+001A end-of-input continuation (`12de2474`, 2026-10-24):
 the pinned Java 5.5.1 heartbeat DTO oracle accepts 108 new inputs with control
@@ -793,7 +779,7 @@ The matrix starts with the source areas required by the master plan. Work on eac
 | `client/.../impl/consumer/ConsumeMessageOrderlyService.java`, orderly `ProcessQueue` methods, `RebalanceImpl` lock branches | Per-queue ordered callbacks, Broker lock/renewal/expiry, retry and offset-safe lifecycle | Phase 12; see [orderly compatibility matrix](PHASE_12_ORDERLY_MATRIX.md) | P12-V01/V02/U01 | UNIT_VERIFIED — public defaults/context/statuses, partial batch locks, per-response lock freshness, retry/rollback, independent and serialized queues, loss, rebalance and shutdown pass local checks | P12-V03 mixed-client Broker contention remains PENDING_PHASE_19 / 5.3.4 |
 | transaction producer/check APIs | half message, check, commit/rollback | Phase 14; [transaction matrix](PHASE_14_TRANSACTION_MATRIX.md) | P14-V01/V02/U01 | UNIT_VERIFIED — half-send, end-transaction fields, inbound checks, callback ownership and shutdown are locally covered | P14-V03 pending Phase 19 / 5.3.4 |
 | request/reply APIs | correlation, callback completion and responder | Phase 15; [request/reply matrix](PHASE_15_REQUEST_REPLY_MATRIX.md) | P15-V01/V02/U01 | UNIT_VERIFIED — all six overloads, correlation lifecycle, reply handling, timeout/cancellation races and Java metadata fixtures are locally covered | P15-V03 pending Phase 19 / 5.3.4 |
-| Lite/POP APIs and configuration | complete public methods and receipt lifecycle | Phase 13; [Lite/POP matrix](PHASE_13_LITE_POP_MATRIX.md) | P13-V01/V03/U01 | UNIT_VERIFIED — Lite API/config audit, POP assignment/receipt lifecycle, expiry and replacement cases pass local checks | P13-V02 pending Phase 19 / 5.3.4 |
+| Lite/POP APIs and configuration | complete public methods and receipt lifecycle | Phase 13; [Lite/POP matrix](PHASE_13_LITE_POP_MATRIX.md) | P13-V01/V03/U01/V02 | UNIT_VERIFIED — Lite API/config audit, POP assignment/receipt lifecycle, expiry and replacement cases pass local checks | P13-V02 PASS — Java/Rust live POP lifecycle on pinned 5.3.4; [run evidence](evidence/phase-19/P13-V02/20261025T130156Z/) |
 | namespace, hooks, ACL/TLS, trace | settings, validation, ordering and lifecycle | Phase 16; [security and operations guide](../security.md), [Phase 16 API matrix](PHASE_16_NAMESPACE_SECURITY_OPERATIONS_MATRIX.md), ACL/TLS/trace and namespace fixtures | P16-U01; `namespace_util_fixture_matches_java_5_5_1`, `public_topic_validator_surface_matches_pinned_java_fixture`, `fixtures/namespace/namespace-util.json` and `fixtures/namespace/topic-validator.json`; `auth::tests`, `trace::tests`, `message_types_match_java_names_ordinals_and_short_name_fallback`, `consume_message_hooks_wrap_the_listener_and_share_context_state`, `pull_consume_hooks_receive_empty_pull_context_with_java_success_state`, `lite_poll_consume_hooks_run_around_delivery_with_queue_metadata`, `internal_trace_producer_uses_host_namespace_once_and_keeps_namespace_v2`, `lite_internal_trace_producer_uses_host_namespace_once_and_keeps_namespace_v2`, `p16_slow_channel_observer_*`, scripted TLS peers, `namespaced_send_uses_wire_names_and_unwraps_the_result`, `retry_and_dlq_messages_restore_logical_topics_for_orderly_and_pop`, `namespaced_request_wraps_its_topic_once_before_send`, `transaction_half_send_wraps_topic_and_group_once`, `recall_wraps_topic_and_group_once_at_the_namespace_wire_boundary`, `pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_persists_offsets`, `trace_flush_waits_for_scripted_broker_delivery`, `trace_shutdown_waits_for_scripted_broker_delivery` | PARTIAL — ACL HMAC/key-file/YAML fixtures, all public `NamespaceUtil` methods/constants including retry/DLQ, system-resource and dynamic system-topic classification, Push/Pull/Lite hook context defaults and callback timing, TLS positive/negative peers, trace queue/chunk/flush/shutdown delivery, trace internal producer namespace-v2 propagation, Producer request/reply/transaction/recall namespace, Push retry/DLQ restoration and response unwrapping, namespaced offset persistence, and the complete Java MessageType enum have local evidence; the full Java source/API/settings-to-test audit and phase acceptance remain open | P16 live Broker scenarios pending Phase 19 / 5.3.4 |
 | MQAdmin/query public API | methods, result models, fan-out | Phase 17; [admin/query matrix](PHASE_17_ADMIN_MATRIX.md) | P17-V01/V03/U01; core admin RPC and Producer/Push/Pull facade cases | UNIT_VERIFIED — all in-scope Java client MQAdmin/query operations and concrete facade counterparts have local evidence in the Phase 17 matrix | P17-V02 Broker-backed query validation remains PENDING_PHASE_19 / 5.3.4 |
 
@@ -1076,11 +1062,19 @@ Java POP request, which returned the seeded message; offset 1 appeared after
 that delivery. The failing `POLLING_NOT_FOUND` was the next POP for expiry
 redelivery. Earlier diagnostic rows were emitted only for a failing POP, so
 their label did not prove that initial delivery failed. Initial Java POP delivery
-now works with the post-seed offset reset; redelivery is still pending.
+worked with the post-seed offset reset; expiry redelivery failed in that run.
 
 P13 follow-up: run `20261025T125713Z` passed all seven Java POP lifecycle
 outcomes after the 6-second expiry wait. Rust received the seed but its direct
 POP probe did not decorate `POP_CK` from response-header offsets and stopped
 before the Rust lifecycle. The Rust probe now mirrors Java's client-side
-receipt mapping; P13-V02 remains pending until a clean Java/Rust comparison
-passes.
+receipt mapping; a clean Java/Rust comparison subsequently passed in run
+`20261025T130156Z`.
+
+P13-V02 live result: clean-source run `20261025T130156Z` on
+`99d2dc68484ab8de43da86b997dc20dc49267c3c` passed. Java and Rust matched
+POP delivery, expiry redelivery, ACK, change-invisibility, replacement-
+receipt ACK, mixed queue mapping, and malformed receipt rejection. The
+manifest records PASS; live coverage is 26/37 with 11 pending. The runner
+removed the topic, two-Broker containers, network, and volumes. Evidence
+is under [`20261025T130156Z`](evidence/phase-19/P13-V02/20261025T130156Z/).

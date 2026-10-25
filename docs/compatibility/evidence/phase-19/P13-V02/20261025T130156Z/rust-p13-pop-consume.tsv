@@ -1,0 +1,7 @@
+P13	expiry-redelivery	OK	0
+P13	change-invisibility	OK
+P13	replacement-receipt	OK	ACKED
+P13	mixed-queue-mapping	OK	0,1
+P13	malformed-extra-info-rejected	OK
+P13	pop-delivery	OK	5
+P13	ack	OK	4

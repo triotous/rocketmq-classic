@@ -10757,3 +10757,19 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   under `docs/compatibility/evidence/phase-19/P13-V02/20261025T125713Z/`.
 - [x] The runner deleted the scenario topic and removed its isolated two-Broker
   containers, network, and volumes. P13 remains pending at 25/37 live PASS.
+
+
+## P19 P13-V02 POP lifecycle pass — 2026-10-25 (`99d2dc68`)
+
+- [x] Clean-source run `20261025T130156Z` on
+  `99d2dc68484ab8de43da86b997dc20dc49267c3c` passed the Java/Rust POP
+  lifecycle comparison: delivery, expiry redelivery, ACK, visibility change,
+  replacement receipt ACK, mixed queue mapping, and malformed receipt
+  rejection. The manifest records PASS. Evidence is under
+  `docs/compatibility/evidence/phase-19/P13-V02/20261025T130156Z/`.
+- [x] The runner deleted the scenario topic and removed the two-Broker Compose
+  containers, network, and volumes. Live coverage is 26/37 with 11 cases
+  pending: `P5-V02-extensions`, `P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`,
+  `P11-V04`, `P12-V03`, `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`.
+  The P5 extension attempt remains blocked at unsupported Lite subscription
+  request 200071 on Broker 5.3.4; the other listed cases remain unrun.

@@ -57,7 +57,7 @@ TLS/auth, ACL, failover, or stress coverage.
 
 ## Pending local server coverage
 
-The scenario manifest contains 37 live cases; 25 pass. The eight basic
+The scenario manifest contains 37 live cases; 26 pass. The eight basic
 route/heartbeat/send scenarios above, `P3-V04`, four consumer cases, the P5
 route row, `P6-V04`, `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, and
 the two transaction rows passed. `P0-V03` also passes as an aggregate over
@@ -65,9 +65,12 @@ eleven clean constituent runs, `P7-V02` covers high-level producer send modes,
 and `P9-V03` covers manual pull and offset resume.
 `REQ-001-request-reply-success` checks both cross-language request/reply
 directions; `PROD-005-send-timeout` checks commit visibility after a timed-out
-send. Twelve remain pending: `P5-V02-extensions`, `P7-V03`, `P7-V04`,
-`P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`, `P13-V02`, `P14-V03`, `P15-V03`,
-`P16-V02`, and `P17-V02`. The two-Broker profile covers lock/unlock and average
+send. `P13-V02` compares the Java/Rust POP receipt lifecycle on two Brokers,
+including delivery, expiry redelivery, ACK, invisibility changes, mixed queue
+mapping, and malformed receipt rejection. Eleven remain pending:
+`P5-V02-extensions`, `P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`, `P11-V04`,
+`P12-V03`, `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`. The two-Broker
+profile covers lock/unlock and average
 queue assignment; retry, query, and broader interoperability coverage,
 Broker-native TLS/auth, ACL, and feature-specific profiles remain incomplete.
 No server limitation is inferred from an unrun case. Phase 19
@@ -387,6 +390,15 @@ unlocalized. The runner removed the topic and Compose resources; evidence is
 under [`20261025T124657Z`](evidence/phase-19/P13-V02/20261025T124657Z/).
 Next, trace the group offset immediately after API startup and around the
 min/max queries preceding POP.
+
+Clean-source run `20261025T130156Z` on
+`99d2dc68484ab8de43da86b997dc20dc49267c3c` passed `P13-V02`: Java and
+Rust matched initial delivery, expiry redelivery, ACK, change-invisibility,
+replacement receipt, mixed queue mapping, and malformed receipt rejection.
+The runner removed the scenario topic, containers, network, and volumes. The
+manifest now records PASS; current coverage is 26/37, with 11 scenarios
+pending. Evidence is under
+[`20261025T130156Z`](evidence/phase-19/P13-V02/20261025T130156Z/).
 
 P13 interpretation update — run `20261025T125153Z` on `9568a2bb` traced the
 offset at each lifecycle request. The first Java delivery started with group

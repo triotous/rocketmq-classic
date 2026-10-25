@@ -19,10 +19,10 @@
 
 ## Remaining Phase 19 gaps
 
-- 30 of 37 required live scenarios have no implementation; there is no two-Broker, TLS, ACL, transaction, consumer, admin-query, or feature-specific profile matrix. No unsupported case is counted as a pass or reassigned to manual validation.
+- Current live coverage is 26/37 PASS, with 11 scenarios pending: `P5-V02-extensions`, `P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`. The initial inventory had 30 cases without implementations. No unsupported case is counted as a pass or reassigned to manual validation.
 - The broad P18-V01 Java source/public API/settings/flow reverse audit remains open, so P19-V04 cannot pass. Java/Rust matched results and success-path evidence are not available for the unimplemented cases.
 - `docs/owner-validation.md` records MAN-01 through MAN-05 as BLOCKED because owner topology/identity/workload inputs are absent and the security/failover/stress probes are incomplete. No owner environment was accessed; no production mutation was made.
-- The new Docker CI job is defined but has not been run remotely. It will fail closed at the current live coverage gate until the 30 missing runners and evidence exist.
+- The new Docker CI job is defined but has not been run remotely. It will fail closed at the current live coverage gate until the remaining 11 pending scenarios have passing evidence.
 - No final compatibility or release approval is supported by the present evidence.
 
 ## Committed-revision refresh
@@ -235,3 +235,22 @@
 - Increased Java/Rust expiry wait to 6 seconds. Clean-source run `20261025T125713Z` passed all Java lifecycle checks: expiry redelivery, ACK, visibility change, replacement receipt, mixed queues, malformed receipt rejection, and the expected aggregate outcome rows.
 - Rust received the seeded message, but the live probe called raw `MQClientApi.pop_message` and expected a message property `POP_CK` that Java's `MQClientAPIExt` synthesizes from response-header offset metadata. It stopped before Rust lifecycle assertions. The Rust live probe now maps the same response header into a receipt and message property.
 - The run removed the scenario topic and isolated containers, network, and volumes. P13 remains pending; coverage remains 25/37 with 12 scenarios pending.
+
+
+## P19 P13-V02 POP lifecycle pass — 2026-10-25
+
+- Clean-source run `20261025T130156Z` on
+  `99d2dc68484ab8de43da86b997dc20dc49267c3c` passed Java/Rust POP delivery,
+  expiry redelivery, ACK, visibility change, replacement receipt ACK, mixed
+  queue mapping, and malformed receipt rejection. `source_code_dirty=false`,
+  exit status 0, duration 114 seconds. Archived evidence:
+  `docs/compatibility/evidence/phase-19/P13-V02/20261025T130156Z/`.
+- The runner deleted the scenario topic and removed the isolated two-Broker
+  containers, network, and volumes. Filtered Docker container, network, and
+  volume queries returned no matches.
+- The manifest now records P13-V02 PASS. Live coverage is 26/37 with 11
+  pending: `P5-V02-extensions`, `P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`,
+  `P11-V04`, `P12-V03`, `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`.
+  `P5-V02-extensions` remains blocked by Broker 5.3.4 rejecting Lite
+  subscription request 200071. No production, remote checkout, push, or remote
+  CI was accessed.
