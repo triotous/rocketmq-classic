@@ -30,7 +30,9 @@ use rocketmq_classic_protocol::{
         QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1,
         UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
-    heartbeat::{HeartbeatData, ProducerData},
+    heartbeat::{
+        ConsumeFromWhere, ConsumeType, ConsumerData, HeartbeatData, MessageModel, ProducerData,
+    },
 };
 use rocketmq_classic_remoting::client::{RemotingClient, TransportMode};
 use tokio::time::Instant;
@@ -1283,6 +1285,20 @@ async fn p5_producer(
                 producers.insert(Some(SharedValue::from(ProducerData {
                     group_name: Some(producer_group.to_owned()),
                 })));
+            });
+        let consumer = ConsumerData {
+            group_name: Some("compat_p5_reply_group".into()),
+            consume_type: Some(ConsumeType::ConsumePassively),
+            message_model: Some(MessageModel::Clustering),
+            consume_from_where: Some(ConsumeFromWhere::ConsumeFromFirstOffset),
+            ..ConsumerData::default()
+        };
+        heartbeat
+            .consumer_data_set
+            .as_ref()
+            .expect("default heartbeat initializes consumer set")
+            .with_mut(|consumers| {
+                consumers.insert(Some(SharedValue::from(consumer)));
             });
         api.send_heartbeat(
             broker_address,

@@ -9,6 +9,7 @@ import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.common.MixAll;
+import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageBatch;
@@ -20,7 +21,10 @@ import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.protocol.header.EndTransactionRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.heartbeat.HeartbeatData;
+import org.apache.rocketmq.remoting.protocol.heartbeat.ConsumerData;
 import org.apache.rocketmq.remoting.protocol.heartbeat.ProducerData;
+import org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType;
+import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 
 /** Exercises the Phase 5 producer RPC variants against a live Broker. */
 public final class LiveP5ProducerProbe {
@@ -55,7 +59,15 @@ public final class LiveP5ProducerProbe {
             ProducerData producer = new ProducerData();
             producer.setGroupName(PRODUCER_GROUP);
             heartbeat.getProducerDataSet().add(producer);
+            ConsumerData consumer = new ConsumerData();
+            consumer.setGroupName("compat_p5_reply_group");
+            consumer.setConsumeType(ConsumeType.CONSUME_PASSIVELY);
+            consumer.setMessageModel(MessageModel.CLUSTERING);
+            consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
+            heartbeat.getConsumerDataSet().add(consumer);
+            System.err.println("P5 heartbeat start");
             api.sendHeartbeat(brokerAddress, heartbeat, 10_000);
+            System.err.println("P5 heartbeat complete");
             emit(api, smartSend, false, false, true, brokerAddress, topic, "reply-v1");
             emit(api, smartSend, true, false, true, brokerAddress, topic, "reply-v2");
 

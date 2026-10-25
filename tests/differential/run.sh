@@ -532,7 +532,7 @@ if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
         >>"$evidence_dir/metadata.txt"
 fi
 if [[ "$scenario_id" == "P5-V02-producer" ]]; then
-    printf 'topic=%s\nmethods=send-v1,send-v2,batch,reply-v1,reply-v2,end-transaction\n' "$topic" \
+    printf 'topic=%s\nreply_consumer_group=compat_p5_reply_group\nreply_client_id=compat-p5-client\nmethods=send-v1,send-v2,batch,reply-v1,reply-v2,end-transaction\n' "$topic" \
         >>"$evidence_dir/metadata.txt"
 fi
 {
@@ -642,6 +642,7 @@ elif [[ "$scenario_id" == "P5-V02-producer" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_p5_reply_group -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$broker_addr $topic" exec:java@live-p5-producer-probe
 target/debug/live_client p5-producer $broker_addr $topic compat_p5_producer
 EOF
@@ -917,6 +918,13 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
     elif [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
         echo "Creating scenario-owned readback consumer group compat_timeout_readback"
         if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_timeout_readback -n namesrv:9876 \
+            >"$evidence_dir/group-create.log" 2>&1; then
+            cat "$evidence_dir/group-create.log" >&2
+            exit 1
+        fi
+    elif [[ "$scenario_id" == "P5-V02-producer" ]]; then
+        echo "Creating scenario-owned reply consumer group compat_p5_reply_group"
+        if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_p5_reply_group -n namesrv:9876 \
             >"$evidence_dir/group-create.log" 2>&1; then
             cat "$evidence_dir/group-create.log" >&2
             exit 1
