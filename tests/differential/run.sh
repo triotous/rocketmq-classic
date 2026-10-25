@@ -687,7 +687,8 @@ fi
 evidence_dir="$repo_root/docs/compatibility/evidence/phase-19/${scenario_id}/${run_id}"
 namesrv_addr="127.0.0.1:${ROCKETMQ_NAMESRV_HOST_PORT}"
 broker_addr="127.0.0.1:${ROCKETMQ_BROKER_HOST_PORT}"
-code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
+code_dirty_paths=(Cargo.toml Cargo.lock crates/ compat/java-reference/ integration-tests/
+    scripts/check-workspace-metadata.py
     compat/java-reference/pom.xml
     compat/java-reference/src/main/java/compat/LiveMixedGroupProbe.java
     compat/java-reference/src/main/java/compat/LiveOrderlyInteropProbe.java
