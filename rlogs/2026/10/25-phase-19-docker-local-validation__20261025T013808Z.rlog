@@ -67,3 +67,10 @@
 - Updated the runner README, Java compatibility status, server results, and release checklist to 13/37 passing and 24 unimplemented. The report distinguishes this two-Broker lock evidence from replicated HA/failover.
 - Validation before the clean run: Rust `live_client` build, pinned offline Maven compile, `bash -n` for run/setup/cleanup, Cargo fmt, diff check, Compose two-Broker config, and 37-row manifest validation passed. `--check-all` now fails closed with 24 missing IDs and starts no Docker resources.
 - Full `ROCKETMQ_CLASSIC_TEST_ENV=local-disposable bash integration-tests/run-local.sh --all` has not yet been rerun on the new source revision; MAN-01..05, broad P18-V01, remaining local scenarios, and remote Docker CI remain open.
+
+## P19 full local gate rerun — 2026-10-25 (`a96aad3d`)
+
+- Ran `ROCKETMQ_CLASSIC_TEST_ENV=local-disposable bash integration-tests/run-local.sh --all` at committed revision `a96aad3d4df378e7b38ed5ebd0e819f764a89dc4`.
+- All 19 server-free gates passed: Cargo format/diff, default and all-feature workspace tests, workspace check, strict Clippy, pinned Maven verify, differential self-test and manifest, race/leak and fuzz smoke, release examples, benchmark build/run, Cargo/workspace metadata, package-content validation, and UTC/Taipei Unique ID checks.
+- The final `differential-live-coverage` step returned `BLOCKED` with the 24 IDs listed in the evidence log. No Docker resources were started by this gate. Evidence is `docs/compatibility/evidence/phase-19/run-local/20261025T083442Z/` (`result.txt` is `BLOCKED`).
+- Current live status remains 13/37. The remaining 24 locally runnable cases and the broad P18-V01 audit are not complete; MAN-01..05 and remote Docker CI remain open.

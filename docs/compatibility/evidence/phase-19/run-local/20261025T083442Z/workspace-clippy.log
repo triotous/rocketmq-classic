@@ -1,0 +1,3 @@
+    Checking rocketmq-classic-core v0.1.0 (<repo>/crates/rocketmq-classic-core)
+    Checking rocketmq-classic-integration v0.1.0 (<repo>/integration-tests)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.43s

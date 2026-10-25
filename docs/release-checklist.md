@@ -10479,3 +10479,18 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   verify replicated HA/failover, remaining two-Broker cases, TLS/ACL/features,
   or close P18-V01. The full `run-local.sh --all` rerun on `6684ff8c` is
   outstanding; MAN-01 through MAN-05 and remote Docker CI remain open.
+
+## P19 current full local gates — 2026-10-25 (`a96aad3d`)
+
+- [x] Reran `ROCKETMQ_CLASSIC_TEST_ENV=local-disposable bash
+  integration-tests/run-local.sh --all` on committed revision
+  `a96aad3d4df378e7b38ed5ebd0e819f764a89dc4`. All 19 server-free gates
+  passed: formatting, diff, default/all-feature workspace tests, check,
+  strict Clippy, pinned Maven verify, differential self-test/manifest,
+  race/leak and fuzz smoke, release examples, benchmark build/run, metadata,
+  package content, and UTC/Taipei Unique ID checks.
+- [ ] The final live coverage gate returned `BLOCKED` with 24 missing scenario
+  runners and started no Docker resources. Evidence:
+  `docs/compatibility/evidence/phase-19/run-local/20261025T083442Z/`.
+  Live coverage remains 13/37; the other 24 local scenarios, broad P18-V01,
+  MAN-01 through MAN-05, and remote Docker CI remain open.
