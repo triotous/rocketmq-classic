@@ -922,7 +922,7 @@ mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed $namesrv_addr $topic b
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed $namesrv_addr $topic broker-a 0 p12-next-a" exec:java@live-orderly-interop-probe
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed $namesrv_addr $topic broker-b 0 p12-slow-b" exec:java@live-orderly-interop-probe
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed $namesrv_addr $topic broker-b 0 p12-next-b" exec:java@live-orderly-interop-probe
-JAVA_TOOL_OPTIONS=-Drocketmq.client.unlockDelayTimeMills=1000 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic $consumer_group <java-ownership> <java-ready> <java-stop> <marker-dir> <release-file>" exec:java@live-orderly-interop-probe
+JAVA_TOOL_OPTIONS=-Drocketmq.client.unlockDelayTimeMills=1000 mvn -q -f compat/java-reference/pom.xml -Dexec.args="consumer $namesrv_addr $topic $consumer_group <java-ownership> <java-ready> <java-stop> <marker-dir> <release-file>" exec:java@live-orderly-interop-probe
 env rocketmq.client.unlockDelayTimeMills=1000 target/debug/live_client p12-orderly $namesrv_addr $topic $consumer_group <rust-ownership> <rust-ready> <rust-stop> <rust-exited> <marker-dir>
 target/debug/live_client offset-query-named 127.0.0.1:50911 broker-a $consumer_group $topic 0
 target/debug/live_client offset-query-named 127.0.0.1:50921 broker-b $consumer_group $topic 0
@@ -2549,7 +2549,7 @@ elif [[ "$scenario_id" == "P12-V03" ]]; then
     echo "Starting Java orderly ownership and holding its callbacks before Rust joins"
     JAVA_TOOL_OPTIONS="-Drocketmq.client.unlockDelayTimeMills=1000" \
         mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-        -Dexec.args="$namesrv_addr $topic $consumer_group $java_ownership $java_ready $java_stop $marker_dir $release_gate" \
+        -Dexec.args="consumer $namesrv_addr $topic $consumer_group $java_ownership $java_ready $java_stop $marker_dir $release_gate" \
         exec:java@live-orderly-interop-probe \
         >"$evidence_dir/java-p12-orderly.tsv" 2>"$evidence_dir/java-p12-orderly.stderr" &
     p12_java_pid="$!"

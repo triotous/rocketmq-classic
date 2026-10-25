@@ -532,3 +532,7 @@
 - Clean-source run `20261025T161816Z` on revision `264a7863a8532758f6c32b8cd22ce568497b37a7` provisioned the pinned 5.3.4 host-routed two-Broker profile, created the topic/group on both Brokers, initialized offsets, and seeded all four ordered messages. It stopped before Rust joined because the Java consumer invocation omitted the probe's required `consumer` subcommand; Maven reported the probe usage and exited.
 - Evidence is retained at `docs/compatibility/evidence/phase-19/P12-V03/20261025T161816Z/` with `source_code_dirty=false`, exit status 1, and 130 seconds. The runner successfully deleted the consumer group from both Brokers, deleted the scenario topic, and removed the exact Compose project's containers, volumes and network; filtered Docker queries were empty.
 - P12-V03 remains pending. Correct the Java argument and repeat the clean-source replay; this diagnostic does not count as a scenario result.
+
+## P19-05 P12-V03 Java probe invocation correction — 2026-10-25
+
+- The first replay's evidence is committed in `7cbff856`; the `deleteSubGroup` cleanup command succeeded on both Brokers and the Compose cleanup removed all project resources. The runner now passes the Java probe's required `consumer` operation before the nameserver and file-gate arguments. A new clean-source replay is required; the manifest remains pending.
