@@ -91,7 +91,18 @@ cases and all seven have passed: the two route cases, `HEARTBEAT-001`, and
 Live runs require the pinned runner toolchains: Maven on JDK 27 and Rust 1.85.0,
 matching the repository CI configuration.
 
-The two-Broker, TLS, ACL, and feature-specific profiles, the remaining 30
-unimplemented live cases, and a `run-local.sh --all` orchestration entry point
-are still pending.
-Starting this basic profile by itself does not mark a scenario passed.
+The full local entry point is:
+
+```bash
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable \
+bash integration-tests/run-local.sh --all
+```
+
+It first checks that every manifest row has a runner, then runs the offline
+workspace gates and each profile-specific live case in its own Compose
+project. It reconciles every Phase 19 manifest row against a `PASS` result and
+archived evidence before reporting success. It refuses to start Docker when
+any selected scenario is unimplemented. Currently seven of 37 live cases have
+runners; the other 30, the two-Broker/TLS/ACL/feature profiles, and the full
+`run-local.sh --all` pass remain pending. Starting the basic profile by itself
+does not mark a scenario passed.

@@ -13,6 +13,7 @@ Usage:
   tests/differential/run.sh --scenario ID
   tests/differential/run.sh --phase N
   tests/differential/run.sh --all
+  tests/differential/run.sh --check-all
   tests/differential/run.sh --list
 
 Only scenarios with a complete local runner are executable. --phase and --all
@@ -38,6 +39,11 @@ while (($#)); do
         --all)
             [[ -z "$selection" ]] || { usage >&2; exit 2; }
             selection="all"
+            shift
+            ;;
+        --check-all)
+            [[ -z "$selection" ]] || { usage >&2; exit 2; }
+            selection="check-all"
             shift
             ;;
         --list)
@@ -93,7 +99,7 @@ ids = [scenario.get("id") for scenario in scenarios]
 if any(not isinstance(item, str) or not item for item in ids) or len(ids) != len(set(ids)):
     raise SystemExit("scenario manifest IDs must be nonempty and unique")
 
-if selection == "all":
+if selection in ("all", "check-all"):
     selected = scenarios
 elif selection == "phase":
     if not phase.isdecimal():
@@ -164,9 +170,19 @@ if ((${#unsupported[@]})); then
     exit 3
 fi
 
-if [[ $(wc -l <"$selected_file" | tr -d ' ') -ne 1 ]]; then
-    echo "This runner currently supports one scenario per invocation; split the selection explicitly." >&2
-    exit 3
+if [[ "$selection" == "check-all" ]]; then
+    row_count="$(wc -l <"$selected_file" | tr -d ' ')"
+    printf 'Every selected live scenario has a local runner (%s rows); no Docker resources were started.\n' \
+        "$row_count"
+    exit 0
+fi
+
+if [[ "$selection" != "scenario" ]]; then
+    while IFS=$'\t' read -r scenario_id profile _; do
+        printf 'Running manifest scenario %s with profile %s\n' "$scenario_id" "$profile"
+        ROCKETMQ_PROFILE="$profile" "$repo_root/tests/differential/run.sh" --scenario "$scenario_id"
+    done <"$selected_file"
+    exit 0
 fi
 
 IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count <"$selected_file"
