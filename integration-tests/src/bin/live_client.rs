@@ -17,7 +17,7 @@ use rocketmq_classic_common::message::{
 use rocketmq_classic_common::sysflag::pull::{build_pull_sys_flag, build_pull_sys_flag_with_lite};
 use rocketmq_classic_consumer::PopReceipt;
 use rocketmq_classic_consumer::rebalance::{
-    AllocateMessageQueueAveragely, AllocateMessageQueueStrategy,
+    AllocateMessageQueueAveragely, AllocateMessageQueueStrategy, RebalanceError,
 };
 use rocketmq_classic_core::api::{
     MQClientApi,
@@ -74,6 +74,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 arguments[5].parse()?,
                 &arguments[6],
                 &arguments[7],
+            )
+            .await
+        }
+        Some("p10-push") if arguments.len() == 6 => {
+            p10_push_probe(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                &arguments[5],
             )
             .await
         }
@@ -260,8 +270,271 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume|p5-extension-lite-pop <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-timeout|p19-late-timeout <namesrv-address> <topic> <producer-group> <body> <timeout-ms> <hold-ms> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> [delay-ms] | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p10-push <namesrv-address> <topic> <group> <ready-file> <failure-go-file> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume|p5-extension-lite-pop <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-timeout|p19-late-timeout <namesrv-address> <topic> <producer-group> <body> <timeout-ms> <hold-ms> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> [delay-ms] | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
+}
+
+struct P10FixedQueueAllocation {
+    topic: String,
+    retry_topic: String,
+}
+
+impl AllocateMessageQueueStrategy for P10FixedQueueAllocation {
+    fn allocate(
+        &self,
+        _consumer_group: &str,
+        _current_client_id: &str,
+        queues: &[MessageQueue],
+        _consumer_ids: &[String],
+    ) -> Result<Vec<MessageQueue>, RebalanceError> {
+        Ok(queues
+            .iter()
+            .filter(|queue| {
+                matches!(queue.topic(), Some(topic) if topic == self.topic || topic == self.retry_topic)
+                    && queue.broker_name() == Some("broker-a")
+                    && queue.queue_id() == 0
+            })
+            .cloned()
+            .collect())
+    }
+
+    fn name(&self) -> &str {
+        "p10-fixed-live-test-assignment"
+    }
+}
+
+async fn p10_push_probe(
+    namesrv_address: &str,
+    topic: &str,
+    consumer_group: &str,
+    ready_file: &str,
+    failure_go_file: &str,
+) -> Result<(), Box<dyn Error>> {
+    let retry_topic = format!("%RETRY%{consumer_group}");
+    let mut config = PushConsumerConfig::new(consumer_group)?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    config.client_config_mut().set_mq_client_api_timeout(5_000);
+    config.set_consume_from_where(ConsumeFromWhere::ConsumeFromFirstOffset);
+    config.set_max_reconsume_times(1);
+    config.set_pull_batch_size(32);
+    config.set_consume_message_batch_max_size(4);
+    config.set_allocate_message_queue_strategy(Arc::new(P10FixedQueueAllocation {
+        topic: topic.to_owned(),
+        retry_topic: retry_topic.clone(),
+    }));
+    let consumer = Arc::new(PushConsumer::new(config));
+    let (observed_tx, mut observed_rx) = tokio::sync::mpsc::unbounded_channel::<(String, i32)>();
+    let ready_path = Path::new(ready_file).to_owned();
+    let failure_go_path = Path::new(failure_go_file).to_owned();
+    consumer
+        .set_message_listener(PushMessageListener::concurrently(
+            move |messages: Vec<MessageExt>, mut context: ConsumeConcurrentlyContext| {
+                let observed_tx = observed_tx.clone();
+                let ready_path = ready_path.clone();
+                let failure_go_path = failure_go_path.clone();
+                Box::pin(async move {
+                    let mut partial_reject_index = None;
+                    let mut saw_failure = false;
+                    let mut saw_recovered_partial = false;
+                    let mut bodies = Vec::new();
+                    let mut retries = Vec::new();
+                    for (index, message) in messages.iter().enumerate() {
+                        let body = String::from_utf8_lossy(message.body().as_ref()).into_owned();
+                        let reconsume_times = message.reconsume_times();
+                        println!(
+                            "P10\tCALLBACK\t{body}\t{reconsume_times}\t{}",
+                            message.queue_offset()
+                        );
+                        let _ = observed_tx.send((body.clone(), reconsume_times));
+                        if body == "p10-partial-retry" && reconsume_times == 0 {
+                            partial_reject_index = Some(index);
+                        }
+                        if body == "p10-partial-retry" && reconsume_times > 0 {
+                            saw_recovered_partial = true;
+                        }
+                        if body == "p10-failure-dlq" {
+                            saw_failure = true;
+                        }
+                        bodies.push(body);
+                        retries.push(reconsume_times);
+                    }
+                    context.set_delay_level_when_next_consume(1);
+                    if saw_failure {
+                        println!(
+                            "P10\tBATCH\tRECONSUME_LATER\t{}\t{}",
+                            bodies.join(","),
+                            retries
+                                .iter()
+                                .map(i32::to_string)
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        );
+                        (Some(ConsumeConcurrentlyStatus::ReconsumeLater), context)
+                    } else if let Some(index) = partial_reject_index {
+                        context.set_ack_index(index as i32 - 1);
+                        println!(
+                            "P10\tBATCH\tPARTIAL\t{}\t{}\t{}",
+                            bodies.join(","),
+                            retries
+                                .iter()
+                                .map(i32::to_string)
+                                .collect::<Vec<_>>()
+                                .join(","),
+                            context.ack_index()
+                        );
+                        (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                    } else {
+                        println!(
+                            "P10\tBATCH\tSUCCESS\t{}\t{}",
+                            bodies.join(","),
+                            retries
+                                .iter()
+                                .map(i32::to_string)
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        );
+                        if saw_recovered_partial {
+                            if let Err(error) = std::fs::write(&ready_path, "ready\n") {
+                                eprintln!("failed to publish P10 readiness gate: {error}");
+                                return (Some(ConsumeConcurrentlyStatus::ReconsumeLater), context);
+                            }
+                            let deadline = Instant::now() + Duration::from_secs(90);
+                            while !failure_go_path.exists() {
+                                if Instant::now() >= deadline {
+                                    eprintln!("timed out waiting for P10 failure seed");
+                                    return (
+                                        Some(ConsumeConcurrentlyStatus::ReconsumeLater),
+                                        context,
+                                    );
+                                }
+                                tokio::time::sleep(Duration::from_millis(20)).await;
+                            }
+                        }
+                        (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                    }
+                })
+            },
+        ))
+        .await?;
+    consumer.subscribe(topic, "*").await?;
+    consumer.start().await?;
+    let operation: Result<(), Box<dyn Error>> = async {
+        wait_for_file(Path::new(ready_file), Duration::from_secs(90)).await?;
+        println!("P10\tREADY\tFIXED\tbroker-a\t0");
+        wait_for_file(Path::new(failure_go_file), Duration::from_secs(90)).await?;
+        let deadline = Instant::now() + Duration::from_secs(90);
+        let dlq_topic = format!("%DLQ%{consumer_group}");
+        let mut events = Vec::new();
+        let dlq_message = loop {
+            while let Ok((body, reconsume_times)) = observed_rx.try_recv() {
+                println!("P10\tOBSERVED\t{body}\t{reconsume_times}");
+                events.push((body, reconsume_times));
+            }
+            match consumer
+                .query_message(&dlq_topic, "p10-failure-dlq-key", 10, 0, i64::MAX)
+                .await
+            {
+                Ok(query) => {
+                    let matching = query.get_message_list().and_then(|messages| {
+                        messages
+                            .snapshot()
+                            .into_iter()
+                            .flatten()
+                            .map(|message| {
+                                message.with(|message| {
+                                    (
+                                        message.topic().to_owned(),
+                                        String::from_utf8_lossy(message.body().as_ref())
+                                            .into_owned(),
+                                        message.reconsume_times(),
+                                        message.keys().unwrap_or_default(),
+                                    )
+                                })
+                            })
+                            .find(|(_, body, _, keys)| {
+                                body == "p10-failure-dlq"
+                                    && keys
+                                        .split_whitespace()
+                                        .any(|key| key == "p10-failure-dlq-key")
+                            })
+                    });
+                    if let Some(message) = matching {
+                        break message;
+                    }
+                }
+                Err(error) => println!(
+                    "P10\tDLQ_QUERY_RETRY\t{}",
+                    error.to_string().replace(['\t', '\n'], " ")
+                ),
+            }
+            if Instant::now() >= deadline {
+                return Err("timed out waiting for the configured P10 DLQ transition".into());
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        };
+        if dlq_message.0 != dlq_topic {
+            return Err(
+                format!("DLQ query returned an unexpected topic: {:?}", dlq_message).into(),
+            );
+        }
+        println!(
+            "P10\tDLQ\t{}\t{}\t{}\t{}",
+            dlq_message.0, dlq_message.1, dlq_message.2, dlq_message.3
+        );
+        while let Ok(event) = observed_rx.try_recv() {
+            events.push(event);
+        }
+        for body in [
+            "p10-success",
+            "p10-partial-ack",
+            "p10-partial-retry",
+            "p10-failure-dlq",
+        ] {
+            if !events.iter().any(|(observed, _)| observed == body) {
+                return Err(format!("listener did not observe {body}").into());
+            }
+        }
+        let partial_retries = events
+            .iter()
+            .filter(|(body, _)| body == "p10-partial-retry")
+            .map(|(_, count)| *count)
+            .collect::<Vec<_>>();
+        let failure_retries = events
+            .iter()
+            .filter(|(body, _)| body == "p10-failure-dlq")
+            .map(|(_, count)| *count)
+            .collect::<Vec<_>>();
+        if partial_retries != [0, 1] {
+            return Err(format!("partial batch retry counts differ: {partial_retries:?}").into());
+        }
+        if failure_retries != [0, 1] || dlq_message.2 != 1 {
+            return Err(format!(
+                "DLQ retry counts differ: listener={failure_retries:?}, dlq={}",
+                dlq_message.2
+            )
+            .into());
+        }
+        println!("P10\tPASS\tLISTENER_SUCCESS_PARTIAL_FAILURE\tRETRIES=1\tDLQ=FOUND");
+        Ok(())
+    }
+    .await;
+    let shutdown = consumer.shutdown().await;
+    operation?;
+    shutdown?;
+    Ok(())
+}
+
+async fn wait_for_file(path: &Path, duration: Duration) -> Result<(), Box<dyn Error>> {
+    let deadline = Instant::now() + duration;
+    while !path.exists() {
+        if Instant::now() >= deadline {
+            return Err(format!("timed out waiting for gate file {}", path.display()).into());
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    Ok(())
 }
 
 async fn route(namesrv_address: &str, topic: &str) -> Result<(), Box<dyn Error>> {

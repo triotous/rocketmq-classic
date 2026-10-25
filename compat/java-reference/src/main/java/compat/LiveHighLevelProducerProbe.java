@@ -26,6 +26,10 @@ public final class LiveHighLevelProducerProbe {
     private LiveHighLevelProducerProbe() {}
 
     public static void main(String[] args) throws Exception {
+        if (args.length == 4 && "seed-p10".equals(args[0])) {
+            seedP10(args[1], args[2], args[3]);
+            return;
+        }
         if (args.length == 8 && "retry-probe".equals(args[0])) {
             retryProbe(args[1], args[2], args[3], args[4], Integer.parseInt(args[5]), args[6], args[7]);
             return;
@@ -34,6 +38,42 @@ public final class LiveHighLevelProducerProbe {
             throw new IllegalArgumentException("usage: <nameserver-address> <topic> | retry-probe <nameserver-address> <topic> <mode> <body> <timeout-ms> <ready-file> <go-file>");
         }
         run(args[0], args[1]);
+    }
+
+    private static void seedP10(String namesrvAddress, String topic, String stage) throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("compat_p10_seed_java");
+        producer.setNamesrvAddr(namesrvAddress);
+        producer.setSendMessageWithVIPChannel(false);
+        producer.setSendMsgTimeout(10000);
+        String[][] messages;
+        if ("initial".equals(stage)) {
+            messages = new String[][] {
+                {"p10-success", "p10-success-key"},
+                {"p10-partial-ack", "p10-partial-ack-key"},
+                {"p10-partial-retry", "p10-partial-retry-key"}
+            };
+        } else if ("failure".equals(stage)) {
+            messages = new String[][] {{"p10-failure-dlq", "p10-failure-dlq-key"}};
+        } else {
+            throw new IllegalArgumentException("unknown P10 seed stage: " + stage);
+        }
+        MessageQueue queue = new MessageQueue(topic, "broker-a", 0);
+        producer.start();
+        try {
+            for (String[] item : messages) {
+                Message message = new Message(topic, item[0].getBytes(StandardCharsets.UTF_8));
+                message.setKeys(item[1]);
+                SendResult result = producer.send(message, queue);
+                if (!"SEND_OK".equals(result.getSendStatus().name())) {
+                    throw new IllegalStateException("P10 seed did not return SEND_OK: " + result);
+                }
+                System.out.printf("P10\tPRODUCED\t%s\t%s\t%s\t%s\t%d%n",
+                    stage, item[0], item[1], result.getMessageQueue().getBrokerName(),
+                    result.getMessageQueue().getQueueId());
+            }
+        } finally {
+            producer.shutdown();
+        }
     }
 
     private static void retryProbe(

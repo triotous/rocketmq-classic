@@ -147,6 +147,17 @@ for scenario in selected:
         or inputs.get("deadline_body") != "p7-deadline-original-body"
     ):
         raise SystemExit("P7-V03 retry and deadline bounds differ from the reviewed live case")
+    if scenario_id == "P10-V03" and (
+        scenario.get("profile") != "two-broker"
+        or inputs.get("topic") != "compat_p10_retry"
+        or inputs.get("group") != "compat_p10_push"
+        or inputs.get("assignment") != "test-only-fixed"
+        or inputs.get("checks") != [
+            "java-produced-message", "listener-success", "listener-partial",
+            "listener-failure", "retry-count", "configured-dlq-transition"
+        ]
+    ):
+        raise SystemExit("P10-V03 retry and DLQ inputs differ from the reviewed live case")
     if scenario_id == "P5-V02-producer" and inputs.get("methods") != [
         "send-v1", "send-v2", "batch", "reply-v1", "reply-v2", "end-transaction"
     ]:
@@ -198,7 +209,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P5-V02-extensions" "P0-V03" "P6-V04" "P7-V02" "P7-V03" "P7-V04" "P9-V03" "P13-V02" "REQ-001-request-reply-success" "P15-V03")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P5-V02-extensions" "P0-V03" "P6-V04" "P7-V02" "P7-V03" "P7-V04" "P9-V03" "P10-V03" "P13-V02" "REQ-001-request-reply-success" "P15-V03")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -248,6 +259,7 @@ p7_deadline_timeout_ms=900
 p7_response_delay_ms=1800
 p7_retry_body="p7-retry-original-body"
 p7_deadline_body="p7-deadline-original-body"
+p10_retry_max_times=1
 if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     if [[ "$topic" != *_java ]]; then
         echo "The Java request topic must end with _java so the reverse-direction topic can be derived safely" >&2
@@ -258,12 +270,16 @@ fi
 if [[ "$scenario_id" == "P15-V03" ]]; then
     p15_topics=("${topic}_reverse" "${topic}_no_reply_java" "${topic}_no_reply_rust" "${topic}_late_java" "${topic}_late_rust")
 fi
+if [[ "$scenario_id" == "P10-V03" ]]; then
+    p10_retry_topic="%RETRY%${consumer_group}"
+    p10_dlq_topic="%DLQ%${consumer_group}"
+fi
 if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
     timeout_ms=100
 fi
 case "$profile:$scenario_id" in
     basic:*) ;;
-    two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c|two-broker:PROD-005-send-timeout|two-broker:P5-V02-consumer|two-broker:P13-V02) ;;
+    two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c|two-broker:PROD-005-send-timeout|two-broker:P5-V02-consumer|two-broker:P10-V03|two-broker:P13-V02) ;;
     two-broker-host:P7-V03|two-broker-host:P7-V04|two-broker-host:P15-V03) ;;
     transaction:TX-001-commit|transaction:TX-002-rollback) ;;
     tls:P3-V04) ;;
@@ -394,6 +410,12 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    P10-V03:compat_p10_retry)
+        if [[ "$profile" != "two-broker" || "$consumer_group" != "compat_p10_push" ]]; then
+            echo "P10-V03 requires the two-Broker profile and the reviewed Push consumer group" >&2
+            exit 3
+        fi
+        ;;
     P7-V04:compat_p7_lifecycle)
         if [[ "$profile" != "two-broker-host" ]]; then
             echo "P7-V04 requires the host-routed two-Broker profile" >&2
@@ -441,7 +463,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P5-V02-extensions" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P7-V03" && "$scenario_id" != "P7-V04" && "$scenario_id" != "P9-V03" && "$scenario_id" != "P13-V02" && "$scenario_id" != "REQ-001-request-reply-success" && "$scenario_id" != "P15-V03" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P5-V02-extensions" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P7-V03" && "$scenario_id" != "P7-V04" && "$scenario_id" != "P9-V03" && "$scenario_id" != "P10-V03" && "$scenario_id" != "P13-V02" && "$scenario_id" != "REQ-001-request-reply-success" && "$scenario_id" != "P15-V03" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -640,6 +662,11 @@ if [[ "$scenario_id" == "P15-V03" ]]; then
         "${p15_topics[3]}" "${p15_topics[4]}" "$p15_timeout_ms" "$p15_no_reply_hold_ms" \
         "$p15_late_reply_delay_ms" "$p15_late_reply_hold_ms" >>"$evidence_dir/metadata.txt"
 fi
+if [[ "$scenario_id" == "P10-V03" ]]; then
+    printf 'consumer_group=%s\nassignment=%s\nretry_topic=%s\ndlq_topic=%s\nmax_reconsume_times=%s\ninitial_messages=p10-success,p10-partial-ack,p10-partial-retry\nfailure_message=p10-failure-dlq\nfixed_queue=broker-a:0\n' \
+        "$consumer_group" "test-only-fixed" "$p10_retry_topic" "$p10_dlq_topic" "$p10_retry_max_times" \
+        >>"$evidence_dir/metadata.txt"
+fi
 if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
     printf 'topic=%s\nsend_timeout_ms=%s\nproxy_response_delay_ms=600\nexpected_committed_messages=2\n' "$topic" "$timeout_ms" \
         >>"$evidence_dir/metadata.txt"
@@ -763,6 +790,122 @@ mvn -q -f compat/java-reference/pom.xml -Dexec.args="send $broker_addr %LMQ%${to
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="consume $broker_addr $topic ${consumer_group}_java" exec:java@live-p5-extensions-probe
 target/debug/live_client p5-extension-consume $broker_addr $topic ${consumer_group}_rust
 EOF
+elif [[ "$scenario_id" == "P10-V03" ]]; then
+    p10_ready_file="$evidence_dir/rust-ready"
+    p10_failure_go_file="$evidence_dir/seed-failure"
+    echo "Seeding Java success/partial messages, then exercising the bounded Push retry and DLQ path"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="seed-p10 $namesrv_addr $topic initial" exec:java@live-high-level-producer-probe \
+        >"$evidence_dir/java-p10-initial-seed.tsv" 2>"$evidence_dir/java-p10-initial-seed.stderr"; then
+        cat "$evidence_dir/java-p10-initial-seed.tsv" "$evidence_dir/java-p10-initial-seed.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    rm -f "$p10_ready_file" "$p10_failure_go_file"
+    "$repo_root/target/debug/live_client" p10-push "$namesrv_addr" "$topic" "$consumer_group" \
+        "$p10_ready_file" "$p10_failure_go_file" \
+        >"$evidence_dir/rust-p10-push.tsv" 2>"$evidence_dir/rust-p10-push.stderr" &
+    p10_probe_pid="$!"
+    for _ in {1..1000}; do
+        if [[ -s "$p10_ready_file" ]]; then
+            break
+        fi
+        if ! kill -0 "$p10_probe_pid" 2>/dev/null; then
+            wait "$p10_probe_pid" 2>/dev/null || true
+            p10_probe_pid=""
+            cat "$evidence_dir/rust-p10-push.tsv" "$evidence_dir/rust-p10-push.stderr" 2>/dev/null >&2 || true
+            exit 1
+        fi
+        sleep 0.1
+    done
+    if [[ ! -s "$p10_ready_file" ]]; then
+        echo "Rust Push listener did not acknowledge the recovered partial batch" >&2
+        kill "$p10_probe_pid" 2>/dev/null || true
+        wait "$p10_probe_pid" 2>/dev/null || true
+        p10_probe_pid=""
+        cat "$evidence_dir/rust-p10-push.tsv" "$evidence_dir/rust-p10-push.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="seed-p10 $namesrv_addr $topic failure" exec:java@live-high-level-producer-probe \
+        >"$evidence_dir/java-p10-failure-seed.tsv" 2>"$evidence_dir/java-p10-failure-seed.stderr"; then
+        cat "$evidence_dir/java-p10-failure-seed.tsv" "$evidence_dir/java-p10-failure-seed.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    : >"$p10_failure_go_file"
+    if ! wait "$p10_probe_pid"; then
+        p10_probe_pid=""
+        cat "$evidence_dir/rust-p10-push.tsv" "$evidence_dir/rust-p10-push.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    p10_probe_pid=""
+    if ! python3 - "$evidence_dir" "$topic" "$consumer_group" "$p10_retry_max_times" <<'PY'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+topic = sys.argv[2]
+group = sys.argv[3]
+retry_limit = int(sys.argv[4])
+
+def rows(name, prefix):
+    result = []
+    for line in (root / name).read_text().splitlines():
+        fields = line.split("\t")
+        if fields[:len(prefix)] == prefix:
+            result.append(fields)
+    return result
+
+initial = rows("java-p10-initial-seed.tsv", ["P10", "PRODUCED"])
+expected_initial = [
+    ["P10", "PRODUCED", "initial", "p10-success", "p10-success-key", "broker-a", "0"],
+    ["P10", "PRODUCED", "initial", "p10-partial-ack", "p10-partial-ack-key", "broker-a", "0"],
+    ["P10", "PRODUCED", "initial", "p10-partial-retry", "p10-partial-retry-key", "broker-a", "0"],
+]
+if initial != expected_initial:
+    raise SystemExit(f"Java initial P10 seed rows differ: {initial!r}")
+failure_seed = rows("java-p10-failure-seed.tsv", ["P10", "PRODUCED"])
+expected_failure = [["P10", "PRODUCED", "failure", "p10-failure-dlq", "p10-failure-dlq-key", "broker-a", "0"]]
+if failure_seed != expected_failure:
+    raise SystemExit(f"Java P10 failure seed row differs: {failure_seed!r}")
+
+observed = rows("rust-p10-push.tsv", ["P10", "CALLBACK"])
+counts = {}
+for row in observed:
+    if len(row) != 5:
+        raise SystemExit(f"malformed Rust Push callback row: {row!r}")
+    counts.setdefault(row[2], []).append(int(row[3]))
+expected_counts = {
+    "p10-success": [0],
+    "p10-partial-ack": [0],
+    "p10-partial-retry": [0, 1],
+    "p10-failure-dlq": [0, 1],
+}
+if counts != expected_counts:
+    raise SystemExit(f"Push callback/retry counts differ: {counts!r}")
+if rows("rust-p10-push.tsv", ["P10", "READY"]) != [["P10", "READY", "FIXED", "broker-a", "0"]]:
+    raise SystemExit("test-only fixed assignment was not pinned to broker-a queue 0")
+partial = rows("rust-p10-push.tsv", ["P10", "BATCH", "PARTIAL"])
+if partial != [["P10", "BATCH", "PARTIAL", "p10-success,p10-partial-ack,p10-partial-retry", "0,0,0", "1"]]:
+    raise SystemExit(f"partial acknowledgement boundary differs: {partial!r}")
+recovered = rows("rust-p10-push.tsv", ["P10", "BATCH", "SUCCESS"])
+if [row[3:5] for row in recovered] != [["p10-partial-retry", "1"]]:
+    raise SystemExit(f"recovered partial message was not acknowledged: {recovered!r}")
+failures = rows("rust-p10-push.tsv", ["P10", "BATCH", "RECONSUME_LATER"])
+if [row[3:5] for row in failures] != [["p10-failure-dlq", "0"], ["p10-failure-dlq", "1"]]:
+    raise SystemExit(f"failure callbacks did not exhaust exactly one retry: {failures!r}")
+dlq = rows("rust-p10-push.tsv", ["P10", "DLQ"])
+expected_dlq_topic = f"%DLQ%{group}"
+if dlq != [["P10", "DLQ", expected_dlq_topic, "p10-failure-dlq", str(retry_limit), "p10-failure-dlq-key"]]:
+    raise SystemExit(f"configured DLQ result differs: {dlq!r}")
+if rows("rust-p10-push.tsv", ["P10", "PASS"]) != [["P10", "PASS", "LISTENER_SUCCESS_PARTIAL_FAILURE", "RETRIES=1", "DLQ=FOUND"]]:
+    raise SystemExit("Rust Push consumer did not report the complete P10 result")
+PY
+    then
+        echo "P10-V03 listener, retry count, or DLQ assertions failed" >&2
+        exit 1
+    fi
+    printf 'PASS P10-V03: Java messages exercised Rust Push success, partial acknowledgement and failure; one retry reached the configured DLQ with matching body and key\n' \
+        | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P13-V02" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
@@ -772,6 +915,16 @@ target/debug/live_client p13-pop-prepare $broker_addr $topic rust
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed $broker_addr $namesrv_addr $topic java" exec:java@live-p13-pop-probe
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="consume $broker_addr $topic java" exec:java@live-p13-pop-probe
 target/debug/live_client p13-pop-consume $broker_addr $topic rust
+EOF
+elif [[ "$scenario_id" == "P10-V03" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker exec broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g $consumer_group -r $p10_retry_max_times -q 1 -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed-p10 $namesrv_addr $topic initial" exec:java@live-high-level-producer-probe
+target/debug/live_client p10-push $namesrv_addr $topic $consumer_group <evidence>/rust-ready <evidence>/seed-failure
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed-p10 $namesrv_addr $topic failure" exec:java@live-high-level-producer-probe
+The runner releases the failure seed gate after Java sends the failure message; Rust records callbacks and verifies the retry-topic/DLQ transition before shutdown.
 EOF
 elif [[ "$scenario_id" == "P9-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -973,6 +1126,7 @@ tls_proxy_pid=""
 timeout_probe_pid=""
 p7_proxy_pids=()
 p7_probe_pid=""
+p10_probe_pid=""
 cleanup() {
     status=$?
     trap - EXIT
@@ -996,6 +1150,10 @@ cleanup() {
     if [[ -n "$p7_probe_pid" ]] && kill -0 "$p7_probe_pid" 2>/dev/null; then
         kill "$p7_probe_pid" 2>/dev/null
         wait "$p7_probe_pid" 2>/dev/null
+    fi
+    if [[ -n "$p10_probe_pid" ]] && kill -0 "$p10_probe_pid" 2>/dev/null; then
+        kill "$p10_probe_pid" 2>/dev/null
+        wait "$p10_probe_pid" 2>/dev/null
     fi
     if [[ "$scenario_id" == "P13-V02" ]]; then
         "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 broker broker-b \
@@ -1172,11 +1330,11 @@ if [[ "$scenario_id" == "P5-V02-extensions" ]]; then
     done
 fi
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P3-V04" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P5-V02-producer" || "$scenario_id" == "P5-V02-consumer" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P7-V03" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "P13-V02" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P3-V04" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P5-V02-producer" || "$scenario_id" == "P5-V02-consumer" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P7-V03" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "P10-V03" || "$scenario_id" == "P13-V02" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     topic_queue_count=4
-    if [[ "$scenario_id" == "P3-V04" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V03" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "P5-V02-consumer" ]]; then
+    if [[ "$scenario_id" == "P3-V04" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V03" || "$scenario_id" == "P9-V03" || "$scenario_id" == "P10-V03" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "P5-V02-consumer" ]]; then
         topic_queue_count=1
     elif [[ "$scenario_id" == "REBAL-001-average-10q-3c" ]]; then
         topic_queue_count=5
@@ -1282,6 +1440,13 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
                 fi
             done
         done
+    elif [[ "$scenario_id" == "P10-V03" ]]; then
+        echo "Creating scenario-owned Push consumer group with retry limit $p10_retry_max_times"
+        if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$consumer_group" -r "$p10_retry_max_times" -q 1 -n namesrv:9876 \
+            >"$evidence_dir/group-create.log" 2>&1; then
+            cat "$evidence_dir/group-create.log" >&2
+            exit 1
+        fi
     elif [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
         echo "Creating scenario-owned responder group $consumer_group"
         for responder_group in "$consumer_group" "${consumer_group}_java" "${consumer_group}_rust"; do
