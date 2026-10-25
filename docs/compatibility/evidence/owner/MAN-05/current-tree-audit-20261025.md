@@ -9,7 +9,7 @@ MAN-04 owner-environment checks.
 ## Scope and pinned source
 
 - Java oracle: Apache RocketMQ 5.5.1, source commit
-  efa1be59d6fc747ad220f036c86030f05f0419f9.
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`.
 - P18 final API/source audit:
   [PHASE_6_REQUIREMENT_AUDIT.md](../../../PHASE_6_REQUIREMENT_AUDIT.md), including
   132 MQClientAPIImpl declarations, seven overload groups, 29 direct RPC
@@ -17,58 +17,70 @@ MAN-04 owner-environment checks.
   errors, and control flow.
 - Remoting setting and public-surface inventory:
   [PHASE_3_REMOTING_INVENTORY.md](../../../PHASE_3_REMOTING_INVENTORY.md).
-- P18 final closure code revision: 0cf294b710d06d40bd72ccec1ca5d1df121c5225.
-- Current code revision under audit: 1e909440b39720e814a1db9d79d92bbc6d733713.
+- P18 final closure code revision: `0cf294b710d06d40bd72ccec1ca5d1df121c5225`.
+- Current production code revision under audit: `48d2149d5286b82b0b681312e607d13a12f9b0e0`.
+  Later commits updated evidence pointers and documentation; they did not change
+  production code.
 
 ## Post-closure source/API delta
 
-A comparison of the production crate trees between the P18 closure revision
-and the current code revision found changes in PushConsumer subscription
-handling and Remoting lifecycle diagnostics. No other production crate API,
-configuration setting, or client feature changed in that range.
+The production-source review from the P18 closure through the current code
+revision found PushConsumer flow corrections, TLS verifier behavior, and
+lifecycle counters used only by the differential test harness. It found no
+additional production public API, configuration setting, or client feature
+without a Java 5.5.1 counterpart.
 
-1. PushConsumer now filters a completed pull result against the current local
-   subscription so an older long-poll snapshot cannot deliver a tag that the
-   caller has replaced. On Broker response code 25, it makes one best-effort
-   heartbeat refresh before following the ordinary pull retry path. This
-   handles the observed case where the subscription update heartbeat lost the
-   shared nonblocking lock.
+1. **Push subscription and pull flow now follows Java 5.5.1.** Java's
+   `DefaultMQPushConsumerImpl.subscribe` stores subscription data and attempts
+   a heartbeat; `unsubscribe` removes the table entry. Neither method invokes
+   an immediate rebalance. `pullMessage` captures the `SubscriptionData` used
+   for the request and passes that same snapshot to `processPullResult`. On
+   `SUBSCRIPTION_NOT_LATEST`, the pull callback logs the event and schedules
+   the normal delayed retry (with a distinct delay only for `FLOW_CONTROL`);
+   heartbeat work remains independent. Rust follows those paths: subscription
+   heartbeat transport failures remain best effort, unsubscribe does not
+   trigger rebalance, code 25 does not send an extra heartbeat, and results use
+   the subscription snapshot captured for the pull. The clean live
+   [P6-V04 run](../../phase-19/P6-V04/20261025T222205Z/) verifies subscription
+   updates, tag filtering, and the remaining shared producer. Pinned source:
+   [DefaultMQPushConsumerImpl.java](https://github.com/apache/rocketmq/blob/rocketmq-all-5.5.1/client/src/main/java/org/apache/rocketmq/client/impl/consumer/DefaultMQPushConsumerImpl.java#L335-L350),
+   [subscription methods](https://github.com/apache/rocketmq/blob/rocketmq-all-5.5.1/client/src/main/java/org/apache/rocketmq/client/impl/consumer/DefaultMQPushConsumerImpl.java#L1265-L1309),
+   and [stale-subscription retry](https://github.com/apache/rocketmq/blob/rocketmq-all-5.5.1/client/src/main/java/org/apache/rocketmq/client/impl/consumer/DefaultMQPushConsumerImpl.java#L435-L449).
 
-   Java 5.5.1 source review: the pull callback logs
-   SUBSCRIPTION_NOT_LATEST and schedules the pull request after its configured
-   retry delay; periodic heartbeat scheduling is independent. Rust's refresh
-   shortens convergence on this race and does not claim identical retry timing.
-   The final user-visible subscription and Broker-side tag-filtering result is
-   covered by the current P6-V04 evidence at
-   [20261025T213618Z](../../phase-19/P6-V04/20261025T213618Z/). The relevant
-   Java sources are
-   [DefaultMQPushConsumerImpl.java](https://github.com/apache/rocketmq/blob/rocketmq-all-5.5.1/client/src/main/java/org/apache/rocketmq/client/impl/consumer/DefaultMQPushConsumerImpl.java#L2925-L2950)
-   and
-   [MQClientInstance.java](https://github.com/apache/rocketmq/blob/rocketmq-all-5.5.1/client/src/main/java/org/apache/rocketmq/client/impl/factory/MQClientInstance.java#L3200-L3235).
-   This narrow retry-timing delta is also recorded in
-   [KNOWN_DIFFERENCES.md](../../../KNOWN_DIFFERENCES.md).
+2. **Lifecycle counters are not part of the normal Rust API.**
+   `RemotingLifecycleCounts` and `RemotingClient::lifecycle_counts()` are
+   available only when the differential harness enables
+   `rocketmq_classic_test_support`. Normal crate builds do not export them.
+   The harness uses them to assert zero pending requests, channels, and owned
+   tasks at shutdown; they add no Java-facing capability or setting.
 
-2. Remoting adds the public RemotingLifecycleCounts type and
-   RemotingClient::lifecycle_counts() read-only snapshot with pending request,
-   connection, and owned-task counts. Java has no matching public method. The
-   method is used for lifecycle diagnostics after shutdown and does not add a
-   wire command, setting, or transport control. The API is listed in the
-   [Remoting inventory](../../../PHASE_3_REMOTING_INVENTORY.md) as an explicit
-   Rust-native diagnostic extension.
+3. **Verified TLS matches Java's endpoint-identification behavior.** Java
+   `TlsHelper.buildSslContext(true)` enables CA trust validation when
+   `tls.client.authServer=true`; `NettyRemotingClient` creates the handler with
+   `sslContext.newHandler(ch.alloc())`, without a peer hostname. Rust verified
+   mode now checks the configured trust chain and certificate validity but
+   does not compare the requested hostname. It still rejects untrusted and
+   expired certificates and still verifies handshake signatures. Fresh
+   [P3-V04 evidence](../../phase-19/P3-V04/20261025T222946Z/) confirms that
+   both clients accept the CA-trusted wrong-host certificate and reject an
+   untrusted CA. Fresh [P16-V02 evidence](../../phase-19/P16-V02/20261025T223149Z/)
+   confirms the same behavior under mutual TLS while rejecting missing client
+   certificates. The TLS-terminating proxy forwards to the isolated plain
+   Broker; these cases validate client TLS behavior, not Broker TLS
+   configuration.
 
-These deltas are classified in the current compatibility inventory. They do
-not reveal an unimplemented client capability or a setting without a Java
-source mapping. The full aggregate evidence at
-[20261025T203947Z](../../phase-19/run-local/20261025T203947Z/) records all
-23 local gates passing at the current code revision; the differential manifest
-records PASS for all 37 registered scenarios, including the latest P6-V04 run.
+The source/API rows above close the identified post-P18 code deltas. The
+complete P18 audit remains the record for the broader scoped API, overload,
+setting, input, error, control-flow, and reverse-export review. The 37
+Phase 19 live scenarios have passing manifest evidence, including clean
+corrected P3-V04, P6-V04, and P16-V02 runs. A fresh full `run-local.sh --all`
+replay at the corrected TLS code revision is pending in this audit snapshot.
 
 ## MAN-05 decision
 
 No additional feature-specific validation requires an owner-only service or
-topology. The requirements that are inherently owner-specific are separately
-tracked: MAN-01 network/DNS/VIP paths, MAN-02 organization security material
-and ACL policy, MAN-03 authorized HA fault topology, and MAN-04 representative
-workload and SLO capacity. Their absence is not an unclassified product
-feature and does not change MAN-05 from N/A. No owner or production
+topology. Owner-specific checks remain separate: MAN-01 covers network/DNS/VIP
+paths, MAN-02 organization security material and ACL policy, MAN-03 authorized
+HA fault topology, and MAN-04 representative workload and SLO capacity. Their
+absence does not leave an unclassified client feature. No owner or production
 environment was accessed for this audit.

@@ -1,7 +1,8 @@
 # Owner validation handoff
 
-Status date: 2026-10-25. The Phase 19 local candidate is
-`1e909440b39720e814a1db9d79d92bbc6d733713`; this document is a handoff, not
+Status date: 2026-10-25. The Phase 19 production code candidate is
+`48d2149d5286b82b0b681312e607d13a12f9b0e0`; the latest evidence and manifest
+commit is `fa263c60`. This document is a handoff, not
 owner approval or release evidence. The owner is the RocketMQ service owner
 plus the relevant network/security/operations owner; names and authorized
 resources have not been supplied.
@@ -20,7 +21,7 @@ replace the owner-specific network, security, HA, or workload checks below.
 | MAN-02 | BLOCKED | Security owner must provide organization-issued CA/SNI/mTLS material, short-lived test identities, ACL policy, and disposable topic/group names. Production credentials must not be copied here. | Local `P16-V02` passed synthetic ACL and Broker-side mTLS checks on an isolated Apache 5.3.4 profile; `P3-V04` covers the separate TLS-terminating proxy path. Neither establishes the owner issuer, SNI profile, ACL policy, or endpoint behavior. Run the owner-issued profile only after the approved disposable resources are supplied; expected allowed and denied outcomes must match Java 5.5.1. | Revoke test identities, remove only owner-approved disposable ACL/topic/group resources, and archive redacted command/output plus certificate fingerprints (never keys) under `docs/compatibility/evidence/owner/MAN-02/`. |
 | MAN-03 | BLOCKED | Service/operations owner must provide the approved HA topology, maintenance window, fault-injection procedure, and rollback contact. This requires production-specific multi-zone or network-partition behavior. | No executable failover scenario is registered yet. Only after written authorization and a disposable replica of the topology exists, run the future manifest scenario command for the approved failure and recovery sequence. Expected routing, delivery/duplication, offset recovery, and service restoration must be compared with Java 5.5.1. | Restore the topology using the approved rollback procedure. Archive the authorization reference, topology/version, exact scenario command, timestamps, Java/Rust results, recovery measurements, and cleanup confirmation under `docs/compatibility/evidence/owner/MAN-03/`. |
 | MAN-04 | BLOCKED | Service/SRE owner must provide representative message sizes, concurrency, throughput shape, duration, resource quotas, success SLOs, and approved disposable capacity. | No Broker-backed sustained-load or capacity scenario is registered yet. The offline microbenchmark `cargo bench -p rocketmq-classic --bench offline --locked` is not a substitute. After the local stress runner is implemented, run its fixed-seed bounded scenario first on the disposable production-like topology; run the separately approved production soak only with owner authorization. | Stop load generators, verify owned clients/tasks/sockets have returned to baseline, and remove only approved test resources. Save redacted workload parameters, raw/normalized results, resource telemetry, command, revision, and cleanup evidence under `docs/compatibility/evidence/owner/MAN-04/`. |
-| MAN-05 | N/A | The source-backed client feature/API audit and Phase 19 local matrix are complete. No additional feature-specific scenario requires an owner-only service. MAN-01 through MAN-04 separately track owner-network, security, HA, and workload validation. | The pinned Java 5.5.1 source/API matrices and all 37 Phase 19 local scenarios were reviewed; the full aggregate command passed all gates and reconciled all manifest evidence. | Audit: [MAN-05 current-tree evidence](compatibility/evidence/owner/MAN-05/current-tree-audit-20261025.md). This N/A is limited to unrepresented feature-specific validation and is not owner production approval. |
+| MAN-05 | N/A | The source-backed client feature/API audit and Phase 19 local matrix are complete. No additional feature-specific scenario requires an owner-only service. MAN-01 through MAN-04 separately track owner-network, security, HA, and workload validation. | The pinned Java 5.5.1 source/API matrices and all 37 Phase 19 local scenarios were reviewed. Corrected P3-V04, P6-V04, and P16-V02 evidence is recorded; a fresh full aggregate replay at the corrected TLS code revision is pending. | Audit: [MAN-05 current-tree evidence](compatibility/evidence/owner/MAN-05/current-tree-audit-20261025.md). This N/A is limited to unrepresented feature-specific validation and is not owner production approval. |
 
 ## MAN-01 route commands
 
@@ -51,6 +52,7 @@ authorized HA fault topology, and representative workload/SLO capacity.
 
 MAN-05 is N/A because the source-backed feature audit found no additional
 feature-specific behavior that needs an owner-only service, and all 37
-registered local scenarios have passing evidence. The evidence is
+registered local scenarios have passing evidence. The aggregate replay after
+the verified-TLS parity correction is pending. The evidence is
 [docs/compatibility/evidence/owner/MAN-05/current-tree-audit-20261025.md](compatibility/evidence/owner/MAN-05/current-tree-audit-20261025.md).
 This does not approve production use or substitute for MAN-01 through MAN-04.

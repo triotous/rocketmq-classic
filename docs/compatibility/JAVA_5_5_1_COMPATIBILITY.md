@@ -76,8 +76,9 @@ or establish production support; evidence is under
 both clients report timeout, and verifies each message is committed once by
 matching Java/Rust pull results. `P3-V04` compares raw NameServer routing, CA
 trust, and client shutdown through a local TLS-terminating proxy. Java 5.5.1
-accepts a CA-trusted wrong-host certificate because its TLS handler does not
-receive a peer hostname; Rust rejects it. P7-V04 now has clean-source live
+and Rust accept a CA-trusted wrong-host certificate because the Java TLS
+handler does not receive a peer hostname; Rust verified mode now matches this
+behavior while still rejecting an untrusted CA. P7-V04 now has clean-source live
 evidence for 20 sends over three Java and Rust producer cycles with zero
 pending requests, connections, and owned task groups after every shutdown.
 `P14-V03` passes cross-language commit visibility, rollback invisibility with
@@ -86,14 +87,15 @@ checks in both directions. `P17-V02` passes duplicate-key and bounded-time
 queries, preserves Broker A results when Broker B fails, and maps terminal
 query failures to `NO_MESSAGE`; see the
 [live evidence](evidence/phase-19/P17-V02/20261025T172205Z/).
-All 37 registered Phase 19 live scenarios now have passing evidence. A fresh
-aggregate run-local gate, the Phase 18 source/API/settings reverse audit, and
-owner-executed manual evidence remain open.
+All 37 registered Phase 19 live scenarios have passing manifest evidence,
+including corrected clean-source runs for P3-V04, P6-V04, and P16-V02. A fresh
+aggregate run-local replay is pending. The Phase 18 source/API/settings
+reverse audit and the current-tree delta review are recorded; owner-executed
+MAN-01 through MAN-04 evidence remains blocked on owner inputs.
 `P13-V02` and `P5-V02-extensions` now have clean Java/Rust evidence; the
 latter records the two unsupported Lite request paths on 5.3.4 and separate
-positive Lite success evidence on 5.5.0. This does
-not close the broader P18-V01 public API/settings/flow reverse audit or establish
-full client parity. See
+positive Lite success evidence on 5.5.0. These results do not establish owner
+environment behavior or production approval. See
 [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server
 cases and [`../owner-validation.md`](../owner-validation.md) for the blocked
 owner inputs. Final compatibility and release approval remain blocked.
