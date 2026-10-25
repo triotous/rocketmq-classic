@@ -1,0 +1,7 @@
+    Checking rocketmq-classic-remoting v0.1.0 (<repo>/crates/rocketmq-classic-remoting)
+    Checking rocketmq-classic-core v0.1.0 (<repo>/crates/rocketmq-classic-core)
+    Checking rocketmq-classic-producer v0.1.0 (<repo>/crates/rocketmq-classic-producer)
+    Checking rocketmq-classic-consumer v0.1.0 (<repo>/crates/rocketmq-classic-consumer)
+    Checking rocketmq-classic v0.1.0 (<repo>/crates/rocketmq-classic)
+    Checking rocketmq-classic-integration v0.1.0 (<repo>/integration-tests)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.17s

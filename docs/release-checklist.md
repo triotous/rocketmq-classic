@@ -10979,3 +10979,17 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [ ] All 37 live scenarios now have passing evidence. The aggregate
   `run-local.sh --all` gate, Phase 18 reverse audit, owner manual evidence, and
   final Phase 19 acceptance remain open.
+
+## P19-03 aggregate gate diagnostic — 2026-10-25 (`1850d789`)
+
+- [x] The first current-revision aggregate attempt passed formatting, diff
+  hygiene, both default and all-features workspace suites, all-target check,
+  strict Clippy, and Java `mvn verify`.
+- [x] The differential self-test exposed a stale assertion that required
+  `P6-V04` to remain pending even after the manifest recorded its passing live
+  evidence. The self-test now accepts the valid `PENDING_PHASE_19` or `PASS`
+  states. Standalone differential self-test, 37-row manifest validation, and
+  `git diff --check` pass with this correction.
+- [ ] The aggregate attempt stopped at the differential self-test before
+  subsequent server-free gates or Docker replay. Rerun `run-local.sh --all`
+  from the committed correction before Phase 19 acceptance.

@@ -743,7 +743,7 @@ def self_test():
     phase6 = [case for case in checked_in["scenarios"] if case["id"] == "P6-V04"]
     assert len(phase6) == 1, "Phase 6 live handoff case must retain its original ID"
     assert phase6[0]["phase"] == 6 and phase6[0]["execution_phase"] == 19
-    assert phase6[0]["live_status"] == "PENDING_PHASE_19"
+    assert phase6[0]["live_status"] in {"PENDING_PHASE_19", "PASS"}
     assert phase6[0]["inputs"]["checks"] == [
         "heartbeat-subscription-change", "unregister", "remaining-shared-user-functional"]
     missing_handoff = {
