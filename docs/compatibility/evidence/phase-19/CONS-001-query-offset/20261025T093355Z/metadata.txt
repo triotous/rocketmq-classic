@@ -1,0 +1,17 @@
+scenario=CONS-001-query-offset
+profile=basic
+project=rocketmq-classic-p19-cons-001-query-offset-20261025t093355z
+run_id=20261025T093355Z
+java_client=5.5.1
+server=5.3.4
+server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+source_revision=34f14b727e200016961d5189f160dc96ceb3a06e
+source_code_dirty=false
+producer_group=compat_phase0_query_group
+body=-
+seed=not-applicable
+java_offset=17
+rust_offset=23
+queue_id=0
+exit_status=0
+duration_seconds=76

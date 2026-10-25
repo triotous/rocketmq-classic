@@ -85,8 +85,9 @@ commit/rollback visibility through Java and Rust consumer pulls.
 It deletes any owned topic and tears down only that project. Toolchain,
 configuration, output, and cleanup evidence is stored under
 `docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
-after comparison and cleanup both succeed. The runner implements 16 of 37
-cases and all 16 have passed: the two Phase 0 route cases, `P5-V02-route`,
+after comparison and cleanup both succeed. The runner implements 17 of 37
+cases and all 17 have passed: the two Phase 0 route cases, `P0-V03`,
+`P5-V02-route`,
 `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, `HEARTBEAT-001`,
 `PROD-001-sync-send` through `PROD-004-batch-send`, and
 `CONS-001-query-offset` through `CONS-004-update-offset`, plus
@@ -136,7 +137,7 @@ It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
 produce a `BLOCKED` result with the missing IDs in the archived log; the full
 matrix cannot report success until all IDs have passing evidence. Currently
-16 of 37 live cases have runners; the other 21, the remaining two-Broker
+17 of 37 live cases have runners; the other 20, the remaining two-Broker
 cases, TLS/ACL/feature profiles, and a fresh `run-local.sh --all` pass remain
 pending. The last full local run predates the rebalance and transaction probes.
 Starting a profile by itself does not mark a scenario passed.

@@ -57,7 +57,8 @@ request/reply, retry, TLS, ACL, failover, or stress coverage.
 The scenario manifest contains 37 live cases. The seven rows above, four
 consumer rows, the P5 route row, `ORDER-001-lock-unlock`,
 `REBAL-001-average-10q-3c`, and the two transaction rows are implemented and
-passed by the current runner; 21 remain pending. The two-Broker profile covers
+passed by the current runner; `P0-V03` also passes as an aggregate over eleven
+clean constituent runs. 20 remain pending. The two-Broker profile covers
 lock/unlock and average queue assignment; retry, query, and broader
 interoperability coverage, TLS, ACL, and feature-specific profiles remain
 incomplete. No server limitation is inferred from an unrun case. Phase 19
@@ -175,3 +176,17 @@ checked callbacks and queue offsets but not consumer visibility; the later
 clean-source runs above include the stronger pull assertions and are the
 manifest evidence. Live coverage is now 16/37, with 21 cases pending. The last
 full local gate predates the transaction probes.
+
+## Phase 0 aggregate verification — 2026-10-25
+
+`P0-V03` passed on committed revision
+`34f14b727e200016961d5189f160dc96ceb3a06e` with
+`source_code_dirty=false`. It replayed 11 constituent scenarios in isolated
+projects: route, heartbeat, four producer modes, four consumer/offset cases,
+and two-Broker lock/unlock. Each child returned PASS, recorded the same clean
+source revision, and completed its topic and Compose cleanup. The parent
+archived the constituent status/evidence table and child command logs at
+[`20261025T092635Z`](evidence/phase-19/P0-V03/20261025T092635Z/).
+No Phase 19 Docker containers, volumes, or networks remained afterward. The
+individual manifest pointers were refreshed to the child runs referenced by
+this aggregate. Live coverage is now 17/37, with 20 cases pending.

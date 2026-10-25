@@ -10535,3 +10535,19 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - Live coverage is 16/37, with 21 scenarios still pending. The full local gate
   last ran before the rebalance and transaction additions and must be rerun.
   Broad P18-V01, MAN-01 through MAN-05, and remote Docker CI remain open.
+
+## P19 Phase 0 aggregate — 2026-10-25 (`34f14b72`)
+
+- [x] Added `P0-V03` as a fail-closed aggregate over 11 existing route,
+  producer, consumer, heartbeat, offset, and lock scenarios. The parent records
+  only children with PASS results, matching source revision, clean-source
+  metadata, and successful cleanup. Implementation commit: `34f14b72`.
+- [x] The aggregate passed at `20261025T092635Z` on
+  `34f14b727e200016961d5189f160dc96ceb3a06e`, with `source_code_dirty=false`.
+  All 11 child runs also passed on that revision; the evidence table and logs
+  are archived under `docs/compatibility/evidence/phase-19/P0-V03/`.
+- [x] Refreshed the 11 child manifest pointers to the fresh evidence collected
+  by this aggregate. No Phase 19 Compose resources remained after teardown.
+- Live coverage is 17/37, with 20 scenarios pending. The full local gate must
+  be rerun after these additions; broad P18-V01, MAN-01..05, and remote Docker
+  CI remain open.
