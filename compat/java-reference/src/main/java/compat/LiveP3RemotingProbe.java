@@ -43,6 +43,7 @@ public final class LiveP3RemotingProbe {
         ClientConfig config = new ClientConfig();
         config.setNamesrvAddr(nameserverAddress);
         MQClientAPIExt api = api(config);
+        api.updateNameServerAddressList(nameserverAddress);
         TopicRouteData route;
         try {
             route = api.getTopicRouteInfoFromNameServer(topic, 10_000);
