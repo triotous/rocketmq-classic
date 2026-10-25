@@ -719,8 +719,11 @@ async fn p7_retry_probe(
                     result.status.name(),
                     result.broker_name
                 );
-                if mode != "deadline" {
-                    return Err("retry probe expected an exhausted Broker error".into());
+                if mode == "retry" {
+                    if result.status.name() == "SEND_OK" {
+                        return Ok(());
+                    }
+                    return Err("retry probe did not recover with SEND_OK".into());
                 }
                 Err("deadline probe unexpectedly completed successfully".into())
             }

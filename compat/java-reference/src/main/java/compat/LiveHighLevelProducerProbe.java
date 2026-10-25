@@ -92,9 +92,12 @@ public final class LiveHighLevelProducerProbe {
             started = System.nanoTime();
             try {
                 SendResult result = producer.send(message);
-                System.out.printf("RESULT\tjava\t%s\t%s\t%s\t%d%n", mode,
+                System.out.printf("RESULT\tjava\t%s\tSUCCESS\t%s\t%s\t%d%n", mode,
                     result.getSendStatus().name(), result.getMessageQueue().getBrokerName(),
                     TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+                if ("retry".equals(mode) && !"SEND_OK".equals(result.getSendStatus().name())) {
+                    throw new IllegalStateException("retry probe did not recover with SEND_OK");
+                }
             } catch (Throwable error) {
                 failure = error;
                 outcome = isTimeout(error) ? "TIMEOUT" : "BROKER_ERROR";
@@ -102,8 +105,8 @@ public final class LiveHighLevelProducerProbe {
                     error.toString().replace('\t', ' ').replace('\n', ' '),
                     TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
             }
-            if ("retry".equals(mode) && outcome != "BROKER_ERROR") {
-                throw new IllegalStateException("retry probe expected a Broker error", failure);
+            if ("retry".equals(mode) && outcome != "SUCCESS") {
+                throw new IllegalStateException("retry probe did not recover after injected Broker errors", failure);
             }
             if ("deadline".equals(mode) && outcome != "TIMEOUT") {
                 throw new IllegalStateException("deadline probe expected timeout", failure);

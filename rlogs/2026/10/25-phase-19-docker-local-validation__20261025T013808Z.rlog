@@ -435,3 +435,16 @@
 - Evidence is retained at `docs/compatibility/evidence/phase-19/P7-V03/20261025T145612Z/` (`source_code_dirty=false`, exit 1, duration 79 seconds). The Compose cleanup removed both Brokers, the NameServer, volumes, and network; filtered Docker queries returned no project resources.
 - Updated the runner so each client fetches both writable routes first, then the runner toggles both disposable Brokers read-only while that client sends and restores write permission before starting the next client. P7 topic cleanup now uses the host-routed proxies and the established Java delete-topic probe; proxies stay alive until topic cleanup is complete.
 - A second clean-source replay is pending after the corrective runner commit.
+
+## P19-04 P7-V03 second clean replay diagnostic — 2026-10-25
+
+- Clean replay `20261025T150001Z` on revision `336ec0560212821e64b26869f16ef11ef680b5e1` failed during retry setup. Broker-wide permission changes refreshed the NameServer route before Java's send and returned `No route info`; Rust retained its route but Broker 5.3.4 accepted the write, so that setting did not produce `NO_PERMISSION` at message send.
+- Evidence is retained at `docs/compatibility/evidence/phase-19/P7-V03/20261025T150001Z/` (`source_code_dirty=false`, exit 1, duration 121 seconds). Compose teardown removed both Brokers, NameServer, volumes, and network; filtered Docker queries returned no project resources.
+- Replaced the permission mutation with a bounded transparent-proxy protocol injection: for each retry run, one send request per Broker is consumed and answered with a valid Remoting response code 16 without forwarding to the Broker; the third attempt reaches the real Broker. The separate deadline check continues to delay a real Broker response. Topic cleanup stays on the live host-routed proxy path.
+- Maven compile, Rust format/strict Clippy, proxy Python compilation, Bash syntax, manifest validation, Compose override validation, and whitespace checks pass after the change. Clean-source replay is pending.
+
+## P19-04 P7-V03 retry-injection correction — 2026-10-25
+
+- The second clean replay confirmed Broker permission changes were unsuitable for a deterministic send error: Java lost its route and Rust's Broker accepted the send. The runner no longer changes Broker permissions; that earlier diagnostic and its commands remain preserved verbatim.
+- The current proxy tracks the request `opaque` for a send-only deadline delay, so background heartbeat responses cannot consume the 1,800 ms delay. The archived command template now records both proxy flags and the synthetic response setup.
+- The 15:00:01 failed replay evidence has been retained for the retry attempt and proxy logs. The next committed implementation revision will be clean-replayed before any pass status is recorded.

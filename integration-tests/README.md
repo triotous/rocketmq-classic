@@ -118,12 +118,13 @@ clients reject an untrusted CA and report zero retained remoting resources at
 shutdown. `P7-V04` uses two host-routed Brokers to send 20 messages in each of
 three producer start/shutdown cycles and checks that pending requests,
 connections, and task groups return to zero each time.
-`P7-V03` uses two host-routed Brokers and transparent response proxies. Both
-clients make three synchronous attempts across retryable `NO_PERMISSION`
-responses while preserving the original body and unique ID, then each hits a
-900 ms send deadline against a delayed Broker response. The runner restores
-Broker write permission before deleting the scenario topic and tearing down
-the disposable project.
+`P7-V03` uses two host-routed Brokers and transparent response proxies. Each
+proxy injects one Remoting `NO_PERMISSION` response without forwarding that
+send, then forwards the client's retry to the other Broker; Java and Rust
+must recover on attempt three while preserving the original body and unique
+ID. Each client then hits a 900 ms send deadline against a delayed real Broker
+response. The proxies remain active through topic cleanup and disposable
+project teardown.
 `PROD-005-send-timeout` delays each direct Broker response beyond the reviewed
 100 ms deadline and verifies the timed-out sends were each committed once by
 cross-language pull readback.

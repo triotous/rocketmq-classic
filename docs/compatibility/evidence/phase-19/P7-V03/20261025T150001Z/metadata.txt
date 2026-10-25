@@ -1,0 +1,14 @@
+scenario=P7-V03
+profile=two-broker-host
+project=rocketmq-classic-p19-p7-v03-20261025t150001z
+run_id=20261025T150001Z
+java_client=5.5.1
+server=5.3.4
+server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+source_revision=336ec0560212821e64b26869f16ef11ef680b5e1
+source_code_dirty=false
+producer_group=-
+body=-
+seed=not-applicable
+exit_status=1
+duration_seconds=121

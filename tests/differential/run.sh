@@ -798,11 +798,9 @@ elif [[ "$scenario_id" == "P7-V03" ]]; then
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host ROCKETMQ_BROKER_A_PUBLISHED_HOST_PORT=51911 ROCKETMQ_BROKER_B_PUBLISHED_HOST_PORT=51921 COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateTopic -b 127.0.0.1:50911 -t $topic -r 1 -w 1 -n namesrv:9876
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateTopic -b 127.0.0.1:50921 -t $topic -r 1 -w 1 -n namesrv:9876
-docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateBrokerConfig -b 127.0.0.1:50911 -k brokerPermission -v 4 -n namesrv:9876
-docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateBrokerConfig -b 127.0.0.1:50921 -k brokerPermission -v 4 -n namesrv:9876
-python3 tests/differential/delayed_response_proxy.py --upstream 127.0.0.1:51911 --listen-port 50911 --delay-ms $p7_response_delay_ms --delay-flag <evidence>/broker-a-proxy.delay-flag --ready-file <evidence>/broker-a-proxy.ready --log-file <evidence>/broker-a-proxy.tsv
-python3 tests/differential/delayed_response_proxy.py --upstream 127.0.0.1:51921 --listen-port 50921 --delay-ms $p7_response_delay_ms --delay-flag <evidence>/broker-b-proxy.delay-flag --ready-file <evidence>/broker-b-proxy.ready --log-file <evidence>/broker-b-proxy.tsv
-The runner uses Java and Rust send hooks to record each Broker, response classification, body, and unique ID; it restores brokerPermission=6 before topic deletion and Compose teardown.
+python3 tests/differential/delayed_response_proxy.py --upstream 127.0.0.1:51911 --listen-port 50911 --delay-ms $p7_response_delay_ms --delay-flag <evidence>/broker-a-proxy.delay-flag --delay-send-flag <evidence>/broker-a-proxy.delay-send-flag --reject-send-flag <evidence>/broker-a-proxy.reject-flag --reject-response-code 16 --ready-file <evidence>/broker-a-proxy.ready --log-file <evidence>/broker-a-proxy.tsv
+python3 tests/differential/delayed_response_proxy.py --upstream 127.0.0.1:51921 --listen-port 50921 --delay-ms $p7_response_delay_ms --delay-flag <evidence>/broker-b-proxy.delay-flag --delay-send-flag <evidence>/broker-b-proxy.delay-send-flag --reject-send-flag <evidence>/broker-b-proxy.reject-flag --reject-response-code 16 --ready-file <evidence>/broker-b-proxy.ready --log-file <evidence>/broker-b-proxy.tsv
+The runner gates each client after route lookup, injects one NO_PERMISSION response per Broker without forwarding those two send requests, then forwards the third attempt; it records all attempts and keeps the proxies alive through topic deletion.
 retry_timeout_ms=$p7_retry_timeout_ms
 deadline_timeout_ms=$p7_deadline_timeout_ms
 retry_response_code=16
@@ -998,18 +996,6 @@ cleanup() {
     if [[ -n "$p7_probe_pid" ]] && kill -0 "$p7_probe_pid" 2>/dev/null; then
         kill "$p7_probe_pid" 2>/dev/null
         wait "$p7_probe_pid" 2>/dev/null
-    fi
-    if [[ "$scenario_id" == "P7-V03" ]]; then
-        : >"$evidence_dir/broker-permission-cleanup.log"
-        for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
-            topic_service="${broker_admin_target%%:*}"
-            topic_broker="${broker_admin_target#*:}"
-            if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateBrokerConfig -b "$topic_broker" -k brokerPermission -v 6 -n namesrv:9876 \
-                >>"$evidence_dir/broker-permission-cleanup.log" 2>&1; then
-                status=1
-                echo "Failed to restore $topic_service brokerPermission before cleanup" >&2
-            fi
-        done
     fi
     if [[ "$scenario_id" == "P13-V02" ]]; then
         "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 broker broker-b \
@@ -1328,7 +1314,6 @@ fi
 
 if [[ "$scenario_id" == "P7-V03" ]]; then
     echo "Starting transparent response proxies for the bounded deadline phase"
-    : >"$evidence_dir/broker-permission.log"
     start_p7_proxy() {
         local broker_name="$1"
         local listen_port="$2"
@@ -1339,6 +1324,9 @@ if [[ "$scenario_id" == "P7-V03" ]]; then
             --delay-ms "$p7_response_delay_ms" \
             --listen-port "$listen_port" \
             --delay-flag "$proxy_prefix.delay-flag" \
+            --delay-send-flag "$proxy_prefix.delay-send-flag" \
+            --reject-send-flag "$proxy_prefix.reject-flag" \
+            --reject-response-code 16 \
             --ready-file "$proxy_prefix.ready" \
             --log-file "$proxy_prefix.tsv" \
             >"$proxy_prefix.stdout" 2>"$proxy_prefix.stderr" &
@@ -3241,19 +3229,6 @@ PY
     printf 'PASS P7-V04: Java and Rust each sent 20 messages in three live producer cycles and returned to zero pending requests, connections, and owned task groups after every shutdown\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P7-V03" ]]; then
-    set_p7_broker_permission() {
-        local permission="$1"
-        for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
-            local topic_service="${broker_admin_target%%:*}"
-            local topic_broker="${broker_admin_target#*:}"
-            if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateBrokerConfig -b "$topic_broker" -k brokerPermission -v "$permission" -n namesrv:9876 \
-                >>"$evidence_dir/broker-permission.log" 2>&1; then
-                cat "$evidence_dir/broker-permission.log" >&2
-                return 1
-            fi
-        done
-    }
-
     run_p7_retry_probe() {
         local language="$1"
         local mode="$2"
@@ -3295,36 +3270,30 @@ elif [[ "$scenario_id" == "P7-V03" ]]; then
             cat "$output_file" "$stderr_file" >&2 2>/dev/null || true
             return 1
         fi
-        if [[ "$mode" == "retry" ]] && ! set_p7_broker_permission 4; then
-            kill "$p7_probe_pid" 2>/dev/null || true
-            wait "$p7_probe_pid" 2>/dev/null || true
-            p7_probe_pid=""
-            return 1
-        fi
-        if [[ "$mode" == "deadline" ]]; then
-            : >"$evidence_dir/broker-a-proxy.delay-flag"
-            : >"$evidence_dir/broker-b-proxy.delay-flag"
+        if [[ "$mode" == "retry" ]]; then
+            : >"$evidence_dir/broker-a-proxy.reject-flag"
+            : >"$evidence_dir/broker-b-proxy.reject-flag"
+        elif [[ "$mode" == "deadline" ]]; then
+            : >"$evidence_dir/broker-a-proxy.delay-send-flag"
+            : >"$evidence_dir/broker-b-proxy.delay-send-flag"
         fi
         : >"$go_file"
-        local probe_failed=0
         if ! wait "$p7_probe_pid"; then
-            probe_failed=1
-        fi
-        p7_probe_pid=""
-        if [[ "$mode" == "retry" ]] && ! set_p7_broker_permission 6; then
-            probe_failed=1
-        fi
-        if ((probe_failed)); then
+            p7_probe_pid=""
+            rm -f "$evidence_dir/broker-a-proxy.reject-flag" "$evidence_dir/broker-b-proxy.reject-flag"
             cat "$output_file" "$stderr_file" >&2 2>/dev/null || true
             return 1
         fi
-        if [[ "$mode" == "deadline" ]]; then
-            rm -f "$evidence_dir/broker-a-proxy.delay-flag" "$evidence_dir/broker-b-proxy.delay-flag"
+        p7_probe_pid=""
+        if [[ "$mode" == "retry" ]]; then
+            rm -f "$evidence_dir/broker-a-proxy.reject-flag" "$evidence_dir/broker-b-proxy.reject-flag"
+        elif [[ "$mode" == "deadline" ]]; then
+            rm -f "$evidence_dir/broker-a-proxy.delay-send-flag" "$evidence_dir/broker-b-proxy.delay-send-flag"
             sleep $(((p7_response_delay_ms + 999) / 1000))
         fi
     }
 
-    echo "Retrying cached routes across Broker permission errors and exhausting a bounded send deadline"
+    echo "Retrying proxy-injected NO_PERMISSION Broker responses across both routes and exhausting a bounded send deadline"
     for language in java rust; do
         if ! run_p7_retry_probe "$language" retry "$p7_retry_body" "$p7_retry_timeout_ms"; then
             exit 1
@@ -3382,19 +3351,17 @@ def records(language, mode, expected_body):
         raise SystemExit(f"{path}: expected one {language}/{mode} result: {results!r}")
     return attempts, errors, results[0]
 
-retry = {}
 for language in ("java", "rust"):
     attempts, errors, result = records(language, "retry", retry_body)
-    if len(attempts) != 3 or any(row[2] != "ERROR" for row in attempts):
-        raise SystemExit(f"{language}: retry budget should produce three failed attempts: {attempts!r}")
-    if any("16" not in errors.get(index, "") for index in range(1, 4)):
-        raise SystemExit(f"{language}: attempts did not retain Broker NO_PERMISSION code 16: {errors!r}")
+    if len(attempts) != 3 or [row[2] for row in attempts] != ["ERROR", "ERROR", "SEND_OK"]:
+        raise SystemExit(f"{language}: two Broker errors should recover on attempt three: {attempts!r}")
+    if any("16" not in errors.get(index, "") for index in (1, 2)) or errors.get(3):
+        raise SystemExit(f"{language}: injected NO_PERMISSION classification differs: {errors!r}")
     brokers = [row[1] for row in attempts]
     if set(brokers) != {"broker-a", "broker-b"} or any(a == b for a, b in zip(brokers, brokers[1:])):
         raise SystemExit(f"{language}: retries did not avoid the previous failed Broker: {brokers!r}")
-    if result[3] != "BROKER_ERROR" or "16" not in " ".join(result[4:-1]):
-        raise SystemExit(f"{language}: final status did not classify NO_PERMISSION: {result!r}")
-    retry[language] = (brokers, attempts[0][4])
+    if brokers[0] != brokers[2] or result[3:5] != ["SUCCESS", "SEND_OK"]:
+        raise SystemExit(f"{language}: third attempt did not return SEND_OK after retry: {result!r}")
 
 for language in ("java", "rust"):
     attempts, errors, result = records(language, "deadline", deadline_body)
@@ -3407,17 +3374,22 @@ for language in ("java", "rust"):
         raise SystemExit(f"{language}: deadline elapsed outside the reviewed bound: {elapsed} ms")
 
 delays = 0
+injected = 0
 for proxy in ("broker-a-proxy.tsv", "broker-b-proxy.tsv"):
     path = root / proxy
-    delays += sum(line.startswith("PROXY\tDELAY_START\t") for line in path.read_text().splitlines())
+    rows = path.read_text().splitlines()
+    delays += sum(line.startswith("PROXY\tDELAY_START\t") for line in rows)
+    injected += sum(line.startswith("PROXY\tINJECTED_RESPONSE:16:") for line in rows)
 if delays != 2:
     raise SystemExit(f"expected one delayed response for each language's deadline, observed {delays}")
+if injected != 4:
+    raise SystemExit(f"expected two injected NO_PERMISSION responses for each language, observed {injected}")
 PY
     then
         echo "P7-V03 retry, status, deadline, body, or unique-ID assertions failed" >&2
         exit 1
     fi
-    printf 'PASS P7-V03: Java and Rust each retried NO_PERMISSION across both Brokers for three total attempts with stable body/unique ID, then exhausted the 900 ms send deadline after one delayed-response attempt\n' \
+    printf 'PASS P7-V03: Java and Rust each recovered on their third attempt after one injected NO_PERMISSION from both Brokers with stable body/unique ID, then exhausted the 900 ms send deadline after one delayed-response attempt\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P7-V02" ]]; then
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \

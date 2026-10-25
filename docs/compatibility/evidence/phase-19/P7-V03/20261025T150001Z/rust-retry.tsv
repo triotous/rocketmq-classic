@@ -1,0 +1,4 @@
+ROUTE	rust	broker-a,broker-b
+ATTEMPT	rust	1	broker-b	SEND_OK	p7-retry-original-body	0A0A0A798DE479AFAF927ED19F450000
+ATTEMPT_ERROR	rust	1	
+RESULT	rust	retry	SUCCESS	SEND_OK	broker-b	31

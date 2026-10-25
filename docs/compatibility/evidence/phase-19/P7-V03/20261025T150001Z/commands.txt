@@ -1,0 +1,11 @@
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host ROCKETMQ_BROKER_A_PUBLISHED_HOST_PORT=51911 ROCKETMQ_BROKER_B_PUBLISHED_HOST_PORT=51921 COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p7-v03-20261025t150001z bash integration-tests/setup.sh
+docker compose --project-name rocketmq-classic-p19-p7-v03-20261025t150001z --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateTopic -b 127.0.0.1:50911 -t compat_p7_retry -r 1 -w 1 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p7-v03-20261025t150001z --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateTopic -b 127.0.0.1:50921 -t compat_p7_retry -r 1 -w 1 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p7-v03-20261025t150001z --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateBrokerConfig -b 127.0.0.1:50911 -k brokerPermission -v 4 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p7-v03-20261025t150001z --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateBrokerConfig -b 127.0.0.1:50921 -k brokerPermission -v 4 -n namesrv:9876
+python3 tests/differential/delayed_response_proxy.py --upstream 127.0.0.1:51911 --listen-port 50911 --delay-ms 1800 --delay-flag <evidence>/broker-a-proxy.delay-flag --ready-file <evidence>/broker-a-proxy.ready --log-file <evidence>/broker-a-proxy.tsv
+python3 tests/differential/delayed_response_proxy.py --upstream 127.0.0.1:51921 --listen-port 50921 --delay-ms 1800 --delay-flag <evidence>/broker-b-proxy.delay-flag --ready-file <evidence>/broker-b-proxy.ready --log-file <evidence>/broker-b-proxy.tsv
+The runner uses Java and Rust send hooks to record each Broker, response classification, body, and unique ID; it restores brokerPermission=6 before topic deletion and Compose teardown.
+retry_timeout_ms=10000
+deadline_timeout_ms=900
+retry_response_code=16
