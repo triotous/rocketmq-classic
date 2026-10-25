@@ -227,7 +227,7 @@ mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
         exit 1
     }
 mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-    -Dexec.args="send $broker_addr $topic supplementary-parent-seed" \
+    -Dexec.args="send $broker_addr $topic p5-extension-seed" \
     exec:java@live-producer-probe >"$evidence_dir/java-parent-seed.tsv" 2>"$evidence_dir/java-parent-seed.stderr" || {
         cat "$evidence_dir/java-parent-seed.stderr" >&2
         status=1

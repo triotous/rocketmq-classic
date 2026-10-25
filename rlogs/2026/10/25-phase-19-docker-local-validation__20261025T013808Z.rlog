@@ -292,3 +292,7 @@
 
 - Run `20261025T133006Z` started the pinned official 5.5.0 NameServer and Broker; Broker logs report `broker[broker-a, broker:10911] boot success`. The first `clusterList` ran before NameServer registration completed and returned only its header. No Lite operation ran. The trap removed the Compose containers, network, and volume; filtered resource checks returned no project resources.
 - Added up to 90 seconds of bounded `clusterList` polling before checking actual version `V5_5_0`. Shell syntax and whitespace checks pass; the clean retry follows this infrastructure correction.
+
+## P19-05 supplementary Lite body-seed correction — 2026-10-25
+
+- Run `20261025T133109Z` confirmed Broker `V5_5_0`, and both Java and Rust prepare probes matched successful heartbeat, assignment, request-mode, and Lite subscription registration. Parent and Lite seed sends also returned `SEND_OK`. Java's POP guard then rejected the parent seed body because the supplementary script used a new body while the shared probe expects `p5-extension-seed`; Lite POP did not run. The cleanup removed the topics and isolated Compose resources. Updated the supplementary parent seed to the probe's expected value; the next clean run will also verify the Lite POP body.
