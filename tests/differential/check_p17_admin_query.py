@@ -4,6 +4,8 @@
 import sys
 from pathlib import Path
 
+NO_MESSAGE_RESPONSE_CODE = 208
+
 
 def rows(directory, name):
     return [line.split("\t") for line in (directory / name).read_text().splitlines() if line]
@@ -92,12 +94,20 @@ def check_verify(directory):
             row for row in rows(directory, name)
             if row[:3] == ["P17", "ERROR", "p17-duplicate-key"]
         ]
-        if len(errors) != 1 or errors[0] != ["P17", "ERROR", "p17-duplicate-key", "14"]:
-            raise SystemExit(f"{name}: terminal errors did not map to Java NO_MESSAGE (14): {errors}")
-    for name, minimum in (("proxy-a-events.tsv", 2), ("proxy-b-events.tsv", 4)):
+        if len(errors) != 1 or errors[0] != [
+            "P17", "ERROR", "p17-duplicate-key", str(NO_MESSAGE_RESPONSE_CODE)
+        ]:
+            raise SystemExit(
+                f"{name}: terminal errors did not map to NO_MESSAGE "
+                f"({NO_MESSAGE_RESPONSE_CODE}): {errors}"
+            )
+    for name, label, minimum in (
+        ("proxy-a-events.tsv", "broker-a", 2),
+        ("proxy-b-events.tsv", "broker-b", 4),
+    ):
         count = sum(
             1 for row in rows(directory, name)
-            if row[:3] == ["P17_PROXY", name.removeprefix("proxy-").removesuffix("-events.tsv"), "INJECTED_QUERY_ERROR"]
+            if row[:3] == ["P17_PROXY", label, "INJECTED_QUERY_ERROR"]
         )
         if count < minimum:
             raise SystemExit(f"{name}: expected at least {minimum} injected query errors, saw {count}")
