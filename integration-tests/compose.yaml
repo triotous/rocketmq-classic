@@ -3,7 +3,7 @@ name: ${COMPOSE_PROJECT_NAME:-rocketmq-classic-p19-local}
 services:
   namesrv:
     image: apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
-    profiles: [basic, two-broker, transaction, host-routed]
+    profiles: [basic, two-broker, transaction, host-routed, tls]
     command: ["nameserver"]
     ports:
       - "127.0.0.1:${ROCKETMQ_NAMESRV_HOST_PORT:-19876}:9876"
@@ -16,7 +16,7 @@ services:
 
   store-init:
     image: apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
-    profiles: [basic, two-broker, transaction, host-routed]
+    profiles: [basic, two-broker, transaction, host-routed, tls]
     user: "0:0"
     entrypoint: ["/bin/sh", "-c", "chown -R rocketmq:rocketmq /data"]
     volumes:
@@ -25,7 +25,7 @@ services:
 
   broker:
     image: apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
-    profiles: [basic, two-broker]
+    profiles: [basic, two-broker, tls]
     command: ["broker", "-c", "/etc/rocketmq/broker.conf"]
     depends_on:
       namesrv:

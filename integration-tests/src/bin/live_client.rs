@@ -35,7 +35,7 @@ use rocketmq_classic_protocol::{
         SubscriptionData,
     },
 };
-use rocketmq_classic_remoting::client::{RemotingClient, TransportMode};
+use rocketmq_classic_remoting::client::{ClientConfig, RemotingClient, TlsConfig, TransportMode};
 use tokio::time::Instant;
 
 #[tokio::main]
@@ -43,6 +43,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     match arguments.first().map(String::as_str) {
         Some("route") if arguments.len() == 3 => route(&arguments[1], &arguments[2]).await,
+        Some("p3-raw-route") if arguments.len() == 3 => {
+            p3_raw_route(&arguments[1], &arguments[2]).await
+        }
+        Some("p3-tls") if arguments.len() == 5 => {
+            p3_tls(&arguments[1], &arguments[2], &arguments[3], &arguments[4]).await
+        }
         Some("rebalance") if arguments.len() == 4 => {
             rebalance(&arguments[1], &arguments[2], &arguments[3]).await
         }
@@ -228,6 +234,85 @@ async fn route(namesrv_address: &str, topic: &str) -> Result<(), Box<dyn Error>>
         Err(ProducerError::NoRoute(_)) => println!("NO_ROUTE\t{topic}"),
         Err(error) => return Err(error.into()),
     }
+    Ok(())
+}
+
+async fn p3_raw_route(namesrv_address: &str, topic: &str) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    remoting.update_name_server_address_list(vec![namesrv_address.to_owned()]);
+    remoting.start()?;
+    let api = MQClientApi::new(remoting.clone());
+    let route = api
+        .get_topic_route(topic, Instant::now() + Duration::from_secs(10))
+        .await?;
+    let brokers = route
+        .as_ref()
+        .map(|route| route.broker_datas_snapshot().unwrap_or_default().len())
+        .unwrap_or_default();
+    remoting.shutdown().await;
+    let counts = remoting.lifecycle_counts();
+    if brokers == 0 {
+        return Err(format!("raw route invoke returned no route for {topic}").into());
+    }
+    if counts.pending_requests != 0 || counts.connections != 0 || counts.owned_tasks != 0 {
+        return Err(format!("raw route shutdown retained resources: {counts:?}").into());
+    }
+    println!(
+        "P3\tROUTE\tFOUND\t{brokers}\t{}\t{}\t{}",
+        counts.pending_requests, counts.connections, counts.owned_tasks
+    );
+    Ok(())
+}
+
+async fn p3_tls(
+    address: &str,
+    trust_cert_path: &str,
+    mode: &str,
+    expected_outcome: &str,
+) -> Result<(), Box<dyn Error>> {
+    let ca_pem = std::fs::read(trust_cert_path)?;
+    let mut tls = TlsConfig::default();
+    tls.ca_pem = Some(ca_pem);
+    tls.test_mode = false;
+    tls.auth_server = true;
+    let remoting = RemotingClient::with_config(ClientConfig {
+        transport: TransportMode::Tls(tls),
+        connect_timeout: 5_000,
+        ..ClientConfig::default()
+    })?;
+    remoting.start()?;
+    let api = MQClientApi::new(remoting.clone());
+    let mut heartbeat = HeartbeatData {
+        client_id: Some(format!("compat-p3-rust-{mode}")),
+        ..HeartbeatData::default()
+    };
+    heartbeat.set_producer_data_set_owned(Some(vec![Some(ProducerData {
+        group_name: Some("compat_p3_tls".to_owned()),
+    })]));
+    let result = api
+        .send_heartbeat(
+            address,
+            &heartbeat,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+    let accepted = result.is_ok();
+    remoting.shutdown().await;
+    let counts = remoting.lifecycle_counts();
+    if counts.pending_requests != 0 || counts.connections != 0 || counts.owned_tasks != 0 {
+        return Err(format!("TLS shutdown retained resources: {counts:?}").into());
+    }
+    let actual = if accepted { "accepted" } else { "rejected" };
+    if actual != expected_outcome {
+        return Err(format!("unexpected TLS outcome for {mode}: {actual}").into());
+    }
+    println!(
+        "P3\tTLS\t{mode}\t{}\t{}\t{}\t{}",
+        if accepted { "ACCEPTED" } else { "REJECTED" },
+        counts.pending_requests,
+        counts.connections,
+        counts.owned_tasks,
+    );
     Ok(())
 }
 

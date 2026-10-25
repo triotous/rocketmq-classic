@@ -175,7 +175,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P0-V03" "P6-V04" "P7-V02" "P9-V03" "REQ-001-request-reply-success")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P0-V03" "P6-V04" "P7-V02" "P9-V03" "REQ-001-request-reply-success")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -229,6 +229,7 @@ case "$profile:$scenario_id" in
     basic:*) ;;
     two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c|two-broker:PROD-005-send-timeout|two-broker:P5-V02-consumer) ;;
     transaction:TX-001-commit|transaction:TX-002-rollback) ;;
+    tls:P3-V04) ;;
     host-routed:P6-V04|host-routed:P7-V02|host-routed:P9-V03) ;;
     host-routed:REQ-001-request-reply-success) ;;
     *)
@@ -238,6 +239,7 @@ case "$profile:$scenario_id" in
 esac
 case "$scenario_id:$topic" in
     ROUTE-001-get-existing-topic:compat_phase0_route|ROUTE-002-topic-not-exist:compat_phase0_missing) ;;
+    P3-V04:compat_p3_tls) ;;
     HEARTBEAT-001:-)
         if [[ "$producer_group" != "compat_phase0" ]]; then
             echo "Scenario metadata differs from the reviewed heartbeat implementation" >&2
@@ -372,7 +374,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P9-V03" && "$scenario_id" != "REQ-001-request-reply-success" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P9-V03" && "$scenario_id" != "REQ-001-request-reply-success" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -451,6 +453,7 @@ broker_addr="127.0.0.1:${ROCKETMQ_BROKER_HOST_PORT}"
 code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/pom.xml
     compat/java-reference/src/main/java/compat/LiveRouteProbe.java
+    compat/java-reference/src/main/java/compat/LiveP3RemotingProbe.java
     compat/java-reference/src/main/java/compat/LiveHeartbeatProbe.java
     compat/java-reference/src/main/java/compat/LiveProducerProbe.java
     compat/java-reference/src/main/java/compat/LiveP5ProducerProbe.java
@@ -461,7 +464,8 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveSharedRuntimeProbe.java
     compat/java-reference/src/main/java/compat/LivePullConsumerProbe.java
     compat/java-reference/src/main/java/compat/LiveRequestReplyProbe.java
-    tests/differential/delayed_response_proxy.py
+    tests/differential/delayed_response_proxy.py tests/differential/tls_broker_proxy.py
+    crates/rocketmq-classic-remoting/src/client/mod.rs
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
     integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf integration-tests/config/broker-tx.conf integration-tests/config/broker-host.conf
     integration-tests/setup.sh integration-tests/cleanup.sh
@@ -540,6 +544,10 @@ if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
 fi
 if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
     printf 'topic=%s\nsend_timeout_ms=%s\nproxy_response_delay_ms=600\nexpected_committed_messages=2\n' "$topic" "$timeout_ms" \
+        >>"$evidence_dir/metadata.txt"
+fi
+if [[ "$scenario_id" == "P3-V04" ]]; then
+    printf 'topic=%s\nraw_route=NameServer\nTLS_endpoint=local-disposable Broker proxy\n' "$topic" \
         >>"$evidence_dir/metadata.txt"
 fi
 if [[ "$scenario_id" == "P5-V02-producer" ]]; then
@@ -671,6 +679,17 @@ cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- 
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$broker_addr $consumer_group $topic p5-java-seed" exec:java@live-p5-consumer-probe
 target/debug/live_client p5-consumer $broker_addr $consumer_group $topic p5-rust-seed
 EOF
+elif [[ "$scenario_id" == "P3-V04" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=tls COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="route $namesrv_addr $topic" exec:java@live-p3-remoting-probe
+target/debug/live_client p3-raw-route $namesrv_addr $topic
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -config <evidence>/ca.cnf -keyout <evidence>/ca.key -out <evidence>/ca.pem
+openssl req -new -newkey rsa:2048 -nodes -config <evidence>/server-req.cnf -keyout <evidence>/server.key -out <evidence>/server.csr
+openssl x509 -req -in <evidence>/server.csr -CA <evidence>/ca.pem -CAkey <evidence>/ca.key -CAcreateserial -days 2 -sha256 -extfile <evidence>/server-ext.cnf -extensions server_cert -out <evidence>/server.pem
+python3 tests/differential/tls_broker_proxy.py --upstream $broker_addr --cert <evidence>/server.pem --key <evidence>/server.key --ready-file <evidence>/tls-proxy-ready.txt --log-file <evidence>/tls-proxy.tsv
+Java and Rust TLS calls use the trusted CA, then independently reject a trusted wrong-host certificate and an untrusted CA; each client shuts down before the next probe.
+EOF
 elif [[ "$scenario_id" == "P0-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic bash tests/differential/run.sh --scenario ROUTE-001-get-existing-topic
@@ -780,6 +799,7 @@ if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
 fi
 responder_pid=""
 timeout_proxy_pid=""
+tls_proxy_pid=""
 timeout_probe_pid=""
 cleanup() {
     status=$?
@@ -796,6 +816,10 @@ cleanup() {
     if [[ -n "$timeout_proxy_pid" ]] && kill -0 "$timeout_proxy_pid" 2>/dev/null; then
         kill "$timeout_proxy_pid" 2>/dev/null
         wait "$timeout_proxy_pid" 2>/dev/null
+    fi
+    if [[ -n "$tls_proxy_pid" ]] && kill -0 "$tls_proxy_pid" 2>/dev/null; then
+        kill "$tls_proxy_pid" 2>/dev/null
+        wait "$tls_proxy_pid" 2>/dev/null
     fi
     if [[ "$topic_created" == true ]]; then
         : >"$evidence_dir/topic-cleanup.log"
@@ -903,11 +927,11 @@ else
 fi
 cat "$evidence_dir/setup.log"
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P5-V02-producer" || "$scenario_id" == "P5-V02-consumer" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P3-V04" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P5-V02-producer" || "$scenario_id" == "P5-V02-consumer" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     topic_queue_count=4
-    if [[ "$scenario_id" == "P6-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "P5-V02-consumer" ]]; then
+    if [[ "$scenario_id" == "P3-V04" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "P5-V02-consumer" ]]; then
         topic_queue_count=1
     elif [[ "$scenario_id" == "REBAL-001-average-10q-3c" ]]; then
         topic_queue_count=5
@@ -2230,6 +2254,178 @@ PY
         exit 1
     fi
     printf 'PASS REQ-001-request-reply-success: Java and Rust each received exactly one correlated Broker reply from the other client; reply body and metadata matched\n' \
+        | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "P3-V04" ]]; then
+    cat >"$evidence_dir/ca.cnf" <<'EOF'
+[req]
+prompt = no
+distinguished_name = distinguished_name
+x509_extensions = ca_extensions
+[distinguished_name]
+CN = rocketmq-classic-phase19-test-ca
+[ca_extensions]
+basicConstraints = critical,CA:true
+keyUsage = critical,keyCertSign,cRLSign
+subjectKeyIdentifier = hash
+EOF
+    cat >"$evidence_dir/untrusted-ca.cnf" <<'EOF'
+[req]
+prompt = no
+distinguished_name = distinguished_name
+x509_extensions = ca_extensions
+[distinguished_name]
+CN = rocketmq-classic-phase19-untrusted-ca
+[ca_extensions]
+basicConstraints = critical,CA:true
+keyUsage = critical,keyCertSign,cRLSign
+subjectKeyIdentifier = hash
+EOF
+    cat >"$evidence_dir/server-req.cnf" <<'EOF'
+[req]
+prompt = no
+distinguished_name = distinguished_name
+[distinguished_name]
+CN = localhost
+EOF
+    cat >"$evidence_dir/server-ext.cnf" <<'EOF'
+[server_cert]
+basicConstraints = critical,CA:false
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = DNS:localhost
+EOF
+    openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 2 \
+        -config "$evidence_dir/ca.cnf" -keyout "$evidence_dir/ca.key" \
+        -out "$evidence_dir/ca.pem" >"$evidence_dir/ca-generate.log" 2>&1
+    openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 2 \
+        -config "$evidence_dir/untrusted-ca.cnf" -keyout "$evidence_dir/untrusted-ca.key" \
+        -out "$evidence_dir/untrusted-ca.pem" >>"$evidence_dir/ca-generate.log" 2>&1
+    openssl req -new -newkey rsa:2048 -nodes -sha256 \
+        -config "$evidence_dir/server-req.cnf" -keyout "$evidence_dir/server.key" \
+        -out "$evidence_dir/server.csr" >"$evidence_dir/server-generate.log" 2>&1
+    openssl x509 -req -in "$evidence_dir/server.csr" \
+        -CA "$evidence_dir/ca.pem" -CAkey "$evidence_dir/ca.key" -CAcreateserial \
+        -days 2 -sha256 -extfile "$evidence_dir/server-ext.cnf" \
+        -extensions server_cert -out "$evidence_dir/server.pem" \
+        >"$evidence_dir/server-sign.log" 2>&1
+    openssl verify -CAfile "$evidence_dir/ca.pem" "$evidence_dir/server.pem" \
+        >"$evidence_dir/server-verify.txt" 2>&1
+    python3 "$repo_root/tests/differential/tls_broker_proxy.py" \
+        --upstream "$broker_addr" --cert "$evidence_dir/server.pem" \
+        --key "$evidence_dir/server.key" --ready-file "$evidence_dir/tls-proxy-ready.txt" \
+        --log-file "$evidence_dir/tls-proxy.tsv" \
+        >"$evidence_dir/tls-proxy.stdout" 2>"$evidence_dir/tls-proxy.stderr" &
+    tls_proxy_pid=$!
+    for _ in {1..100}; do
+        if [[ -s "$evidence_dir/tls-proxy-ready.txt" ]]; then
+            break
+        fi
+        if ! kill -0 "$tls_proxy_pid" 2>/dev/null; then
+            wait "$tls_proxy_pid" 2>/dev/null || true
+            tls_proxy_pid=""
+            cat "$evidence_dir/tls-proxy.stdout" "$evidence_dir/tls-proxy.stderr" >&2 || true
+            exit 1
+        fi
+        sleep 0.1
+    done
+    if [[ ! -s "$evidence_dir/tls-proxy-ready.txt" ]]; then
+        echo "TLS Broker proxy did not become ready" >&2
+        exit 1
+    fi
+    tls_proxy_port="$(cat "$evidence_dir/tls-proxy-ready.txt")"
+    tls_localhost_addr="localhost:$tls_proxy_port"
+    tls_ip_addr="127.0.0.1:$tls_proxy_port"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="route $namesrv_addr $topic" exec:java@live-p3-remoting-probe \
+        >"$evidence_dir/java-p3-route.tsv" 2>"$evidence_dir/java-p3-route.stderr"; then
+        cat "$evidence_dir/java-p3-route.tsv" "$evidence_dir/java-p3-route.stderr" >&2 || true
+        exit 1
+    fi
+    if ! "$repo_root/target/debug/live_client" p3-raw-route "$namesrv_addr" "$topic" \
+        >"$evidence_dir/rust-p3-route.tsv" 2>"$evidence_dir/rust-p3-route.stderr"; then
+        cat "$evidence_dir/rust-p3-route.tsv" "$evidence_dir/rust-p3-route.stderr" >&2 || true
+        exit 1
+    fi
+    for mode in trusted wrong-host untrusted; do
+        tls_addr="$tls_localhost_addr"
+        ca_path="$evidence_dir/ca.pem"
+        expected_outcome=accepted
+        if [[ "$mode" == "wrong-host" ]]; then
+            tls_addr="$tls_ip_addr"
+            expected_outcome=rejected
+        elif [[ "$mode" == "untrusted" ]]; then
+            ca_path="$evidence_dir/untrusted-ca.pem"
+            expected_outcome=rejected
+        fi
+        if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+            -Dexec.args="tls $tls_addr $ca_path $mode" exec:java@live-p3-remoting-probe \
+            >"$evidence_dir/java-p3-$mode.tsv" 2>"$evidence_dir/java-p3-$mode.stderr"; then
+            cat "$evidence_dir/java-p3-$mode.tsv" "$evidence_dir/java-p3-$mode.stderr" >&2 || true
+            exit 1
+        fi
+        if ! "$repo_root/target/debug/live_client" p3-tls "$tls_addr" "$ca_path" \
+            "$mode" "$expected_outcome" >"$evidence_dir/rust-p3-$mode.tsv" \
+            2>"$evidence_dir/rust-p3-$mode.stderr"; then
+            cat "$evidence_dir/rust-p3-$mode.tsv" "$evidence_dir/rust-p3-$mode.stderr" >&2 || true
+            exit 1
+        fi
+    done
+    for _ in {1..50}; do
+        accepted_count="$(awk -F '\t' '$1 == "TLS_PROXY" && $2 == "TLS_ACCEPTED" { count++ } END { print count + 0 }' "$evidence_dir/tls-proxy.tsv")"
+        closed_count="$(awk -F '\t' '$1 == "TLS_PROXY" && $2 == "CONNECTION_CLOSED" { count++ } END { print count + 0 }' "$evidence_dir/tls-proxy.tsv")"
+        rejected_count="$(awk -F '\t' '$1 == "TLS_PROXY" && $2 ~ /^HANDSHAKE_REJECTED:/ { count++ } END { print count + 0 }' "$evidence_dir/tls-proxy.tsv")"
+        if ((accepted_count >= 2 && closed_count >= 2 && rejected_count >= 4)); then
+            break
+        fi
+        sleep 0.1
+    done
+    if [[ -n "$tls_proxy_pid" ]] && kill -0 "$tls_proxy_pid" 2>/dev/null; then
+        kill "$tls_proxy_pid" 2>/dev/null
+        wait "$tls_proxy_pid" 2>/dev/null || true
+        tls_proxy_pid=""
+    fi
+    if ! python3 - "$evidence_dir" <<'PY'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+expected = {"trusted": "ACCEPTED", "wrong-host": "REJECTED", "untrusted": "REJECTED"}
+
+def parse(path, kind):
+    rows = [line.split("\t") for line in path.read_text().splitlines() if line.startswith("P3\t")]
+    if kind == "route":
+        if len(rows) != 1 or len(rows[0]) != 7 or rows[0][:3] != ["P3", "ROUTE", "FOUND"]:
+            raise SystemExit(f"{path}: malformed raw route result {rows!r}")
+        if not rows[0][3].isdecimal() or int(rows[0][3]) < 1 or rows[0][4:] != ["0", "0", "0"]:
+            raise SystemExit(f"{path}: route shutdown leaked resources {rows[0]!r}")
+        return rows[0][2:]
+    if len(rows) != 1 or len(rows[0]) != 7 or rows[0][:2] != ["P3", "TLS"]:
+        raise SystemExit(f"{path}: malformed TLS result {rows!r}")
+    row = rows[0]
+    if row[2] not in expected or row[3] != expected[row[2]] or row[4:] != ["0", "0", "0"]:
+        raise SystemExit(f"{path}: TLS outcome or shutdown state differs {row!r}")
+    return tuple(row[2:])
+
+if parse(root / "java-p3-route.tsv", "route") != parse(root / "rust-p3-route.tsv", "route"):
+    raise SystemExit("Java/Rust raw route results differ")
+for mode in expected:
+    java = parse(root / f"java-p3-{mode}.tsv", "tls")
+    rust = parse(root / f"rust-p3-{mode}.tsv", "tls")
+    if java != rust or java[:2] != (mode, expected[mode]):
+        raise SystemExit(f"Java/Rust TLS result differs for {mode}: {java!r} != {rust!r}")
+
+proxy_rows = [line.split("\t") for line in (root / "tls-proxy.tsv").read_text().splitlines()]
+accepted = sum(len(row) >= 2 and row[1] == "TLS_ACCEPTED" for row in proxy_rows)
+closed = sum(len(row) >= 2 and row[1] == "CONNECTION_CLOSED" for row in proxy_rows)
+rejected = sum(len(row) >= 2 and row[1].startswith("HANDSHAKE_REJECTED:") for row in proxy_rows)
+if (accepted, closed, rejected) != (2, 2, 4):
+    raise SystemExit(f"TLS proxy observed accepted/closed/rejected {(accepted, closed, rejected)!r}, expected (2, 2, 4)")
+PY
+    then
+        echo "P3-V04 raw route, TLS trust checks, or shutdown lifecycle did not match" >&2
+        exit 1
+    fi
+    printf 'PASS P3-V04: Java and Rust invoked a live NameServer route, accepted the trusted TLS Broker path, rejected wrong-host and untrusted certificates, and shut down with no pending requests, channels, or worker tasks\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P6-V04" ]]; then
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \

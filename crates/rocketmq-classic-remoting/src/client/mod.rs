@@ -812,6 +812,14 @@ pub struct RemotingClient {
     inner: Arc<ClientInner>,
 }
 
+/// A point-in-time view of the remoting client's retained lifecycle state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RemotingLifecycleCounts {
+    pub pending_requests: usize,
+    pub connections: usize,
+    pub owned_tasks: usize,
+}
+
 impl RemotingClient {
     pub fn new(security: TransportMode) -> Self {
         Self::with_config(ClientConfig {
@@ -935,6 +943,44 @@ impl RemotingClient {
             socks_proxy_routes,
         });
         Ok(Self { inner })
+    }
+
+    /// Returns the number of pending requests, retained connections, and
+    /// client-owned worker handles currently held by this remoting client.
+    /// This is intended for lifecycle diagnostics after `shutdown()`.
+    pub fn lifecycle_counts(&self) -> RemotingLifecycleCounts {
+        let pending_requests = self.inner.pending.lock().unwrap().len();
+        let connections = self.inner.connections.lock().unwrap().len()
+            + self.inner.retired_connections.lock().unwrap().len();
+        let owned_tasks = self
+            .inner
+            .tasks
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|task| !task.is_finished())
+            .count()
+            + self
+                .inner
+                .callback_workers
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|task| !task.is_finished())
+                .count()
+            + usize::from(
+                self.inner
+                    .channel_event_worker
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .is_some_and(|task| !task.is_finished()),
+            );
+        RemotingLifecycleCounts {
+            pending_requests,
+            connections,
+            owned_tasks,
+        }
     }
 
     /// Returns the live Java `clientCloseSocketIfTimeout` behavior setting.

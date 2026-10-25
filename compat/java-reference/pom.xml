@@ -43,6 +43,10 @@
             <configuration><mainClass>compat.LiveRouteProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-p3-remoting-probe</id>
+            <configuration><mainClass>compat.LiveP3RemotingProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>live-heartbeat-probe</id>
             <configuration><mainClass>compat.LiveHeartbeatProbe</mainClass></configuration>
           </execution>
