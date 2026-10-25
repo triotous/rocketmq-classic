@@ -51,6 +51,10 @@
             <configuration><mainClass>compat.LiveProducerProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-p5-producer-probe</id>
+            <configuration><mainClass>compat.LiveP5ProducerProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>live-high-level-producer-probe</id>
             <configuration><mainClass>compat.LiveHighLevelProducerProbe</mainClass></configuration>
           </execution>

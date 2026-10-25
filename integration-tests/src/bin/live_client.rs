@@ -26,8 +26,9 @@ use rocketmq_classic_protocol::{
     SharedValue,
     body::{LockBatchRequestBody, UnlockBatchRequestBody},
     header::{
-        GetMaxOffsetRequestHeader, PullMessageRequestHeader, QueryConsumerOffsetRequestHeader,
-        SendMessageRequestHeaderV1, UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
+        EndTransactionRequestHeader, GetMaxOffsetRequestHeader, PullMessageRequestHeader,
+        QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1,
+        UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
     heartbeat::{HeartbeatData, ProducerData},
 };
@@ -44,6 +45,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Some("p7-producer") if arguments.len() == 3 => {
             high_level_producer_modes(&arguments[1], &arguments[2]).await
+        }
+        Some("p5-producer") if arguments.len() == 4 => {
+            p5_producer(&arguments[1], &arguments[2], &arguments[3]).await
         }
         Some("p6-shared-runtime") if arguments.len() == 6 => {
             shared_runtime_probe(
@@ -1168,6 +1172,142 @@ async fn send_with_mode(
         );
     }
     Ok(())
+}
+
+async fn p5_producer(
+    broker_address: &str,
+    topic: &str,
+    producer_group: &str,
+) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    if let Err(error) = remoting.start() {
+        remoting.shutdown().await;
+        return Err(error.into());
+    }
+    let api = MQClientApi::new(remoting.clone());
+    let operation = async {
+        let mut max_header = GetMaxOffsetRequestHeader::default();
+        max_header.set_topic(Some(topic.to_owned()));
+        max_header.set_queue_id(Some(0));
+        max_header.set_broker_name(Some("broker-a".into()));
+        let base_offset = api
+            .get_max_offset(
+                broker_address,
+                &max_header,
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await?;
+        println!("P5\tBASE\t{base_offset}");
+
+        let ids = UniqueIdGenerator::new(None);
+        for (method, kind, reply, batch) in [
+            ("send-v1", SendKind::V1, false, false),
+            ("send-v2", SendKind::V2, false, false),
+            ("batch", SendKind::Batch, false, true),
+            ("reply-v1", SendKind::ReplyV1, true, false),
+            ("reply-v2", SendKind::ReplyV2, true, false),
+        ] {
+            let mut message = Message::new(topic, format!("p5-rust-{method}").into_bytes());
+            message.set_keys(format!("compat_p5_rust_{method}"))?;
+            if reply {
+                message.set_system_property("MSG_TYPE", "reply")?;
+                message.set_system_property(
+                    "CORRELATION_ID",
+                    format!("compat-p5-correlation-{method}"),
+                )?;
+                message.set_system_property("REPLY_TO_CLIENT", "compat-p5-client")?;
+                message.set_system_property("TTL", "60000")?;
+            }
+            let message_id = ids.set_if_missing(&mut message);
+
+            let (body, request_id, header_message) = if batch {
+                let encoded = encode_compact_messages(std::slice::from_ref(&message))?;
+                let mut envelope = Message::new(topic, Vec::new());
+                let batch_id = ids.set_if_missing(&mut envelope);
+                (encoded, batch_id, envelope)
+            } else {
+                let body = message.body().to_vec();
+                (body, message_id, message)
+            };
+            let born_timestamp = i64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_millis(),
+            )?;
+            let mut header = SendMessageRequestHeaderV1::default();
+            header.set_producer_group(Some(producer_group.to_owned()));
+            header.set_topic(topic.to_owned());
+            header.set_default_topic("TBW102".into());
+            header.set_default_topic_queue_nums(4);
+            header.set_queue_id(0);
+            header.set_sys_flag(0);
+            header.set_born_timestamp(born_timestamp);
+            header.set_flag(header_message.flag());
+            header.set_properties(Some(encode_properties(&header_message.properties())));
+            header.set_reconsume_times(Some(0));
+            header.set_unit_mode(Some(false));
+            header.set_batch(Some(batch));
+            header.set_broker_name(Some("broker-a".into()));
+            let result = api
+                .send_message(
+                    broker_address,
+                    "broker-a",
+                    &header,
+                    body,
+                    &request_id,
+                    kind,
+                    SendMode::Sync,
+                    Instant::now() + Duration::from_secs(10),
+                )
+                .await?
+                .ok_or("synchronous producer RPC returned no result")?;
+            if result.offset_msg_id.as_deref().is_none_or(str::is_empty) {
+                return Err(format!("{method} returned an incomplete send result").into());
+            }
+            println!(
+                "P5\tRESULT\t{method}\t{}\t{}\t{}\t{}",
+                result.status.name(),
+                result.topic,
+                result.queue_id,
+                result.queue_offset
+            );
+        }
+
+        let mut end = EndTransactionRequestHeader::default();
+        end.set_topic(Some(topic.to_owned()));
+        end.set_producer_group(Some(producer_group.to_owned()));
+        end.set_tran_state_table_offset(Some(-1));
+        end.set_commit_log_offset(Some(-1));
+        end.set_commit_or_rollback(Some(8));
+        end.set_from_transaction_check(Some(false));
+        end.set_msg_id(Some("compat-p5-end-transaction".into()));
+        end.set_transaction_id(Some("compat-p5-transaction".into()));
+        api.end_transaction_oneway(
+            broker_address,
+            &end,
+            Some("compat-p5-end".into()),
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await?;
+        println!("P5\tRESULT\tend-transaction\tONEWAY");
+
+        let mut final_header = GetMaxOffsetRequestHeader::default();
+        final_header.set_topic(Some(topic.to_owned()));
+        final_header.set_queue_id(Some(0));
+        final_header.set_broker_name(Some("broker-a".into()));
+        let final_offset = api
+            .get_max_offset(
+                broker_address,
+                &final_header,
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await?;
+        println!("P5\tMAX\t{final_offset}");
+        Ok::<(), Box<dyn Error>>(())
+    }
+    .await;
+    remoting.shutdown().await;
+    operation
 }
 
 async fn view(
