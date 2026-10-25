@@ -366,3 +366,14 @@ message. The runner removed the topic and Compose resources; evidence is under
 [`20261025T123824Z`](evidence/phase-19/P13-V02/20261025T123824Z/). The next
 probe will locate when that offset is advanced by recording it after mode
 preparation and after each seed.
+
+Run `20261025T124251Z` on `1333586f` showed all six groups' queue 0 offsets
+were `NOT_FOUND` after mode preparation and after each seed. Before the first
+Java POP, the committed group offset was 1 while the queue was at offsets
+`0/1`; POP again returned `POLLING_NOT_FOUND`. No lifecycle assertion passed
+and Rust consumption did not run. This places the offset transition between
+the seed checks and POP request. The runner cleaned its topic and Compose
+resources; evidence is under
+[`20261025T124251Z`](evidence/phase-19/P13-V02/20261025T124251Z/). Next, the
+runner will initialize the scenario groups at offset 0 after seeding and verify
+that starting point before POP.

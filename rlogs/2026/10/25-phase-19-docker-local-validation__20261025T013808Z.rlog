@@ -212,3 +212,8 @@
 
 - Clean-source run `20261025T123824Z` on `6837d847` passed both Java seed checks. Around the first POP request, Java recorded queue 0 min/max offsets `0/1`, init mode 0, and group offset 1 both before and after the request. POP returned `POLLING_NOT_FOUND`; no lifecycle assertion passed and Rust consumption did not run. The committed offset is already past the only seeded message before POP. Evidence is under `docs/compatibility/evidence/phase-19/P13-V02/20261025T123824Z/`.
 - The isolated resources were removed. Next, record group offsets immediately after mode preparation and after each seed to identify when the offset advances. P13 remains pending; coverage remains 25/37 PASS with 12 pending. No production, remote checkout, or owner environment was accessed.
+
+## P19 P13-V02 POP offset transition retry — 2026-10-25
+
+- Clean-source run `20261025T124251Z` on `1333586f` recorded `NOT_FOUND` for all six groups' queue 0 offsets after mode preparation and after each seed. At the first Java POP call, the group offset was 1 while queue min/max were `0/1`; POP returned `POLLING_NOT_FOUND`. No lifecycle assertion passed and Rust consumption did not run. Evidence is under `docs/compatibility/evidence/phase-19/P13-V02/20261025T124251Z/`.
+- The runner removed the isolated resources. The next runner will explicitly initialize each scenario group's queue offsets to 0 after seeding, verify them, and filter diagnostic rows from the parity comparison. P13 remains pending; coverage remains 25/37 PASS with 12 pending. No production, remote checkout, or owner environment was accessed.

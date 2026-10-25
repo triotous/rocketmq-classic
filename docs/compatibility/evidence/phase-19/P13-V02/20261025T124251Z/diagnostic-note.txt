@@ -1,0 +1,14 @@
+Run: 20261025T124251Z
+Source revision: 1333586f49c9325ce708a6afe30691bc7f708958 (clean source)
+Exit status: 1
+
+All six Java/Rust POP groups had queue 0 offset NOT_FOUND after mode
+preparation. After each Java seed, their queue 0 offsets were still NOT_FOUND.
+Before the first Java POP, the probe observed queue 0 minOffset=0/maxOffset=1,
+initMode=0, and group offset 1. POP returned POLLING_NOT_FOUND. No lifecycle
+assertion passed and Rust lifecycle consumption did not run.
+
+The transition to group offset 1 occurs between the post-seed checks and the
+POP request. The runner deleted the scenario topic and removed both isolated
+Brokers, the Compose network, and project volumes. The next runner will set
+each scenario group's queue offsets to 0 after seeding and verify the values.

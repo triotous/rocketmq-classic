@@ -10715,6 +10715,9 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [ ] Run `20261025T123824Z` captured queue min/max `0/1` and group offset 1
   before and after the first POP. The group offset was already past the seeded
   message; trace when it advances before changing lifecycle assertions.
+- [ ] Run `20261025T124251Z` saw group offsets `NOT_FOUND` after prepare and
+  seeding, then 1 before POP. Initialize scenario group offsets at 0 after
+  seeding and verify before continuing.
 - [x] The runner deleted the scenario topic and removed its isolated
   two-Broker containers, network, and volumes. Coverage remains 25/37 PASS
   with 12 Phase 19 scenarios pending.
