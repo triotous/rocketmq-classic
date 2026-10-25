@@ -1,8 +1,8 @@
-use std::{env, error::Error, fmt::Write as _, sync::Arc, time::Duration};
+use std::{collections::HashSet, env, error::Error, fmt::Write as _, sync::Arc, time::Duration};
 
 use rocketmq_classic::{Producer, ProducerConfig, ProducerError};
 use rocketmq_classic_common::message::{
-    Message, decode_message_id, encode_compact_messages, encode_properties,
+    Message, MessageQueue, decode_message_id, encode_compact_messages, encode_properties,
 };
 use rocketmq_classic_common::sysflag::pull::build_pull_sys_flag;
 use rocketmq_classic_core::api::{
@@ -12,6 +12,7 @@ use rocketmq_classic_core::api::{
 use rocketmq_classic_core::unique_id::UniqueIdGenerator;
 use rocketmq_classic_protocol::{
     SharedValue,
+    body::{LockBatchRequestBody, UnlockBatchRequestBody},
     header::{
         GetMaxOffsetRequestHeader, PullMessageRequestHeader, QueryConsumerOffsetRequestHeader,
         SendMessageRequestHeaderV1, UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
@@ -89,7 +90,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset>".into()),
+        Some("lock") if arguments.len() == 7 => {
+            lock_batch(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                &arguments[5],
+                arguments[6].parse()?,
+            )
+            .await
+        }
+        Some("unlock") if arguments.len() == 7 => {
+            unlock_batch(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                &arguments[5],
+                arguments[6].parse()?,
+            )
+            .await
+        }
+        _ => Err("usage: live_client route <namesrv-address> <topic> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -617,6 +640,79 @@ async fn pull(
         result.suggest_which_broker_id,
         hex
     );
+    Ok(())
+}
+
+async fn lock_batch(
+    broker_address: &str,
+    group: &str,
+    client_id: &str,
+    topic: &str,
+    broker_name: &str,
+    queue_id: i32,
+) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    if let Err(error) = remoting.start() {
+        remoting.shutdown().await;
+        return Err(error.into());
+    }
+    let api = MQClientApi::new(remoting.clone());
+    let queue = MessageQueue::new(topic, broker_name, queue_id);
+    let mut body = LockBatchRequestBody::default();
+    body.set_consumer_group(Some(group.to_owned()));
+    body.set_client_id(Some(client_id.to_owned()));
+    body.set_only_this_broker(true);
+    body.set_mq_set(Some(SharedValue::new(HashSet::from([Some(
+        SharedValue::new(queue.clone()),
+    )]))));
+    let result = api
+        .lock_batch_mq(
+            broker_address,
+            &body,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+    remoting.shutdown().await;
+    let acquired = result?.is_some_and(|queues| queues.contains(&Some(queue.clone())));
+    println!(
+        "LOCK\t{}\t{}\t{}\t{}",
+        acquired, topic, broker_name, queue_id
+    );
+    Ok(())
+}
+
+async fn unlock_batch(
+    broker_address: &str,
+    group: &str,
+    client_id: &str,
+    topic: &str,
+    broker_name: &str,
+    queue_id: i32,
+) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    if let Err(error) = remoting.start() {
+        remoting.shutdown().await;
+        return Err(error.into());
+    }
+    let api = MQClientApi::new(remoting.clone());
+    let mut body = UnlockBatchRequestBody::default();
+    body.set_consumer_group(Some(group.to_owned()));
+    body.set_client_id(Some(client_id.to_owned()));
+    body.set_only_this_broker(true);
+    body.set_mq_set(Some(SharedValue::new(HashSet::from([Some(
+        SharedValue::new(MessageQueue::new(topic, broker_name, queue_id)),
+    )]))));
+    let result = api
+        .unlock_batch_mq(
+            broker_address,
+            &body,
+            false,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+    remoting.shutdown().await;
+    result?;
+    println!("UNLOCK\tOK");
     Ok(())
 }
 

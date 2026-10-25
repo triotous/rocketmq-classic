@@ -9,8 +9,8 @@ if [[ "${ROCKETMQ_CLASSIC_TEST_ENV:-}" != "local-disposable" ]]; then
     exit 2
 fi
 
-if [[ "${ROCKETMQ_PROFILE:-basic}" != "basic" ]]; then
-    echo "ROCKETMQ_PROFILE must name an implemented profile (currently: basic)" >&2
+if [[ "${ROCKETMQ_PROFILE:-basic}" != "basic" && "${ROCKETMQ_PROFILE:-basic}" != "two-broker" ]]; then
+    echo "ROCKETMQ_PROFILE must name an implemented profile (currently: basic or two-broker)" >&2
     exit 2
 fi
 

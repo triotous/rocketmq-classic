@@ -52,3 +52,11 @@
 
 - Implemented `P5-V02-route` using the existing Java/Rust route probes. A fresh basic-profile run created only `compat_p5_route`, compared both clients' four broker-a queues, compared both clients' `NO_ROUTE` result for `compat_p5_missing`, and cleaned the owned topic/project. Clean rerun evidence `20261025T081906Z` records revision `6300029907b78a03cb1276a434393972330bdf0d`, `source_code_dirty=false`, exit status 0.
 - Live coverage is now 12/37 passing and 25 pending. Full `run-local.sh --all` gates passed at `70e9a4d8` before this runner addition; they have not yet been rerun on `63000299`.
+
+## P19 two-Broker ORDER-001 runner implementation — 2026-10-25
+
+- Added an isolated `two-broker` Compose profile with a second pinned 5.3.4 Broker, separate store volume/config, and setup readiness that requires both `broker-a` and `broker-b`. The profile validation project `rocketmq-classic-p19-check-two-broker-20261025` listed both Brokers at `V5_3_4`; its containers, network, and volumes were removed.
+- Added Java 5.5.1 and Rust direct lock/unlock probes for `ORDER-001-lock-unlock`. The runner checks that both clients can lock an open queue, a second client is denied during Java ownership, Rust acquires after Java unlock, and Java can acquire after Rust unlock.
+- Dirty-source rehearsal `20261025T082648Z` passed all lock assertions and cleanup (`exit_status=0`, 135 seconds), but records `source_code_dirty=true`; it is retained as diagnostic evidence and is not the manifest PASS pointer. A fresh clean-source run is required after committing the implementation.
+- Focused validation before the rehearsal: Rust integration binary build, pinned offline Maven compile, shell syntax, Cargo formatting, diff whitespace, Compose config validation, and all 37 scenario manifest rows passed. Fail-closed `--check-all` now lists 24 unimplemented IDs and starts no Docker resources.
+- Source implementation, pending manifest input, and diagnostic evidence are being committed separately from the clean-run status/docs. The complete P19 local gate rerun and remaining 24 live cases are still outstanding.

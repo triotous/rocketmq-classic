@@ -154,7 +154,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "P5-V02-route")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "P5-V02-route")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic; do
     is_implemented=false
@@ -192,8 +192,8 @@ if [[ "$selection" != "scenario" ]]; then
 fi
 
 IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic <"$selected_file"
-if [[ "$profile" != "basic" ]]; then
-    echo "Scenario metadata differs from the implemented basic profile" >&2
+if [[ "$profile" != "basic" && ( "$scenario_id" != "ORDER-001-lock-unlock" || "$profile" != "two-broker" ) ]]; then
+    echo "Scenario metadata differs from the implemented profile" >&2
     exit 3
 fi
 case "$scenario_id:$topic" in
@@ -256,12 +256,18 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    ORDER-001-lock-unlock:compat_phase0_order_topic)
+        if [[ "$profile" != "two-broker" || "$producer_group" != "compat_phase0_order" ]]; then
+            echo "Lock/unlock metadata differs from the reviewed two-broker queue-lock case" >&2
+            exit 3
+        fi
+        ;;
     *)
         echo "Scenario metadata differs from the reviewed case implementations" >&2
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "P5-V02-route" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "P5-V02-route" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -324,6 +330,8 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveProducerProbe.java
     compat/java-reference/src/main/java/compat/LiveConsumerProbe.java
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
+    integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf
+    integration-tests/setup.sh integration-tests/cleanup.sh
     tests/differential/compare.py tests/differential/run.sh)
 if [[ -n "$(git -C "$repo_root" status --porcelain -- "${code_dirty_paths[@]}")" ]]; then
     source_code_dirty=true
@@ -382,6 +390,10 @@ if [[ "$scenario_id" == "P5-V02-route" ]]; then
     printf 'existing_topic=%s\nmissing_topic=%s\n' "$topic" "$missing_topic" \
         >>"$evidence_dir/metadata.txt"
 fi
+if [[ "$scenario_id" == "ORDER-001-lock-unlock" ]]; then
+    printf 'topic=%s\nqueue=broker-a:0\njava_client_id=java-order-owner\nrust_client_id=rust-order-contender\n' "$topic" \
+        >>"$evidence_dir/metadata.txt"
+fi
 {
     uname -srm
     cargo --version
@@ -391,7 +403,7 @@ fi
     docker version --format 'Docker client {{.Client.Version}} / server {{.Server.Version}}'
     docker compose version
     docker info --format 'Docker platform {{.OSType}}/{{.Architecture}}'
-    python3 - "$repo_root/integration-tests/compose.yaml" "$repo_root/integration-tests/config/broker.conf" <<'PY'
+    python3 - "$repo_root/integration-tests/compose.yaml" "$repo_root/integration-tests/config/broker.conf" "$repo_root/integration-tests/config/broker-b.conf" <<'PY'
 import hashlib
 import sys
 from pathlib import Path
@@ -401,7 +413,22 @@ for filename in sys.argv[1:]:
     print(f"sha256 {hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
 PY
 } >"$evidence_dir/toolchain.txt" 2>&1
-if [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
+if [[ "$scenario_id" == "ORDER-001-lock-unlock" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g $producer_group -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="lock $broker_addr $producer_group java-initial $topic broker-a 0" exec:java@live-consumer-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="unlock $broker_addr $producer_group java-initial $topic broker-a 0" exec:java@live-consumer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- lock $broker_addr $producer_group rust-initial $topic broker-a 0
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- unlock $broker_addr $producer_group rust-initial $topic broker-a 0
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="lock $broker_addr $producer_group java-order-owner $topic broker-a 0" exec:java@live-consumer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- lock $broker_addr $producer_group rust-order-contender $topic broker-a 0
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="unlock $broker_addr $producer_group java-order-owner $topic broker-a 0" exec:java@live-consumer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- lock $broker_addr $producer_group rust-order-contender $topic broker-a 0
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- unlock $broker_addr $producer_group rust-order-contender $topic broker-a 0
+EOF
+elif [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$broker_addr $producer_group" exec:java@live-heartbeat-probe
@@ -592,7 +619,7 @@ if ! ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
 fi
 cat "$evidence_dir/setup.log"
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "P5-V02-route" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "P5-V02-route" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateTopic -c RocketMQLocalTest -t "$topic" -r 4 -w 4 -n namesrv:9876 \
@@ -600,7 +627,7 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
         cat "$evidence_dir/topic-create.log" >&2
         exit 1
     fi
-    if [[ "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" ]]; then
+    if [[ "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" ]]; then
         echo "Creating scenario-owned subscription group $producer_group"
         if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$producer_group" -n namesrv:9876 \
             >"$evidence_dir/group-create.log" 2>&1; then
@@ -622,6 +649,8 @@ elif [[ "$scenario_id" == "CONS-003-pull-no-new-msg" ]]; then
     echo "Comparing Java/Rust pulls from an empty queue"
 elif [[ "$scenario_id" == "P5-V02-route" ]]; then
     echo "Comparing Java/Rust routes for one existing and one missing topic"
+elif [[ "$scenario_id" == "ORDER-001-lock-unlock" ]]; then
+    echo "Comparing Java/Rust queue-lock acquisition, contention, and unlock release"
 else
     echo "Querying the same route with both clients"
 fi
@@ -1109,6 +1138,106 @@ PY
         printf 'PASS %s: matching NO_NEW_MSG status and empty response body\n' "$scenario_id" \
             | tee "$evidence_dir/result.txt"
     fi
+elif [[ "$scenario_id" == "ORDER-001-lock-unlock" ]]; then
+    run_java_lock() {
+        local output_file="$1"
+        local client_id="$2"
+        if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+            -Dexec.args="lock $broker_addr $producer_group $client_id $topic broker-a 0" exec:java@live-consumer-probe \
+            >"$output_file" 2>"${output_file%.tsv}.stderr"; then
+            cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
+            return 1
+        fi
+    }
+    run_java_unlock() {
+        local output_file="$1"
+        local client_id="$2"
+        if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+            -Dexec.args="unlock $broker_addr $producer_group $client_id $topic broker-a 0" exec:java@live-consumer-probe \
+            >"$output_file" 2>"${output_file%.tsv}.stderr"; then
+            cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
+            return 1
+        fi
+    }
+    run_rust_lock() {
+        local output_file="$1"
+        local client_id="$2"
+        if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+            lock "$broker_addr" "$producer_group" "$client_id" "$topic" broker-a 0 \
+            >"$output_file" 2>"${output_file%.tsv}.stderr"; then
+            cat "${output_file%.tsv}.stderr" >&2
+            return 1
+        fi
+    }
+    run_rust_unlock() {
+        local output_file="$1"
+        local client_id="$2"
+        if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+            unlock "$broker_addr" "$producer_group" "$client_id" "$topic" broker-a 0 \
+            >"$output_file" 2>"${output_file%.tsv}.stderr"; then
+            cat "${output_file%.tsv}.stderr" >&2
+            return 1
+        fi
+    }
+    validate_lock() {
+        local output_file="$1"
+        local expected="$2"
+        awk -F '\t' -v acquired="$expected" -v topic="$topic" \
+            'NF != 5 || $1 != "LOCK" || $2 != acquired || $3 != topic || $4 != "broker-a" || $5 != 0 { exit 1 }
+             END { if (NR != 1) exit 1 }' "$output_file"
+    }
+    validate_unlock() {
+        local output_file="$1"
+        awk -F '\t' 'NF != 2 || $1 != "UNLOCK" || $2 != "OK" { exit 1 }
+            END { if (NR != 1) exit 1 }' "$output_file"
+    }
+
+    echo "Comparing Java and Rust lock acquisition and cross-client contention"
+    run_java_lock "$evidence_dir/java-initial-lock.tsv" java-initial
+    run_java_unlock "$evidence_dir/java-initial-unlock.tsv" java-initial
+    run_rust_lock "$evidence_dir/rust-initial-lock.tsv" rust-initial
+    run_rust_unlock "$evidence_dir/rust-initial-unlock.tsv" rust-initial
+    if ! cmp -s "$evidence_dir/java-initial-lock.tsv" "$evidence_dir/rust-initial-lock.tsv" \
+        || ! validate_lock "$evidence_dir/java-initial-lock.tsv" true \
+        || ! validate_unlock "$evidence_dir/java-initial-unlock.tsv" \
+        || ! validate_unlock "$evidence_dir/rust-initial-unlock.tsv"; then
+        echo "Java and Rust must both acquire and release the same unlocked queue" >&2
+        exit 1
+    fi
+    run_java_lock "$evidence_dir/java-owner-lock.tsv" java-order-owner
+    run_rust_lock "$evidence_dir/rust-contended-lock.tsv" rust-order-contender
+    if ! validate_lock "$evidence_dir/java-owner-lock.tsv" true \
+        || ! validate_lock "$evidence_dir/rust-contended-lock.tsv" false; then
+        echo "A second client must not acquire a queue while Java owns its lock" >&2
+        exit 1
+    fi
+    run_java_unlock "$evidence_dir/java-owner-unlock.tsv" java-order-owner
+    if ! validate_unlock "$evidence_dir/java-owner-unlock.tsv"; then
+        echo "Java queue unlock did not complete synchronously" >&2
+        exit 1
+    fi
+    run_rust_lock "$evidence_dir/rust-after-unlock-lock.tsv" rust-order-contender
+    if ! validate_lock "$evidence_dir/rust-after-unlock-lock.tsv" true; then
+        echo "Rust client could not acquire the queue after Java released its lock" >&2
+        exit 1
+    fi
+    run_rust_unlock "$evidence_dir/rust-owner-unlock.tsv" rust-order-contender
+    if ! validate_unlock "$evidence_dir/rust-owner-unlock.tsv"; then
+        echo "Rust queue unlock did not complete synchronously" >&2
+        exit 1
+    fi
+    run_java_lock "$evidence_dir/java-after-unlock-lock.tsv" java-final
+    if ! validate_lock "$evidence_dir/java-after-unlock-lock.tsv" true; then
+        echo "Java client could not acquire the queue after Rust released its lock" >&2
+        exit 1
+    fi
+    run_java_unlock "$evidence_dir/java-final-unlock.tsv" java-final
+    if ! validate_unlock "$evidence_dir/java-final-unlock.tsv"; then
+        echo "Final Java queue unlock did not complete synchronously" >&2
+        exit 1
+    fi
+    printf 'PASS %s: Java/Rust both acquired the unlocked queue; Rust was denied while Java held it and acquired it after Java unlock; reverse release also passed\n' "$scenario_id" \
+        | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "ROUTE-002-topic-not-exist" || "$scenario_id" == "P5-V02-route" ]]; then
     route_topics=("$topic")
     if [[ "$scenario_id" == "P5-V02-route" ]]; then
