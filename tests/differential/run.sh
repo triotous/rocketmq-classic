@@ -133,6 +133,11 @@ for scenario in selected:
         "send-v1", "send-v2", "batch", "reply-v1", "reply-v2", "end-transaction"
     ]:
         raise SystemExit("P5 producer method inventory differs from the reviewed live case")
+    if scenario_id == "P5-V02-consumer" and inputs.get("methods") != [
+        "pull", "lite-pull", "query-offset", "update-offset", "consumer-list",
+        "send-back", "lock", "unlock"
+    ]:
+        raise SystemExit("P5 consumer method inventory differs from the reviewed live case")
     producer_group = inputs.get("producer_group", inputs.get("transaction_group", inputs.get("group", "-")))
     consumer_group = inputs.get("consumer_group", inputs.get("group", "-"))
     body = inputs.get("body", "-")
@@ -170,7 +175,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route" "P5-V02-producer" "P0-V03" "P6-V04" "P7-V02" "P9-V03" "REQ-001-request-reply-success")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P0-V03" "P6-V04" "P7-V02" "P9-V03" "REQ-001-request-reply-success")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -222,7 +227,7 @@ if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
 fi
 case "$profile:$scenario_id" in
     basic:*) ;;
-    two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c|two-broker:PROD-005-send-timeout) ;;
+    two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c|two-broker:PROD-005-send-timeout|two-broker:P5-V02-consumer) ;;
     transaction:TX-001-commit|transaction:TX-002-rollback) ;;
     host-routed:P6-V04|host-routed:P7-V02|host-routed:P9-V03) ;;
     host-routed:REQ-001-request-reply-success) ;;
@@ -264,6 +269,12 @@ case "$scenario_id:$topic" in
     P5-V02-producer:compat_p5_send)
         if [[ "$profile" != "basic" ]]; then
             echo "P5 producer RPC coverage requires the basic profile" >&2
+            exit 3
+        fi
+        ;;
+    P5-V02-consumer:compat_p5_consumer)
+        if [[ "$profile" != "two-broker" || "$consumer_group" != "compat_p5_consumer" ]]; then
+            echo "P5 consumer RPC coverage requires the two-broker profile and scenario group" >&2
             exit 3
         fi
         ;;
@@ -361,7 +372,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P9-V03" && "$scenario_id" != "REQ-001-request-reply-success" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P9-V03" && "$scenario_id" != "REQ-001-request-reply-success" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -535,6 +546,10 @@ if [[ "$scenario_id" == "P5-V02-producer" ]]; then
     printf 'topic=%s\nreply_consumer_group=compat_p5_reply_group\nreply_client_id=compat-p5-client\nmethods=send-v1,send-v2,batch,reply-v1,reply-v2,end-transaction\n' "$topic" \
         >>"$evidence_dir/metadata.txt"
 fi
+if [[ "$scenario_id" == "P5-V02-consumer" ]]; then
+    printf 'topic=%s\nconsumer_group=%s\njava_client_id=compat-p5-java-consumer\nrust_client_id=compat-p5-rust-consumer\nmethods=pull,lite-pull,query-offset,update-offset,consumer-list,send-back,lock,unlock\n' "$topic" "$consumer_group" \
+        >>"$evidence_dir/metadata.txt"
+fi
 {
     uname -srm
     cargo --version
@@ -645,6 +660,16 @@ docker compose --project-name $project_name --file integration-tests/compose.yam
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_p5_reply_group -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$broker_addr $topic" exec:java@live-p5-producer-probe
 target/debug/live_client p5-producer $broker_addr $topic compat_p5_producer
+EOF
+elif [[ "$scenario_id" == "P5-V02-consumer" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker exec broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g $consumer_group -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="send $broker_addr $topic p5-java-seed" exec:java@live-producer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- send $broker_addr $topic p5-rust-seed
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="$broker_addr $consumer_group $topic p5-java-seed" exec:java@live-p5-consumer-probe
+target/debug/live_client p5-consumer $broker_addr $consumer_group $topic p5-rust-seed
 EOF
 elif [[ "$scenario_id" == "P0-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -878,11 +903,11 @@ else
 fi
 cat "$evidence_dir/setup.log"
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P5-V02-producer" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P5-V02-producer" || "$scenario_id" == "P5-V02-consumer" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     topic_queue_count=4
-    if [[ "$scenario_id" == "P6-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "PROD-005-send-timeout" ]]; then
+    if [[ "$scenario_id" == "P6-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "P5-V02-consumer" ]]; then
         topic_queue_count=1
     elif [[ "$scenario_id" == "REBAL-001-average-10q-3c" ]]; then
         topic_queue_count=5
@@ -901,7 +926,7 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
             exit 1
         fi
     fi
-    if [[ "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" ]]; then
+    if [[ "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "P5-V02-consumer" ]]; then
         echo "Creating scenario-owned subscription group $producer_group"
         if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$producer_group" -n namesrv:9876 \
             >"$evidence_dir/group-create.log" 2>&1; then
@@ -1503,6 +1528,65 @@ PY
         exit 1
     fi
     printf 'PASS P5-V02-producer: Java and Rust matched V1, V2, and batch send results, plus one-way reply V1/V2 and endTransactionOneway outcomes\n' \
+        | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "P5-V02-consumer" ]]; then
+    for client in java rust; do
+        if [[ "$client" == "java" ]]; then
+            if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+                -Dexec.args="send $broker_addr $topic p5-java-seed" \
+                exec:java@live-producer-probe >"$evidence_dir/java-seed.tsv" \
+                2>"$evidence_dir/java-seed.stderr"; then
+                cat "$evidence_dir/java-seed.tsv" "$evidence_dir/java-seed.stderr" 2>/dev/null >&2 || true
+                exit 1
+            fi
+        else
+            if ! "$repo_root/target/debug/live_client" send "$broker_addr" "$topic" p5-rust-seed \
+                >"$evidence_dir/rust-seed.tsv" 2>"$evidence_dir/rust-seed.stderr"; then
+                cat "$evidence_dir/rust-seed.tsv" "$evidence_dir/rust-seed.stderr" 2>/dev/null >&2 || true
+                exit 1
+            fi
+        fi
+    done
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="$broker_addr $consumer_group $topic p5-java-seed" \
+        exec:java@live-p5-consumer-probe >"$evidence_dir/java-p5-consumer.tsv" \
+        2>"$evidence_dir/java-p5-consumer.stderr"; then
+        cat "$evidence_dir/java-p5-consumer.tsv" "$evidence_dir/java-p5-consumer.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! "$repo_root/target/debug/live_client" p5-consumer "$broker_addr" "$consumer_group" "$topic" p5-rust-seed \
+        >"$evidence_dir/rust-p5-consumer.tsv" 2>"$evidence_dir/rust-p5-consumer.stderr"; then
+        cat "$evidence_dir/rust-p5-consumer.tsv" "$evidence_dir/rust-p5-consumer.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! python3 - "$evidence_dir/java-p5-consumer.tsv" "$evidence_dir/rust-p5-consumer.tsv" <<'PY'
+import sys
+from pathlib import Path
+
+expected = [
+    ["P5C", "PULL", "FOUND", "2", "0", "2"],
+    ["P5C", "LITE_PULL", "FOUND", "2", "0", "2"],
+    ["P5C", "UPDATE_OFFSET", "1"],
+    ["P5C", "QUERY_OFFSET", "1"],
+    ["P5C", "CONSUMER_LIST", "PRESENT"],
+    ["P5C", "SEND_BACK", "OK"],
+    ["P5C", "LOCK", "true"],
+    ["P5C", "UNLOCK", "OK"],
+]
+for path in sys.argv[1:]:
+    rows = [line.split("\t") for line in Path(path).read_text().splitlines()]
+    if rows != expected:
+        raise SystemExit(f"{path}: consumer RPC results differ from the expected Java/Rust oracle: {rows!r}")
+java = Path(sys.argv[1]).read_bytes()
+rust = Path(sys.argv[2]).read_bytes()
+if java != rust:
+    raise SystemExit("Java and Rust P5 consumer RPC result rows differ")
+PY
+    then
+        echo "Java/Rust P5 consumer RPC outcomes or queue results differ" >&2
+        exit 1
+    fi
+    printf 'PASS P5-V02-consumer: Java and Rust matched pull, lite-pull, offset, consumer-list, send-back, lock and unlock RPC outcomes\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
     echo "Delaying each direct Broker response beyond the Java/Rust 100 ms send deadline"

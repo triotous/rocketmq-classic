@@ -10,10 +10,10 @@ use rocketmq_classic::{
     TransactionProducer, create_reply_message,
 };
 use rocketmq_classic_common::message::{
-    Message, MessageExt, MessageQueue, decode_message_id, encode_compact_messages,
-    encode_properties,
+    DecodeOptions, Message, MessageExt, MessageQueue, decode_many_as_client_compatible,
+    decode_message_id, encode_compact_messages, encode_properties,
 };
-use rocketmq_classic_common::sysflag::pull::build_pull_sys_flag;
+use rocketmq_classic_common::sysflag::pull::{build_pull_sys_flag, build_pull_sys_flag_with_lite};
 use rocketmq_classic_consumer::rebalance::{
     AllocateMessageQueueAveragely, AllocateMessageQueueStrategy,
 };
@@ -26,12 +26,13 @@ use rocketmq_classic_protocol::{
     SharedValue,
     body::{LockBatchRequestBody, UnlockBatchRequestBody},
     header::{
-        EndTransactionRequestHeader, GetMaxOffsetRequestHeader, PullMessageRequestHeader,
-        QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1,
+        ConsumerSendMsgBackRequestHeader, EndTransactionRequestHeader, GetMaxOffsetRequestHeader,
+        PullMessageRequestHeader, QueryConsumerOffsetRequestHeader, SendMessageRequestHeaderV1,
         UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
     heartbeat::{
         ConsumeFromWhere, ConsumeType, ConsumerData, HeartbeatData, MessageModel, ProducerData,
+        SubscriptionData,
     },
 };
 use rocketmq_classic_remoting::client::{RemotingClient, TransportMode};
@@ -50,6 +51,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Some("p5-producer") if arguments.len() == 4 => {
             p5_producer(&arguments[1], &arguments[2], &arguments[3]).await
+        }
+        Some("p5-consumer") if arguments.len() == 5 => {
+            p5_consumer(&arguments[1], &arguments[2], &arguments[3], &arguments[4]).await
         }
         Some("p6-shared-runtime") if arguments.len() == 6 => {
             shared_runtime_probe(
@@ -187,7 +191,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -1393,6 +1397,239 @@ async fn p5_producer(
     .await;
     remoting.shutdown().await;
     operation
+}
+
+async fn p5_consumer(
+    broker_address: &str,
+    group: &str,
+    topic: &str,
+    seed_body: &str,
+) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    if let Err(error) = remoting.start() {
+        remoting.shutdown().await;
+        return Err(error.into());
+    }
+    let api = MQClientApi::new(remoting.clone());
+    let operation = async {
+        let client_id = "compat-p5-rust-consumer";
+        let heartbeat = HeartbeatData {
+            client_id: Some(client_id.to_owned()),
+            ..HeartbeatData::default()
+        };
+        let mut subscription = SubscriptionData::new(Some(topic.to_owned()), Some("*".to_owned()));
+        subscription.set_expression_type(Some("TAG".to_owned()));
+        let consumer = ConsumerData {
+            group_name: Some(group.to_owned()),
+            consume_type: Some(ConsumeType::ConsumeActively),
+            message_model: Some(MessageModel::Clustering),
+            consume_from_where: Some(ConsumeFromWhere::ConsumeFromFirstOffset),
+            subscription_data_set: Some(SharedValue::from(HashSet::from([Some(
+                SharedValue::from(subscription),
+            )]))),
+            ..ConsumerData::default()
+        };
+        heartbeat
+            .consumer_data_set
+            .as_ref()
+            .expect("default heartbeat initializes consumer set")
+            .with_mut(|consumers| {
+                consumers.insert(Some(SharedValue::from(consumer)));
+            });
+        api.send_heartbeat(
+            broker_address,
+            &heartbeat,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await?;
+
+        let ordinary = p5_pull(&api, broker_address, group, topic, false).await?;
+        if ordinary.status.name() != "FOUND" {
+            return Err(format!("ordinary pull returned {}", ordinary.status.name()).into());
+        }
+        let messages = decode_many_as_client_compatible(
+            ordinary
+                .raw_messages
+                .as_deref()
+                .ok_or("ordinary pull returned no message bytes")?,
+            DecodeOptions::default(),
+        );
+        if !messages
+            .iter()
+            .any(|message| message.body().as_ref() == seed_body.as_bytes())
+        {
+            return Err("ordinary pull did not return this client's seed message".into());
+        }
+        println!(
+            "P5C\tPULL\t{}\t{}\t{}\t{}",
+            ordinary.status.name(),
+            messages.len(),
+            ordinary.min_offset,
+            ordinary.max_offset
+        );
+
+        let lite = p5_pull(&api, broker_address, group, topic, true).await?;
+        if lite.status.name() != "FOUND" {
+            return Err(format!("lite pull returned {}", lite.status.name()).into());
+        }
+        let lite_messages = decode_many_as_client_compatible(
+            lite.raw_messages
+                .as_deref()
+                .ok_or("lite pull returned no message bytes")?,
+            DecodeOptions::default(),
+        );
+        if lite_messages.is_empty() {
+            return Err("lite pull returned no decoded messages".into());
+        }
+        println!(
+            "P5C\tLITE_PULL\t{}\t{}\t{}\t{}",
+            lite.status.name(),
+            lite_messages.len(),
+            lite.min_offset,
+            lite.max_offset
+        );
+
+        let mut update = UpdateConsumerOffsetRequestHeader::default();
+        update.set_consumer_group(Some(group.to_owned()));
+        update.set_topic(Some(topic.to_owned()));
+        update.set_queue_id(Some(0));
+        update.set_commit_offset(Some(1));
+        update.set_broker_name(Some("broker-a".to_owned()));
+        api.update_consumer_offset(
+            broker_address,
+            &update,
+            false,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await?;
+        println!("P5C\tUPDATE_OFFSET\t1");
+
+        let mut query = QueryConsumerOffsetRequestHeader::default();
+        query.set_consumer_group(Some(group.to_owned()));
+        query.set_topic(Some(topic.to_owned()));
+        query.set_queue_id(Some(0));
+        let queried = api
+            .query_consumer_offset(
+                broker_address,
+                &query,
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await?
+            .ok_or("query offset returned no stored offset")?;
+        if queried != 1 {
+            return Err(format!("query offset returned {queried} after update").into());
+        }
+        println!("P5C\tQUERY_OFFSET\t{queried}");
+
+        let consumer_ids = api
+            .get_consumer_list_by_group(
+                broker_address,
+                group,
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await?
+            .ok_or("consumer-list returned no ID list")?;
+        if !consumer_ids
+            .iter()
+            .any(|id| id.as_deref() == Some(client_id))
+        {
+            return Err("consumer-list omitted this client's registered identity".into());
+        }
+        println!("P5C\tCONSUMER_LIST\tPRESENT");
+
+        let selected = messages
+            .iter()
+            .find(|message| message.body().as_ref() == seed_body.as_bytes())
+            .ok_or("seed message disappeared from the decoded pull result")?;
+        let mut send_back = ConsumerSendMsgBackRequestHeader::default();
+        send_back.set_group(group.to_owned());
+        send_back.set_broker_name(Some("broker-a".to_owned()));
+        send_back.set_origin_topic(topic.to_owned());
+        send_back.set_offset(selected.commit_log_offset());
+        send_back.set_delay_level(3);
+        send_back.set_origin_msg_id(selected.message_id().map(str::to_owned));
+        send_back.set_max_reconsume_times(Some(16));
+        send_back.set_unit_mode(false);
+        api.consumer_send_message_back(
+            broker_address,
+            &send_back,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await?;
+        println!("P5C\tSEND_BACK\tOK");
+
+        let queue = MessageQueue::new(topic, "broker-a", 0);
+        let mut lock = LockBatchRequestBody::default();
+        lock.set_consumer_group(Some(group.to_owned()));
+        lock.set_client_id(Some(client_id.to_owned()));
+        lock.set_only_this_broker(true);
+        lock.set_mq_set(Some(SharedValue::from(HashSet::from([Some(
+            SharedValue::from(queue.clone()),
+        )]))));
+        let locked = api
+            .lock_batch_mq(
+                broker_address,
+                &lock,
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await?
+            .is_some_and(|queues| queues.contains(&Some(queue.clone())));
+        if !locked {
+            return Err("lock response omitted the requested queue".into());
+        }
+        println!("P5C\tLOCK\ttrue");
+
+        let mut unlock = UnlockBatchRequestBody::default();
+        unlock.set_consumer_group(Some(group.to_owned()));
+        unlock.set_client_id(Some(client_id.to_owned()));
+        unlock.set_only_this_broker(true);
+        unlock.set_mq_set(Some(SharedValue::from(HashSet::from([Some(
+            SharedValue::from(queue),
+        )]))));
+        api.unlock_batch_mq(
+            broker_address,
+            &unlock,
+            false,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await?;
+        println!("P5C\tUNLOCK\tOK");
+        Ok::<(), Box<dyn Error>>(())
+    }
+    .await;
+    remoting.shutdown().await;
+    operation
+}
+
+async fn p5_pull(
+    api: &MQClientApi,
+    broker_address: &str,
+    group: &str,
+    topic: &str,
+    lite: bool,
+) -> Result<rocketmq_classic_core::api::consumer::PullResultExt, Box<dyn Error>> {
+    let mut header = PullMessageRequestHeader::default();
+    header.set_consumer_group(Some(group.to_owned()));
+    header.set_topic(Some(topic.to_owned()));
+    header.set_queue_id(Some(0));
+    header.set_queue_offset(Some(0));
+    header.set_max_msg_nums(Some(32));
+    header.set_sys_flag(Some(build_pull_sys_flag_with_lite(
+        false, false, true, false, lite,
+    )));
+    header.set_commit_offset(Some(0));
+    header.set_suspend_timeout_millis(Some(0));
+    header.set_subscription(Some("*".to_owned()));
+    header.set_sub_version(Some(0));
+    header.set_expression_type(Some("TAG".to_owned()));
+    header.set_broker_name(Some("broker-a".to_owned()));
+    Ok(api
+        .pull_message(
+            broker_address,
+            &header,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await?)
 }
 
 async fn view(
