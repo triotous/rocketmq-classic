@@ -53,8 +53,9 @@ stress behavior.
 
 ## Pending local server coverage
 
-The scenario manifest contains 37 live cases. The seven cases above are the
-only ones implemented and passed by the current runner; 30 remain pending.
+The scenario manifest contains 37 live cases. The seven rows above and four
+consumer rows in the committed-revision table below are implemented and passed
+by the current runner; 26 remain pending.
 The two-Broker, TLS, ACL, and feature-specific profiles and full local matrix
 are not complete. No server limitation is inferred from an unrun case. Phase 19
 acceptance remains open until each locally reproducible case has Java/Rust
@@ -83,3 +84,24 @@ toolchains, commands, and project cleanup. The remaining 30 scenario IDs have
 no live runner, and no two-Broker, TLS, ACL, or feature-specific profile was
 executed. These seven results do not establish complete client parity or final
 release acceptance.
+
+## Current consumer probes — 2026-10-25
+
+Four basic-profile consumer cases ran on source revision
+`cb351d8ae6a67b9bdb4cbf9fdacd497602e0b9a4`. Each run used a fresh Compose
+project and reports `source_code_dirty=false`; topic and profile cleanup
+completed successfully.
+
+| Scenario | Result | Evidence |
+| --- | --- | --- |
+| `CONS-001-query-offset` | PASS — Rust read Java offset 17; Java read Rust offset 23 | [`20261025T025233Z`](evidence/phase-19/CONS-001-query-offset/20261025T025233Z/) |
+| `CONS-002-pull-found` | PASS — both clients returned `FOUND`, offsets 0–1, and the same `pull-seed` response body | [`20261025T031409Z`](evidence/phase-19/CONS-002-pull-found/20261025T031409Z/) |
+| `CONS-003-pull-no-new-msg` | PASS — both clients returned `NO_NEW_MSG` with empty response bodies | [`20261025T031529Z`](evidence/phase-19/CONS-003-pull-no-new-msg/20261025T031529Z/) |
+| `CONS-004-update-offset` | PASS — Rust read Java offset 31; Java read Rust offset 47 | [`20261025T031646Z`](evidence/phase-19/CONS-004-update-offset/20261025T031646Z/) |
+
+One clean `CONS-004` attempt timed out on the Java update RPC and was cleaned
+up without a pass; a later fresh project passed. An early `CONS-002` attempt
+also exposed that direct pulls need the Java `PullSysFlag` subscription bit;
+the probe now uses the same flag in Java and Rust. Neither diagnostic run is
+used as a passing manifest result. The 26 remaining live cases still prevent
+full Phase 19 acceptance.

@@ -10438,3 +10438,17 @@ the fixture fix commit. Details: `rlogs/2026/10/25-phase-18-timeout-fixture-dete
   approval is not supported.
 
 Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z.rlog`.
+
+## P19 basic consumer coverage addendum — 2026-10-25 (`cb351d8a`)
+
+- [x] Added Java 5.5.1 and Rust direct probes for consumer-offset query/update
+  and pull requests. Four fresh basic-profile runs pass with clean committed
+  source evidence: reciprocal offsets, a `FOUND` pull with exact response-body
+  comparison, and an empty `NO_NEW_MSG` pull. Evidence IDs are recorded in
+  `docs/compatibility/SERVER_5_3_4_RESULTS.md`.
+- [ ] P19-03/P19-V02 remains blocked: 26 of 37 live cases still lack runners.
+  The two-Broker, TLS/auth, transaction, request/reply, admin, stress and broad
+  P18-V01 audit work remains incomplete. MAN-01 through MAN-05 remain blocked,
+  and remote Docker CI has not run.
+- The committed `integration-tests/run-local.sh --all` server-free gates have
+  not yet been rerun after `cb351d8a`; a current-revision run is pending.
