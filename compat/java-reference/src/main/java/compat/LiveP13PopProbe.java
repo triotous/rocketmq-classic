@@ -11,6 +11,7 @@ import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.consumer.AckResult;
 import org.apache.rocketmq.client.consumer.AckStatus;
 import org.apache.rocketmq.client.consumer.PopResult;
+import org.apache.rocketmq.client.exception.OffsetNotFoundException;
 import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.client.impl.mqclient.MQClientAPIExt;
@@ -26,6 +27,7 @@ import org.apache.rocketmq.remoting.protocol.header.AckMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ChangeInvisibleTimeRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ExtraInfoUtil;
 import org.apache.rocketmq.remoting.protocol.header.PopMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader;
 
 /** Exercises live POP receipt lifecycle behavior against the pinned Broker. */
 public final class LiveP13PopProbe {
@@ -232,10 +234,18 @@ public final class LiveP13PopProbe {
         header.setBornTime(System.currentTimeMillis());
         header.setExpType("TAG");
         header.setExp("*");
+        MessageQueue queue = new MessageQueue(topic, BROKER_NAME, queueId);
+        long minOffset = api.getMinOffset(brokerAddress, queue, 10_000);
+        long maxOffset = api.getMaxOffset(brokerAddress, queue, 10_000);
+        String committedOffsetBefore = consumerOffset(api, brokerAddress, topic, group, queueId);
         PopResult result = api.popMessageAsync(brokerAddress, BROKER_NAME, header, 10_000)
             .get(15, TimeUnit.SECONDS);
         if (result.getPopStatus() == null || !"FOUND".equals(result.getPopStatus().name())
             || result.getMsgFoundList() == null || result.getMsgFoundList().isEmpty()) {
+            String committedOffsetAfter = consumerOffset(api, brokerAddress, topic, group, queueId);
+            System.err.printf("P13\tpop-diagnostic\tgroup=%s\tqueue=%d\tinitMode=%d\tmin=%d\tmax=%d\tgroupOffsetBefore=%s\tgroupOffsetAfter=%s\tresult=%s%n",
+                group, queueId, header.getInitMode(), minOffset, maxOffset,
+                committedOffsetBefore, committedOffsetAfter, result);
             throw new IllegalStateException("POP did not find " + expectedBody + ": " + result);
         }
         MessageExt message = result.getMsgFoundList().get(0);
@@ -243,6 +253,20 @@ public final class LiveP13PopProbe {
             throw new IllegalStateException("POP returned an unexpected body: " + Arrays.toString(message.getBody()));
         }
         return message;
+    }
+
+    private static String consumerOffset(MQClientAPIExt api, String brokerAddress, String topic,
+        String group, int queueId) throws Exception {
+        QueryConsumerOffsetRequestHeader header = new QueryConsumerOffsetRequestHeader();
+        header.setConsumerGroup(group);
+        header.setTopic(topic);
+        header.setQueueId(queueId);
+        header.setBrokerName(BROKER_NAME);
+        try {
+            return Long.toString(api.queryConsumerOffset(brokerAddress, header, 10_000));
+        } catch (OffsetNotFoundException notFound) {
+            return "NOT_FOUND";
+        }
     }
 
     private static String receipt(MessageExt message) {
