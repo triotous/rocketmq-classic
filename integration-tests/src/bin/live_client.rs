@@ -73,6 +73,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("p5-extension-consume") if arguments.len() == 4 => {
             p5_extensions(&arguments[1], &arguments[2], &arguments[3], false).await
         }
+        Some("p13-pop-consume") if arguments.len() == 4 => {
+            p13_pop_consume(&arguments[1], &arguments[2], &arguments[3]).await
+        }
         Some("p6-shared-runtime") if arguments.len() == 6 => {
             shared_runtime_probe(
                 &arguments[1],
@@ -1696,6 +1699,201 @@ async fn p5_consumer(
     .await;
     remoting.shutdown().await;
     operation
+}
+
+async fn p13_pop_consume(
+    broker_address: &str,
+    topic: &str,
+    language: &str,
+) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    remoting.start()?;
+    let api = MQClientApi::new(remoting.clone());
+    let operation = async {
+        let prefix = format!("compat_p13_pop_{language}");
+        let queue_zero_body = "p13-java-q0";
+        let queue_one_body = "p13-java-q1";
+
+        let (_first, first_receipt) = p13_pop_one(
+            &api,
+            broker_address,
+            topic,
+            &format!("{prefix}_expiry"),
+            0,
+            queue_zero_body,
+            1_000,
+        )
+        .await?;
+        tokio::time::sleep(Duration::from_millis(1_400)).await;
+        let (redelivered, redelivery_receipt) = p13_pop_one(
+            &api,
+            broker_address,
+            topic,
+            &format!("{prefix}_expiry"),
+            0,
+            queue_zero_body,
+            10_000,
+        )
+        .await?;
+        if first_receipt.raw() == redelivery_receipt.raw() {
+            return Err("expiry redelivery reused the expired POP receipt".into());
+        }
+        let ack = api
+            .ack_message(
+                broker_address,
+                &redelivery_receipt.ack_header(topic, &format!("{prefix}_expiry")),
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await?;
+        if ack.name() != "OK" {
+            return Err(format!("expiry redelivery ACK returned {}", ack.name()).into());
+        }
+        println!("P13\texpiry-redelivery\tOK\t{}", redelivered.queue_id());
+
+        let (_changed_source, old_receipt) = p13_pop_one(
+            &api,
+            broker_address,
+            topic,
+            &format!("{prefix}_change"),
+            0,
+            queue_zero_body,
+            60_000,
+        )
+        .await?;
+        let change_header = old_receipt.change_invisible_header(topic, &format!("{prefix}_change"), 120_000);
+        let changed = api
+            .change_invisible_time(
+                broker_address,
+                old_receipt.broker_name(),
+                &change_header,
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await?;
+        if changed.status.name() != "OK" {
+            return Err(format!("change-invisibility returned {}", changed.status.name()).into());
+        }
+        let replacement_raw = changed
+            .extra_info
+            .ok_or("change-invisibility omitted the replacement receipt")?;
+        if replacement_raw == old_receipt.raw() {
+            return Err("change-invisibility reused the old receipt".into());
+        }
+        let replacement = PopReceipt::parse(replacement_raw)?;
+        let ack = api
+            .ack_message(
+                broker_address,
+                &replacement.ack_header(topic, &format!("{prefix}_change")),
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await?;
+        if ack.name() != "OK" {
+            return Err(format!("replacement receipt ACK returned {}", ack.name()).into());
+        }
+        println!("P13\tchange-invisibility\tOK");
+        println!("P13\treplacement-receipt\tOK\tACKED");
+
+        let (queue_zero, receipt_zero) = p13_pop_one(
+            &api,
+            broker_address,
+            topic,
+            &format!("{prefix}_mixed"),
+            0,
+            queue_zero_body,
+            60_000,
+        )
+        .await?;
+        let (queue_one, receipt_one) = p13_pop_one(
+            &api,
+            broker_address,
+            topic,
+            &format!("{prefix}_mixed"),
+            1,
+            queue_one_body,
+            60_000,
+        )
+        .await?;
+        if queue_zero.queue_id() != 0 || queue_one.queue_id() != 1
+            || receipt_zero.queue_id() != 0 || receipt_one.queue_id() != 1
+        {
+            return Err("POP message and receipt queue mapping did not preserve queue 0/1".into());
+        }
+        for receipt in [&receipt_zero, &receipt_one] {
+            let ack = api
+                .ack_message(
+                    broker_address,
+                    &receipt.ack_header(topic, &format!("{prefix}_mixed")),
+                    Instant::now() + Duration::from_secs(10),
+                )
+                .await?;
+            if ack.name() != "OK" {
+                return Err(format!("mixed queue ACK returned {}", ack.name()).into());
+            }
+        }
+        println!("P13\tmixed-queue-mapping\tOK\t0,1");
+
+        if PopReceipt::parse("17 123 456 2 1 broker-a 4 nope").is_ok() {
+            return Err("Rust accepted malformed POP extra-info".into());
+        }
+        println!("P13\tmalformed-extra-info-rejected\tOK");
+        println!("P13\tpop-delivery\tOK\t5");
+        println!("P13\tack\tOK\t4");
+        Ok::<(), Box<dyn Error>>(())
+    }
+    .await;
+    remoting.shutdown().await;
+    operation
+}
+
+async fn p13_pop_one(
+    api: &MQClientApi,
+    broker_address: &str,
+    topic: &str,
+    group: &str,
+    queue_id: i32,
+    expected_body: &str,
+    invisible_time: i64,
+) -> Result<(MessageExt, PopReceipt), Box<dyn Error>> {
+    let born_time = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_millis(),
+    )?;
+    let mut header = PopMessageRequestHeader::default();
+    header.set_consumer_group(Some(group.to_owned()));
+    header.set_topic(Some(topic.to_owned()));
+    header.set_queue_id(queue_id);
+    header.set_max_msg_nums(1);
+    header.set_invisible_time(invisible_time);
+    header.set_poll_time(0);
+    header.set_born_time(born_time);
+    header.set_exp_type(Some("TAG".to_owned()));
+    header.set_exp(Some("*".to_owned()));
+    let reply = api
+        .pop_message(
+            broker_address,
+            &header,
+            Instant::now() + Duration::from_secs(15),
+        )
+        .await?;
+    if reply.status.name() != "FOUND" {
+        return Err(format!("POP returned {} for {expected_body}", reply.status.name()).into());
+    }
+    let raw = reply.raw_messages.ok_or("successful POP omitted message bytes")?;
+    let mut messages = decode_many_as_client_compatible(&raw, DecodeOptions::default());
+    if messages.len() != 1 || messages[0].body().as_ref() != expected_body.as_bytes() {
+        return Err(format!("POP returned an unexpected message for {expected_body}").into());
+    }
+    let message = messages.remove(0);
+    let raw_receipt = message
+        .properties()
+        .get("POP_CK")
+        .ok_or("POP result omitted POP_CK")?
+        .clone();
+    let receipt = PopReceipt::parse(raw_receipt)?;
+    if message.queue_id() != queue_id || receipt.queue_id() != queue_id {
+        return Err(format!("POP queue {queue_id} mapped to message/receipt {}/{}", message.queue_id(), receipt.queue_id()).into());
+    }
+    Ok((message, receipt))
 }
 
 async fn p5_extensions(

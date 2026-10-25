@@ -67,6 +67,10 @@
             <configuration><mainClass>compat.LiveP5ExtensionsProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-p13-pop-probe</id>
+            <configuration><mainClass>compat.LiveP13PopProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>live-high-level-producer-probe</id>
             <configuration><mainClass>compat.LiveHighLevelProducerProbe</mainClass></configuration>
           </execution>
