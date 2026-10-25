@@ -121,7 +121,7 @@ for scenario in selected:
     profile = scenario.get("profile")
     inputs = scenario.get("inputs", {})
     topic = inputs.get("topic", "-")
-    producer_group = inputs.get("producer_group", inputs.get("group", "-"))
+    producer_group = inputs.get("producer_group", inputs.get("group", inputs.get("transaction_group", "-")))
     body = inputs.get("body", "-")
     key_prefix = inputs.get("key_prefix", "-")
     java_expected_max_offset = inputs.get("java_expected_max_offset", "-")
@@ -157,7 +157,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "P5-V02-route")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids; do
     is_implemented=false
@@ -271,12 +271,22 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    TX-001-commit:compat_phase0_tx|TX-002-rollback:compat_phase0_tx)
+        expected_transaction_key="compat_tx_commit"
+        if [[ "$scenario_id" == "TX-002-rollback" ]]; then
+            expected_transaction_key="compat_tx_rollback"
+        fi
+        if [[ "$profile" != "basic" || "$producer_group" != "compat_phase0_tx_group" || "$key_prefix" != "$expected_transaction_key" || "$body" != "transaction-body" ]]; then
+            echo "Transaction metadata differs from the reviewed local commit/rollback cases" >&2
+            exit 3
+        fi
+        ;;
     *)
         echo "Scenario metadata differs from the reviewed case implementations" >&2
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "P5-V02-route" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -339,6 +349,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveProducerProbe.java
     compat/java-reference/src/main/java/compat/LiveConsumerProbe.java
     compat/java-reference/src/main/java/compat/LiveRebalanceProbe.java
+    compat/java-reference/src/main/java/compat/LiveTransactionProbe.java
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
     integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf
     integration-tests/setup.sh integration-tests/cleanup.sh
@@ -448,6 +459,18 @@ ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PRO
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 5 -w 5 -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic $consumer_ids" exec:java@live-rebalance-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- rebalance $namesrv_addr $topic $consumer_ids
+EOF
+elif [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" ]]; then
+    transaction_decision="commit"
+    if [[ "$scenario_id" == "TX-002-rollback" ]]; then
+        transaction_decision="rollback"
+    fi
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic $producer_group $transaction_decision ${key_prefix}_java $body" exec:java@live-transaction-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- transaction $namesrv_addr $topic $producer_group $transaction_decision ${key_prefix}_rust $body
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- max-offset $broker_addr $topic 0
 EOF
 elif [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -640,12 +663,14 @@ if ! ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
 fi
 cat "$evidence_dir/setup.log"
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "P5-V02-route" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P5-V02-route" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     topic_queue_count=4
     if [[ "$scenario_id" == "REBAL-001-average-10q-3c" ]]; then
         topic_queue_count=5
+    elif [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" ]]; then
+        topic_queue_count=1
     fi
     if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateTopic -c RocketMQLocalTest -t "$topic" -r "$topic_queue_count" -w "$topic_queue_count" -n namesrv:9876 \
         >"$evidence_dir/topic-create.log" 2>&1; then
@@ -1305,6 +1330,57 @@ PY
     fi
     printf 'PASS %s: Java and Rust matched all 10 live Broker queues with a 4/3/3 assignment split\n' "$scenario_id" \
         | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" ]]; then
+    transaction_decision="commit"
+    expected_state="COMMIT_MESSAGE"
+    expected_max_offset=2
+    if [[ "$scenario_id" == "TX-002-rollback" ]]; then
+        transaction_decision="rollback"
+        expected_state="ROLLBACK_MESSAGE"
+        expected_max_offset=0
+    fi
+    java_key="${key_prefix}_java"
+    rust_key="${key_prefix}_rust"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="$namesrv_addr $topic $producer_group $transaction_decision $java_key $body" \
+        exec:java@live-transaction-probe >"$evidence_dir/java-transaction.tsv" \
+        2>"$evidence_dir/java-transaction.stderr"; then
+        cat "$evidence_dir/java-transaction.tsv" "$evidence_dir/java-transaction.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        transaction "$namesrv_addr" "$topic" "$producer_group" "$transaction_decision" "$rust_key" "$body" \
+        >"$evidence_dir/rust-transaction.tsv" 2>"$evidence_dir/rust-transaction.stderr"; then
+        cat "$evidence_dir/rust-transaction.stderr" >&2
+        exit 1
+    fi
+    if ! awk -F '\t' -v state="$expected_state" -v key="$java_key" \
+        'NF != 5 || $1 != "TX" || $2 != "SEND_OK" || $3 != state || $4 != key || $5 == "" { exit 1 }
+         END { if (NR != 1) exit 1 }' "$evidence_dir/java-transaction.tsv"; then
+        echo "Java transaction send result does not match expected state $expected_state" >&2
+        exit 1
+    fi
+    if ! awk -F '\t' -v state="$expected_state" -v key="$rust_key" \
+        'NF != 5 || $1 != "TX" || $2 != "SEND_OK" || $3 != state || $4 != key || $5 == "" { exit 1 }
+         END { if (NR != 1) exit 1 }' "$evidence_dir/rust-transaction.tsv"; then
+        echo "Rust transaction send result does not match expected state $expected_state" >&2
+        exit 1
+    fi
+    sleep 2
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        max-offset "$broker_addr" "$topic" 0 >"$evidence_dir/queue-max-offset.tsv" \
+        2>"$evidence_dir/queue-max-offset.stderr"; then
+        cat "$evidence_dir/queue-max-offset.stderr" >&2
+        exit 1
+    fi
+    if ! awk -F '\t' -v expected="$expected_max_offset" \
+        'NF != 2 || $1 != "MAX_OFFSET" || $2 != expected { exit 1 }
+         END { if (NR != 1) exit 1 }' "$evidence_dir/queue-max-offset.tsv"; then
+        echo "Broker queue max offset differs from expected $expected_max_offset" >&2
+        exit 1
+    fi
+    printf 'PASS %s: Java/Rust decisions matched and Broker queue max offset was %s\n' \
+        "$scenario_id" "$expected_max_offset" | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "ROUTE-002-topic-not-exist" || "$scenario_id" == "P5-V02-route" ]]; then
     route_topics=("$topic")
     if [[ "$scenario_id" == "P5-V02-route" ]]; then

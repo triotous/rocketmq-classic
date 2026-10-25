@@ -59,6 +59,10 @@
             <configuration><mainClass>compat.LiveRebalanceProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-transaction-probe</id>
+            <configuration><mainClass>compat.LiveTransactionProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-inbound-routing-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

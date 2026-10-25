@@ -1,8 +1,14 @@
-use std::{collections::HashSet, env, error::Error, fmt::Write as _, sync::Arc, time::Duration};
+use std::{
+    any::Any, collections::HashSet, env, error::Error, fmt::Write as _, sync::Arc, time::Duration,
+};
 
-use rocketmq_classic::{Producer, ProducerConfig, ProducerError};
+use rocketmq_classic::{
+    LocalTransactionState, Producer, ProducerConfig, ProducerError, TransactionCallbackError,
+    TransactionListener, TransactionProducer,
+};
 use rocketmq_classic_common::message::{
-    Message, MessageQueue, decode_message_id, encode_compact_messages, encode_properties,
+    Message, MessageExt, MessageQueue, decode_message_id, encode_compact_messages,
+    encode_properties,
 };
 use rocketmq_classic_common::sysflag::pull::build_pull_sys_flag;
 use rocketmq_classic_consumer::rebalance::{
@@ -32,6 +38,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("route") if arguments.len() == 3 => route(&arguments[1], &arguments[2]).await,
         Some("rebalance") if arguments.len() == 4 => {
             rebalance(&arguments[1], &arguments[2], &arguments[3]).await
+        }
+        Some("transaction") if arguments.len() == 7 => {
+            transaction(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                &arguments[5],
+                &arguments[6],
+            )
+            .await
+        }
+        Some("max-offset") if arguments.len() == 4 => {
+            max_offset(&arguments[1], &arguments[2], arguments[3].parse()?).await
         }
         Some("heartbeat") if arguments.len() == 3 => {
             heartbeat(&arguments[1], &arguments[2]).await
@@ -118,7 +138,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -213,6 +233,66 @@ async fn rebalance(
             .join(",");
         println!("ASSIGN\t{consumer_id}\t{queue_keys}");
     }
+    Ok(())
+}
+
+struct FixedTransactionListener {
+    state: LocalTransactionState,
+}
+
+impl TransactionListener for FixedTransactionListener {
+    fn execute_local_transaction(
+        &self,
+        _message: &mut Message,
+        _argument: Option<&(dyn Any + Send + Sync)>,
+    ) -> Result<Option<LocalTransactionState>, TransactionCallbackError> {
+        Ok(Some(self.state))
+    }
+
+    fn check_local_transaction(
+        &self,
+        _message: &mut MessageExt,
+    ) -> Result<Option<LocalTransactionState>, TransactionCallbackError> {
+        Ok(Some(LocalTransactionState::Unknown))
+    }
+}
+
+async fn transaction(
+    namesrv_address: &str,
+    topic: &str,
+    producer_group: &str,
+    decision: &str,
+    key: &str,
+    body: &str,
+) -> Result<(), Box<dyn Error>> {
+    let state = match decision {
+        "commit" => LocalTransactionState::Commit,
+        "rollback" => LocalTransactionState::Rollback,
+        _ => return Err("transaction decision must be commit or rollback".into()),
+    };
+    let mut config = ProducerConfig::new(producer_group)?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    let producer = TransactionProducer::new(config);
+    producer.set_transaction_listener(Some(Arc::new(FixedTransactionListener { state })));
+    producer.start().await?;
+
+    let mut message = Message::new(topic, body.as_bytes().to_vec());
+    message.set_keys(key.to_owned())?;
+    let sent = producer
+        .send_message_in_transaction(&mut message, None)
+        .await;
+    let shutdown = producer.shutdown().await;
+    shutdown?;
+    let result = sent?;
+    println!(
+        "TX\t{}\t{}\t{}\t{}",
+        result.send_result.status.name(),
+        result.local_transaction_state.java_name(),
+        key,
+        result.send_result.msg_id
+    );
     Ok(())
 }
 
@@ -619,6 +699,33 @@ async fn offset_query(
     remoting.shutdown().await;
     let offset = result?.ok_or("Broker reported that the consumer offset was not found")?;
     println!("OFFSET\t{offset}");
+    Ok(())
+}
+
+async fn max_offset(
+    broker_address: &str,
+    topic: &str,
+    queue_id: i32,
+) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    if let Err(error) = remoting.start() {
+        remoting.shutdown().await;
+        return Err(error.into());
+    }
+    let api = MQClientApi::new(remoting.clone());
+    let mut header = GetMaxOffsetRequestHeader::default();
+    header.set_topic(Some(topic.to_owned()));
+    header.set_queue_id(Some(queue_id));
+    header.set_broker_name(Some("broker-a".to_owned()));
+    let result = api
+        .get_max_offset(
+            broker_address,
+            &header,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+    remoting.shutdown().await;
+    println!("MAX_OFFSET\t{}", result?);
     Ok(())
 }
 
