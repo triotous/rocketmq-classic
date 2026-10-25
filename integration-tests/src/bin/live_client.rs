@@ -657,6 +657,7 @@ async fn request_reply_request(
     config
         .client_config_mut()
         .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    config.set_topics(Some(vec![topic.to_owned()].into()));
     config.set_send_timeout_millis(10_000);
     let producer = Arc::new(Producer::new(config));
     producer.set_send_message_with_vip_channel(false);
