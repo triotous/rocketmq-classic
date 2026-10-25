@@ -69,6 +69,7 @@ public final class LiveRequestReplyProbe {
                     result.offer("SEND_OK\t" + reply.getTopic() + "\t"
                         + request.getProperty("CORRELATION_ID"));
                 } catch (Exception error) {
+                    error.printStackTrace(System.err);
                     result.offer("ERROR\t" + error.getClass().getName() + "\t" + error.getMessage());
                     return ConsumeConcurrentlyStatus.RECONSUME_LATER;
                 }
