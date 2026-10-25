@@ -2,6 +2,9 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# The live probe uses lifecycle snapshots that are compiled only for this
+# differential harness, keeping those diagnostics out of normal crate builds.
+export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--cfg=rocketmq_classic_test_support"
 manifest="$repo_root/tests/differential/scenarios.yaml"
 scenario_ids=()
 scenario_id_count=0

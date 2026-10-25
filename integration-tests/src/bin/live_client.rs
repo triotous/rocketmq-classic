@@ -56,6 +56,30 @@ use rocketmq_classic_protocol::{
 use rocketmq_classic_remoting::client::{ClientConfig, RemotingClient, TlsConfig, TransportMode};
 use tokio::time::Instant;
 
+#[derive(Debug, Clone, Copy)]
+struct LifecycleCounts {
+    pending_requests: usize,
+    connections: usize,
+    owned_tasks: usize,
+}
+
+fn remoting_lifecycle_counts(client: &RemotingClient) -> Result<LifecycleCounts, Box<dyn Error>> {
+    #[cfg(rocketmq_classic_test_support)]
+    {
+        let counts = client.lifecycle_counts();
+        Ok(LifecycleCounts {
+            pending_requests: counts.pending_requests,
+            connections: counts.connections,
+            owned_tasks: counts.owned_tasks,
+        })
+    }
+    #[cfg(not(rocketmq_classic_test_support))]
+    {
+        let _ = client;
+        Err("lifecycle diagnostics require tests/differential/run.sh".into())
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
@@ -937,7 +961,7 @@ async fn p11_push_retry_probe(
 
         consumer.shutdown().await?;
         assert_p11_runtime_stopped(&runtime, &manager, &format!("Rust Push cycle {cycle}"))?;
-        let counts = runtime.remoting().lifecycle_counts();
+        let counts = remoting_lifecycle_counts(&runtime.remoting())?;
         println!(
             "P11\tCYCLE\trust\t{cycle}\t{}\t{}\t{}\t{}",
             counts.pending_requests,
@@ -1000,7 +1024,7 @@ fn assert_p11_runtime_stopped(
     manager: &ClientRuntimeManager,
     owner: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let counts = runtime.remoting().lifecycle_counts();
+    let counts = remoting_lifecycle_counts(&runtime.remoting())?;
     let factories_empty = manager.factory_table().is_empty()?;
     if runtime.state() != RuntimeState::Stopped
         || !factories_empty
@@ -1089,7 +1113,7 @@ async fn p3_raw_route(namesrv_address: &str, topic: &str) -> Result<(), Box<dyn 
         .map(|route| route.broker_datas_snapshot().unwrap_or_default().len())
         .unwrap_or_default();
     remoting.shutdown().await;
-    let counts = remoting.lifecycle_counts();
+    let counts = remoting_lifecycle_counts(&remoting)?;
     if brokers == 0 {
         return Err(format!("raw route invoke returned no route for {topic}").into());
     }
@@ -1137,7 +1161,7 @@ async fn p3_tls(
         .await;
     let accepted = result.is_ok();
     remoting.shutdown().await;
-    let counts = remoting.lifecycle_counts();
+    let counts = remoting_lifecycle_counts(&remoting)?;
     if counts.pending_requests != 0 || counts.connections != 0 || counts.owned_tasks != 0 {
         return Err(format!("TLS shutdown retained resources: {counts:?}").into());
     }
@@ -1188,7 +1212,7 @@ async fn p16_auth(address: &str, mode: &str) -> Result<(), Box<dyn Error>> {
         .await;
     let accepted = result.is_ok();
     remoting.shutdown().await;
-    let counts = remoting.lifecycle_counts();
+    let counts = remoting_lifecycle_counts(&remoting)?;
     if counts.pending_requests != 0 || counts.connections != 0 || counts.owned_tasks != 0 {
         return Err(format!("ACL shutdown retained resources: {counts:?}").into());
     }
@@ -1249,7 +1273,7 @@ async fn p16_tls(
         .await;
     let accepted = result.is_ok();
     remoting.shutdown().await;
-    let counts = remoting.lifecycle_counts();
+    let counts = remoting_lifecycle_counts(&remoting)?;
     if counts.pending_requests != 0 || counts.connections != 0 || counts.owned_tasks != 0 {
         return Err(format!("TLS shutdown retained resources: {counts:?}").into());
     }
@@ -1858,7 +1882,7 @@ async fn producer_lifecycle_probe(
         producer.shutdown().await?;
         let deadline = Instant::now() + Duration::from_secs(5);
         let counts = loop {
-            let counts = runtime.remoting().lifecycle_counts();
+            let counts = remoting_lifecycle_counts(&runtime.remoting())?;
             let factories_empty = manager.factory_table().is_empty()?;
             if counts.pending_requests == 0
                 && counts.connections == 0

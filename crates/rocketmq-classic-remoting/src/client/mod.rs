@@ -813,6 +813,7 @@ pub struct RemotingClient {
 }
 
 /// A point-in-time view of the remoting client's retained lifecycle state.
+#[cfg(rocketmq_classic_test_support)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RemotingLifecycleCounts {
     pub pending_requests: usize,
@@ -948,6 +949,7 @@ impl RemotingClient {
     /// Returns the number of pending requests, retained connections, and
     /// client-owned worker handles currently held by this remoting client.
     /// This is intended for lifecycle diagnostics after `shutdown()`.
+    #[cfg(rocketmq_classic_test_support)]
     pub fn lifecycle_counts(&self) -> RemotingLifecycleCounts {
         let pending_requests = self.inner.pending.lock().unwrap().len();
         let connections = self.inner.connections.lock().unwrap().len()

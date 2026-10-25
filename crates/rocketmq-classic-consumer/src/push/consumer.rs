@@ -1246,9 +1246,10 @@ impl PushConsumer {
             .map_err(|error| PushConsumerError::InvalidSubscription(error.to_string()))?;
         write_lock(&self.subscriptions).insert(topic, subscription);
         if let Some(runtime) = runtime {
-            let heartbeat = runtime.send_heartbeat_to_all_brokers().await;
-            runtime.rebalance_immediately();
-            heartbeat?;
+            // Java updates its local subscription table, then makes one
+            // best-effort heartbeat attempt. Subscription does not trigger a
+            // rebalance, and heartbeat failures are contained by Java.
+            let _ = runtime.send_heartbeat_to_all_brokers().await;
         }
         Ok(())
     }
@@ -1282,30 +1283,21 @@ impl PushConsumer {
         );
         write_lock(&self.subscriptions).insert(topic, subscription);
         if let Some(runtime) = runtime {
-            let heartbeat = runtime.send_heartbeat_to_all_brokers().await;
-            runtime.rebalance_immediately();
-            heartbeat?;
+            let _ = runtime.send_heartbeat_to_all_brokers().await;
         }
         Ok(())
     }
 
     pub async fn unsubscribe(&self, topic: &str) -> Result<bool, PushConsumerError> {
         let state = self.state.lock().await;
-        let runtime = match &*state {
-            State::Created => None,
-            State::Started { runtime, .. } => runtime.upgrade(),
+        match &*state {
+            State::Created | State::Started { .. } => {}
             State::Shutdown => return Err(PushConsumerError::Shutdown),
-        };
+        }
         drop(state);
         // Java's facade passes the argument through without applying the
         // namespace here, unlike subscribe().
-        let removed = write_lock(&self.subscriptions).remove(topic).is_some();
-        if removed {
-            if let Some(runtime) = runtime {
-                runtime.rebalance_immediately();
-            }
-        }
-        Ok(removed)
+        Ok(write_lock(&self.subscriptions).remove(topic).is_some())
     }
 
     /// Returns Java `MQConsumerInner.subscriptions()` values.
@@ -3274,48 +3266,18 @@ impl PushConsumer {
             __phase18_header_1
         };
         let pull_started = Instant::now();
-        let pull_result = match context
+        let pull_result = context
             .runtime
             .api()
             .pull_message(&broker_address, &header, deadline)
             .await
-        {
-            Ok(result) => result,
-            Err(error) => {
-                if matches!(
-                    &error,
-                    rocketmq_classic_core::error::RpcError::Response { code, .. }
-                        if *code == response::SUBSCRIPTION_NOT_LATEST
-                ) {
-                    // A Broker may reject a pull issued with a newer
-                    // subscription version when the update heartbeat lost
-                    // the shared try-lock race. Retry the heartbeat so the
-                    // pull loop can converge without waiting for its timer.
-                    if let Err(heartbeat_error) =
-                        context.runtime.send_heartbeat_to_all_brokers().await
-                    {
-                        tracing::debug!(
-                            error = %heartbeat_error,
-                            "push subscription refresh heartbeat failed after stale-subscription response"
-                        );
-                    }
-                }
-                return Err(self.pull_retry_error_from_rpc(error));
-            }
-        };
-        // A long-poll can finish after `subscribe` has replaced this topic's
-        // expression. Filter its response with the current local subscription
-        // so an in-flight request cannot deliver messages from the old one.
-        let result_subscription = read_lock(&self.subscriptions)
-            .get(topic)
-            .cloned()
-            .unwrap_or_else(|| subscription.clone());
+            .map_err(|error| self.pull_retry_error_from_rpc(error))?;
         let mut processed = self
             .pull_api
             .process_pull_result(
                 queue,
                 pull_result,
-                &result_subscription,
+                &subscription,
                 DecodeOptions {
                     read_body: client_config.decode_read_body(),
                     decompress_body: client_config.decode_decompress_body(),
