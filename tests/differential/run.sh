@@ -133,6 +133,7 @@ for scenario in selected:
     java_offset = inputs.get("java_offset", "-")
     rust_offset = inputs.get("rust_offset", "-")
     pull_offset = inputs.get("pull_offset", "-")
+    missing_topic = inputs.get("missing_topic", "-")
     if not isinstance(profile, str) or not profile:
         raise SystemExit(f"{scenario_id}: missing profile")
     if not isinstance(key_prefix, str) or not key_prefix:
@@ -141,7 +142,7 @@ for scenario in selected:
         f"{scenario_id}\t{profile}\t{topic}\t{producer_group}\t{body}\t{key_prefix}\t"
         f"{java_expected_max_offset}\t{rust_expected_max_offset}\t"
         f"{java_expected_queue_offset}\t{rust_expected_queue_offset}\t{message_count}\t"
-        f"{java_offset}\t{rust_offset}\t{queue_id}\t{pull_offset}"
+        f"{java_offset}\t{rust_offset}\t{queue_id}\t{pull_offset}\t{missing_topic}"
     )
 PY
 then
@@ -153,9 +154,9 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "P5-V02-route")
 unsupported=()
-while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset; do
+while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic; do
     is_implemented=false
     for implemented_id in "${implemented[@]}"; do
         if [[ "$scenario_id" == "$implemented_id" ]]; then
@@ -190,7 +191,7 @@ if [[ "$selection" != "scenario" ]]; then
     exit 0
 fi
 
-IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset <"$selected_file"
+IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic <"$selected_file"
 if [[ "$profile" != "basic" ]]; then
     echo "Scenario metadata differs from the implemented basic profile" >&2
     exit 3
@@ -249,12 +250,18 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    P5-V02-route:compat_p5_route)
+        if [[ "$missing_topic" != "compat_p5_missing" ]]; then
+            echo "P5 route metadata differs from the reviewed existing/missing topic pair" >&2
+            exit 3
+        fi
+        ;;
     *)
         echo "Scenario metadata differs from the reviewed case implementations" >&2
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "P5-V02-route" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -371,6 +378,10 @@ if [[ "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pul
     printf 'queue_id=%s\npull_offset=%s\nbody=%s\n' "$queue_id" "$pull_offset" "$body" \
         >>"$evidence_dir/metadata.txt"
 fi
+if [[ "$scenario_id" == "P5-V02-route" ]]; then
+    printf 'existing_topic=%s\nmissing_topic=%s\n' "$topic" "$missing_topic" \
+        >>"$evidence_dir/metadata.txt"
+fi
 {
     uname -srm
     cargo --version
@@ -420,6 +431,15 @@ EOF
     cat >>"$evidence_dir/commands.txt" <<EOF
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="pull $broker_addr $producer_group $topic $queue_id $pull_offset" exec:java@live-consumer-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- pull $broker_addr $producer_group $topic $queue_id $pull_offset
+EOF
+elif [[ "$scenario_id" == "P5-V02-route" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic" exec:java@live-route-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- route $namesrv_addr $topic
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $missing_topic" exec:java@live-route-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- route $namesrv_addr $missing_topic
 EOF
 elif [[ "$scenario_id" == "PROD-001-sync-send" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -572,7 +592,7 @@ if ! ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
 fi
 cat "$evidence_dir/setup.log"
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "P5-V02-route" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateTopic -c RocketMQLocalTest -t "$topic" -r 4 -w 4 -n namesrv:9876 \
@@ -600,6 +620,8 @@ elif [[ "$scenario_id" == "CONS-002-pull-found" ]]; then
     echo "Seeding one message and comparing Java/Rust pull status, offsets, and body"
 elif [[ "$scenario_id" == "CONS-003-pull-no-new-msg" ]]; then
     echo "Comparing Java/Rust pulls from an empty queue"
+elif [[ "$scenario_id" == "P5-V02-route" ]]; then
+    echo "Comparing Java/Rust routes for one existing and one missing topic"
 else
     echo "Querying the same route with both clients"
 fi
@@ -1087,47 +1109,69 @@ PY
         printf 'PASS %s: matching NO_NEW_MSG status and empty response body\n' "$scenario_id" \
             | tee "$evidence_dir/result.txt"
     fi
-elif [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "ROUTE-002-topic-not-exist" ]]; then
-    echo "Querying the same route with both clients"
-    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-        -Dexec.args="$namesrv_addr $topic" exec:java@live-route-probe \
-        >"$evidence_dir/java-route.tsv" 2>"$evidence_dir/java-route.stderr"; then
-        cat "$evidence_dir/java-route.tsv" "$evidence_dir/java-route.stderr" 2>/dev/null >&2 || true
-        exit 1
+elif [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "ROUTE-002-topic-not-exist" || "$scenario_id" == "P5-V02-route" ]]; then
+    route_topics=("$topic")
+    if [[ "$scenario_id" == "P5-V02-route" ]]; then
+        route_topics+=("$missing_topic")
     fi
-    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- route "$namesrv_addr" "$topic" \
-        >"$evidence_dir/rust-route.tsv" 2>"$evidence_dir/rust-route.stderr"; then
-        cat "$evidence_dir/rust-route.stderr" >&2
-        exit 1
-    fi
-    if [[ ! -s "$evidence_dir/java-route.tsv" || ! -s "$evidence_dir/rust-route.tsv" ]]; then
-        echo "A client produced empty route evidence" >&2
-        exit 1
-    fi
-    if ! cmp -s "$evidence_dir/java-route.tsv" "$evidence_dir/rust-route.tsv"; then
-        diff -u "$evidence_dir/java-route.tsv" "$evidence_dir/rust-route.tsv" \
-            >"$evidence_dir/route-diff.txt" || true
-        cat "$evidence_dir/route-diff.txt" >&2
-        exit 1
-    fi
-    if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" ]]; then
-        if ! awk -F '\t' -v topic="$topic" \
-            'NF != 4 || $1 != "QUEUE" || $2 != topic || $3 != "broker-a" || $4 !~ /^[0-3]$/ || seen[$4]++ { exit 1 }
-             END { if (NR != 4) exit 1 }' \
-            "$evidence_dir/java-route.tsv"; then
-            echo "Route evidence must contain exactly queue IDs 0-3 for $topic on broker-a" >&2
+    route_rows=0
+    for route_index in "${!route_topics[@]}"; do
+        route_topic="${route_topics[$route_index]}"
+        suffix=""
+        if ((route_index)); then
+            suffix="-missing"
+        fi
+        java_route_file="$evidence_dir/java-route${suffix}.tsv"
+        rust_route_file="$evidence_dir/rust-route${suffix}.tsv"
+        if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+            -Dexec.args="$namesrv_addr $route_topic" exec:java@live-route-probe \
+            >"$java_route_file" 2>"$evidence_dir/java-route${suffix}.stderr"; then
+            cat "$java_route_file" "$evidence_dir/java-route${suffix}.stderr" 2>/dev/null >&2 || true
             exit 1
         fi
+        if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- route "$namesrv_addr" "$route_topic" \
+            >"$rust_route_file" 2>"$evidence_dir/rust-route${suffix}.stderr"; then
+            cat "$evidence_dir/rust-route${suffix}.stderr" >&2
+            exit 1
+        fi
+        if [[ ! -s "$java_route_file" || ! -s "$rust_route_file" ]]; then
+            echo "A client produced empty route evidence for $route_topic" >&2
+            exit 1
+        fi
+        if ! cmp -s "$java_route_file" "$rust_route_file"; then
+            diff -u "$java_route_file" "$rust_route_file" \
+                >"$evidence_dir/route${suffix}-diff.txt" || true
+            cat "$evidence_dir/route${suffix}-diff.txt" >&2
+            exit 1
+        fi
+        route_is_existing=true
+        if [[ "$scenario_id" == "ROUTE-002-topic-not-exist" || "$suffix" == "-missing" ]]; then
+            route_is_existing=false
+        fi
+        if [[ "$route_is_existing" == true ]]; then
+            if ! awk -F '\t' -v topic="$route_topic" \
+                'NF != 4 || $1 != "QUEUE" || $2 != topic || $3 != "broker-a" || $4 !~ /^[0-3]$/ || seen[$4]++ { exit 1 }
+                 END { if (NR != 4) exit 1 }' "$java_route_file"; then
+                echo "Route evidence must contain exactly queue IDs 0-3 for $route_topic on broker-a" >&2
+                exit 1
+            fi
+            route_rows=$((route_rows + $(wc -l <"$java_route_file" | tr -d ' ')))
+        else
+            expected_route="$evidence_dir/expected-route${suffix}.tsv"
+            printf 'NO_ROUTE\t%s\n' "$route_topic" >"$expected_route"
+            if ! cmp -s "$expected_route" "$java_route_file"; then
+                echo "Missing-topic scenario must produce exactly NO_ROUTE for $route_topic" >&2
+                exit 1
+            fi
+            rm -f "$expected_route"
+        fi
+    done
+    if [[ "$scenario_id" == "P5-V02-route" ]]; then
+        printf 'PASS %s: both clients matched existing and missing topic routes (%s existing queue rows)\n' "$scenario_id" "$route_rows" \
+            | tee "$evidence_dir/result.txt"
     else
-        expected_route="$evidence_dir/expected-route.tsv"
-        printf 'NO_ROUTE\t%s\n' "$topic" >"$expected_route"
-        if ! cmp -s "$expected_route" "$evidence_dir/java-route.tsv"; then
-            echo "Missing-topic scenario must produce exactly NO_ROUTE for $topic" >&2
-            exit 1
-        fi
-        rm -f "$expected_route"
+        printf 'PASS %s: %s matching route rows\n' "$scenario_id" "$(wc -l <"$evidence_dir/java-route.tsv" | tr -d ' ')" \
+            | tee "$evidence_dir/result.txt"
     fi
-    printf 'PASS %s: %s matching route rows\n' "$scenario_id" "$(wc -l <"$evidence_dir/java-route.tsv" | tr -d ' ')" \
-        | tee "$evidence_dir/result.txt"
 fi
 echo "Evidence: $evidence_dir"
