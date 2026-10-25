@@ -819,13 +819,11 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
         fi
     elif [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P6-V04" ]]; then
         echo "Creating scenario-owned consumer group $consumer_group"
-        for responder_group in "$consumer_group" "${consumer_group}_java" "${consumer_group}_rust"; do
-            if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$responder_group" -n namesrv:9876 \
-                >>"$evidence_dir/group-create.log" 2>&1; then
-                cat "$evidence_dir/group-create.log" >&2
-                exit 1
-            fi
-        done
+        if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$consumer_group" -n namesrv:9876 \
+            >"$evidence_dir/group-create.log" 2>&1; then
+            cat "$evidence_dir/group-create.log" >&2
+            exit 1
+        fi
     elif [[ "$scenario_id" == "P9-V03" ]]; then
         for group_suffix in java rust; do
             pull_group="${consumer_group}_${group_suffix}"
@@ -837,11 +835,13 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
         done
     elif [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
         echo "Creating scenario-owned responder group $consumer_group"
-        if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$consumer_group" -n namesrv:9876 \
-            >"$evidence_dir/group-create.log" 2>&1; then
-            cat "$evidence_dir/group-create.log" >&2
-            exit 1
-        fi
+        for responder_group in "$consumer_group" "${consumer_group}_java" "${consumer_group}_rust"; do
+            if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$responder_group" -n namesrv:9876 \
+                >>"$evidence_dir/group-create.log" 2>&1; then
+                cat "$evidence_dir/group-create.log" >&2
+                exit 1
+            fi
+        done
     fi
 elif [[ "$scenario_id" == "ROUTE-002-topic-not-exist" ]]; then
     echo "Confirming that scenario topic $topic has no route"
