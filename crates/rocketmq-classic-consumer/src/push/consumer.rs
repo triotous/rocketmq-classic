@@ -3277,7 +3277,7 @@ impl PushConsumer {
             .process_pull_result(
                 queue,
                 pull_result,
-                &subscription,
+                subscription,
                 DecodeOptions {
                     read_body: client_config.decode_read_body(),
                     decompress_body: client_config.decode_decompress_body(),
