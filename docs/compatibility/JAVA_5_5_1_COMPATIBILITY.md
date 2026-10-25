@@ -1070,3 +1070,10 @@ closes this public nested value API row only; broad P18-V01 reconciliation
 remains open.
 Code commit: `62f67cbb`. The full local verification and remaining audit status
 are recorded in `../../rlogs/2026/10/24-phase-18-fault-item-public-api__20261024T153809Z.rlog`.
+
+P13 interpretation update: run `20261025T125153Z` showed offset 0 at the first
+Java POP request, which returned the seeded message; offset 1 appeared after
+that delivery. The failing `POLLING_NOT_FOUND` was the next POP for expiry
+redelivery. Earlier diagnostic rows were emitted only for a failing POP, so
+their label did not prove that initial delivery failed. Initial Java POP delivery
+now works with the post-seed offset reset; redelivery is still pending.

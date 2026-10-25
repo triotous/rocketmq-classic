@@ -10733,3 +10733,16 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [x] The runner deleted the scenario topic and removed its isolated two-Broker
   containers, network, and volumes. P13 remains pending; coverage remains
   25/37 with 12 Phase 19 scenarios pending.
+
+## P19 P13-V02 initial POP delivery confirmation — 2026-10-25 (`9568a2bb`)
+
+- [ ] Clean-source run `20261025T125153Z` traced group offset 0 after API
+  startup and immediately before the first Java POP request. That request
+  delivered the seeded message; the offset became 1 afterward. The following
+  expiry-redelivery POP returned `POLLING_NOT_FOUND`, so the lifecycle did not
+  pass and Rust consumption did not run. This supersedes the earlier
+  interpretation that offset 1 preceded initial delivery. Evidence is under
+  `docs/compatibility/evidence/phase-19/P13-V02/20261025T125153Z/`.
+- [x] The runner deleted the topic and removed its isolated two-Broker
+  containers, network, and volumes. P13 remains pending; live coverage remains
+  25/37 with 12 Phase 19 scenarios pending.

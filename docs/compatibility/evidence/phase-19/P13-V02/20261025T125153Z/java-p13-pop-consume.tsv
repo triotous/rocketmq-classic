@@ -1,0 +1,17 @@
+P13	pop-offset-state	phase=after-api-start	group=compat_p13_pop_java_expiry	queue=0	offset=0
+P13	pop-offset-state	phase=before-min-query	group=compat_p13_pop_java_expiry	queue=0	offset=0
+P13	pop-offset-state	phase=after-min-query	group=compat_p13_pop_java_expiry	queue=0	offset=0
+P13	pop-offset-state	phase=after-max-query	group=compat_p13_pop_java_expiry	queue=0	offset=0
+P13	pop-offset-state	phase=before-pop-request	group=compat_p13_pop_java_expiry	queue=0	offset=0
+P13	pop-offset-state	phase=before-min-query	group=compat_p13_pop_java_expiry	queue=0	offset=1
+P13	pop-offset-state	phase=after-min-query	group=compat_p13_pop_java_expiry	queue=0	offset=1
+P13	pop-offset-state	phase=after-max-query	group=compat_p13_pop_java_expiry	queue=0	offset=1
+P13	pop-offset-state	phase=before-pop-request	group=compat_p13_pop_java_expiry	queue=0	offset=1
+P13	pop-diagnostic	group=compat_p13_pop_java_expiry	queue=0	initMode=0	min=0	max=1	groupOffsetBefore=1	groupOffsetAfter=1	result=PopResult [popStatus=POLLING_NOT_FOUND,msgFoundList=0,restNum=0]
+[ERROR] Failed to execute goal org.codehaus.mojo:exec-maven-plugin:3.5.0:java (live-p13-pop-probe) on project rocketmq-java-reference: An exception occurred while executing the Java class. POP did not find p13-java-q0: PopResult [popStatus=POLLING_NOT_FOUND,msgFoundList=0,restNum=0] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

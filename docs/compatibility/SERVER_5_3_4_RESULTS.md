@@ -387,3 +387,14 @@ unlocalized. The runner removed the topic and Compose resources; evidence is
 under [`20261025T124657Z`](evidence/phase-19/P13-V02/20261025T124657Z/).
 Next, trace the group offset immediately after API startup and around the
 min/max queries preceding POP.
+
+P13 interpretation update — run `20261025T125153Z` on `9568a2bb` traced the
+offset at each lifecycle request. The first Java delivery started with group
+offset 0 and succeeded; offset 1 appeared after that delivery. The second POP,
+which requests expiry redelivery, started at offset 1 and returned
+`POLLING_NOT_FOUND`. Thus the earlier `pop-diagnostic` rows recorded the first
+*failing* request, not necessarily the first POP in the lifecycle. Runs without
+per-request stage rows do not distinguish those cases. The post-seed offset
+reset works for initial delivery; expiry redelivery remains unresolved. The
+runner removed the topic and Compose resources; evidence is under
+[`20261025T125153Z`](evidence/phase-19/P13-V02/20261025T125153Z/).

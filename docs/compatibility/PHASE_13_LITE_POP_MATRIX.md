@@ -92,3 +92,10 @@ Run `20261025T124657Z` verified offset 0 for both queues of all six Java/Rust
 groups after seeding, but the separate Java consume process observed offset 1
 before its first POP and got `POLLING_NOT_FOUND`. The lifecycle remains
 pending, and the exact transition after reset is not yet localized.
+
+Run `20261025T125153Z` clarifies the offset reset result: Java's first POP
+request began at offset 0 and returned the seeded message. Offset 1 appeared
+afterward; the following expiry redelivery request returned
+`POLLING_NOT_FOUND`. Earlier failure diagnostics identify the failing request,
+not necessarily the initial delivery. The current blocker is redelivery timing
+or revive processing, not initial seed consumption.
