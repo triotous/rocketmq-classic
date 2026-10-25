@@ -1265,6 +1265,20 @@ cleanup() {
         "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 broker-a-host broker-b-host \
             >"$evidence_dir/broker-logs.log" 2>&1
     fi
+    if [[ "$scenario_id" == "P14-V03" ]]; then
+        for log_service in broker-a-host broker-b-host; do
+            log_name="${log_service%-host}"
+            "${compose[@]}" exec --no-TTY "$log_service" sh -c '
+                log=/home/rocketmq/logs/rocketmqlogs/transaction.log
+                if [ -f "$log" ]; then
+                    tail -n 4000 "$log"
+                else
+                    echo "transaction log not found: $log" >&2
+                    exit 1
+                fi
+            ' >"$evidence_dir/${log_name}-transaction.log" 2>&1
+        done
+    fi
     if [[ ("$scenario_id" == "P12-V03" || "$scenario_id" == "P14-V03") && "$group_created" == true ]]; then
         : >"$evidence_dir/group-cleanup.log"
         for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
@@ -2793,10 +2807,7 @@ elif [[ "$scenario_id" == "P12-V03" ]]; then
     printf 'PASS P12-V03: Java held orderly callbacks on both Brokers while Rust joined; Rust acquired the transferred Broker lock, processed the redelivered message and its successor, and advanced the offset to 2 before Java returned; stale completion did not regress either offset, both consumers shut down, and both Broker queues became lockable and releasable\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P14-V03" ]]; then
-    p14_java_output="$evidence_dir/java-p14-transaction.tsv"
-    p14_rust_output="$evidence_dir/rust-p14-transaction.tsv"
     p14_pull_output="$evidence_dir/p14-pull.tsv"
-    p14_max_output="$evidence_dir/p14-max-offset.tsv"
     p14_expected_state() {
         case "$1" in
             commit) printf 'COMMIT_MESSAGE' ;;
@@ -2812,13 +2823,13 @@ elif [[ "$scenario_id" == "P14-V03" ]]; then
         esac
     }
     p14_validate_transaction() {
-        local output="$1" decision="$2" key="$3" expected_state
+        local output="$1" decision="$2" key="$3" language="$4" expected_state
         expected_state="$(p14_expected_state "$decision")"
-        python3 - "$output" "$expected_state" "$key" "$decision" <<'PY'
+        python3 - "$output" "$expected_state" "$key" "$decision" "$language" <<'PY'
 import sys
 from pathlib import Path
 
-path, expected_state, expected_key, decision = sys.argv[1:]
+path, expected_state, expected_key, decision, language = sys.argv[1:]
 rows = [line.split("\t") for line in Path(path).read_text().splitlines()]
 transactions = [row for row in rows if row[:2] == ["P14", "TX"]]
 if len(transactions) != 1:
@@ -2836,18 +2847,28 @@ if decision == "unknown":
         raise SystemExit(f"Unknown check callback was not recorded: {checks[0]!r}")
     if not checks[0][4].isdecimal() or int(checks[0][4]) > 20_000:
         raise SystemExit(f"Unknown check exceeded the configured bound: {checks[0]!r}")
+if language == "rust":
+    hooks = [row for row in rows if row[:2] == ["P14", "END_HOOK"]]
+    if decision in ("commit", "rollback"):
+        if len(hooks) != 1 or len(hooks[0]) != 7 or hooks[0][5] != expected_state or hooks[0][6] != "false":
+            raise SystemExit(f"Rust local end-transaction hook differs from {decision}: {hooks!r}")
+    else:
+        local = [row for row in hooks if len(row) == 7 and row[5] == "UNKNOW" and row[6] == "false"]
+        checked = [row for row in hooks if len(row) == 7 and row[5] == "COMMIT" and row[6] == "true"]
+        if len(local) != 1 or len(checked) != 1:
+            raise SystemExit(f"Rust Unknown did not reach both local and Broker-check end hooks: {hooks!r}")
 PY
     }
     p14_run_producer() {
-        local language="$1" decision="$2" key="$3" body="$4"
+        local language="$1" decision="$2" key="$3" body="$4" output="$5"
         if [[ "$language" == "java" ]]; then
             mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
                 -Dexec.args="p14 $namesrv_addr $topic $producer_group $decision $key $body" \
-                exec:java@live-transaction-probe >"$p14_java_output" 2>"$evidence_dir/java-p14-transaction.stderr"
+                exec:java@live-transaction-probe >"$output" 2>"${output%.tsv}.stderr"
         else
             "$repo_root/target/debug/live_client" p14-transaction "$namesrv_addr" "$topic" \
                 "$producer_group" "$decision" "$key" "$body" \
-                >"$p14_rust_output" 2>"$evidence_dir/rust-p14-transaction.stderr"
+                >"$output" 2>"${output%.tsv}.stderr"
         fi
     }
     p14_run_pull() {
@@ -2898,13 +2919,13 @@ PY
         fi
     }
     p14_current_max() {
-        local broker_address="$1"
+        local broker_address="$1" label="$2" output="$evidence_dir/p14-max-$2.tsv" stderr="$evidence_dir/p14-max-$2.stderr"
         local offset
         "$repo_root/target/debug/live_client" max-offset "$broker_address" "$topic" 0 \
-            >"$p14_max_output" 2>"$evidence_dir/p14-max-offset.stderr" || return 1
-        offset="$(awk -F '\t' 'NF == 2 && $1 == "MAX_OFFSET" { print $2 }' "$p14_max_output")"
+            >"$output" 2>"$stderr" || return 1
+        offset="$(awk -F '\t' 'NF == 2 && $1 == "MAX_OFFSET" { print $2 }' "$output")"
         if [[ ! "$offset" =~ ^[0-9]+$ ]]; then
-            cat "$p14_max_output" "$evidence_dir/p14-max-offset.stderr" >&2 2>/dev/null || true
+            cat "$output" "$stderr" >&2 2>/dev/null || true
             echo "P14 could not read a Broker queue max offset at $broker_address" >&2
             return 1
         fi
@@ -2912,14 +2933,12 @@ PY
     }
     p14_run_case() {
         local language="$1" decision="$2" key="$3" body="$4"
-        local output
-        output="$p14_rust_output"
-        [[ "$language" == "java" ]] && output="$p14_java_output"
-        if ! p14_run_producer "$language" "$decision" "$key" "$body"; then
-            cat "$output" "$evidence_dir/${language}-p14-transaction.stderr" 2>/dev/null >&2 || true
+        local output="$evidence_dir/${language}-p14-${decision}.tsv"
+        if ! p14_run_producer "$language" "$decision" "$key" "$body" "$output"; then
+            cat "$output" "${output%.tsv}.stderr" 2>/dev/null >&2 || true
             return 1
         fi
-        p14_validate_transaction "$output" "$decision" "$key" || return 1
+        p14_validate_transaction "$output" "$decision" "$key" "$language" || return 1
         awk -F '\t' '$1 == "P14" && $2 == "TX" { print $6 }' "$output"
     }
 
@@ -2929,8 +2948,8 @@ PY
     rust_commit_broker="$(p14_run_case rust commit p14-rust-commit-key p14-rust-commit)" || exit 1
     p14_wait_body java "$rust_commit_broker" p14-rust-commit "$evidence_dir/java-p14-rust-commit-pull.tsv" || exit 1
 
-    broker_a_max_before_rollback="$(p14_current_max 127.0.0.1:50911)" || exit 1
-    broker_b_max_before_rollback="$(p14_current_max 127.0.0.1:50921)" || exit 1
+    broker_a_max_before_rollback="$(p14_current_max 127.0.0.1:50911 before-broker-a)" || exit 1
+    broker_b_max_before_rollback="$(p14_current_max 127.0.0.1:50921 before-broker-b)" || exit 1
     java_rollback_broker="$(p14_run_case java rollback p14-java-rollback-key p14-java-rollback)" || exit 1
     rust_rollback_broker="$(p14_run_case rust rollback p14-rust-rollback-key p14-rust-rollback)" || exit 1
     for rollback in "java:$java_rollback_broker:p14-java-rollback" "rust:$rust_rollback_broker:p14-rust-rollback"; do
@@ -2938,7 +2957,7 @@ PY
         rollback_address="$(p14_broker_address "$rollback_broker")" || exit 1
         p14_assert_no_body "$([[ "$rollback_language" == "java" ]] && printf rust || printf java)" \
             "$rollback_broker" "$rollback_body" "$evidence_dir/${rollback_language}-p14-rollback-pull.tsv" || exit 1
-        max_after="$(p14_current_max "$rollback_address")" || exit 1
+        max_after="$(p14_current_max "$rollback_address" "after-rollback-$rollback_broker")" || exit 1
         if [[ "$rollback_broker" == "broker-a" ]]; then
             max_before="$broker_a_max_before_rollback"
         else

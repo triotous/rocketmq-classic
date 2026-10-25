@@ -12,10 +12,11 @@ use std::{
 
 use rocketmq_classic::{
     ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
-    ConsumeOrderlyStatus, LocalTransactionState, MessageSelector, Producer, ProducerConfig,
-    ProducerError, PullConsumer, PullConsumerConfig, PushConsumer, PushConsumerConfig,
-    PushMessageListener, RequestFutureHolder, SendMessageContext, SendMessageHook,
-    TransactionCallbackError, TransactionListener, TransactionProducer, create_reply_message,
+    ConsumeOrderlyStatus, EndTransactionContext, EndTransactionHook, LocalTransactionState,
+    MessageSelector, Producer, ProducerConfig, ProducerError, PullConsumer, PullConsumerConfig,
+    PushConsumer, PushConsumerConfig, PushMessageListener, RequestFutureHolder, SendMessageContext,
+    SendMessageHook, TransactionCallbackError, TransactionListener, TransactionProducer,
+    create_reply_message,
 };
 use rocketmq_classic_common::message::{
     DecodeOptions, Message, MessageExt, MessageQueue, decode_many_as_client_compatible,
@@ -1195,6 +1196,25 @@ struct FixedTransactionListener {
     check_count: Arc<AtomicUsize>,
 }
 
+struct P14EndTransactionProbe;
+
+impl EndTransactionHook for P14EndTransactionProbe {
+    fn hook_name(&self) -> &str {
+        "p14-end-transaction-probe"
+    }
+
+    fn end_transaction(&self, context: &mut EndTransactionContext<'_>) {
+        println!(
+            "P14\tEND_HOOK\t{}\t{}\t{}\t{}\t{}",
+            context.broker_addr,
+            context.message_id,
+            context.transaction_id.as_deref().unwrap_or("-"),
+            context.transaction_state.java_name(),
+            context.from_transaction_check
+        );
+    }
+}
+
 impl TransactionListener for FixedTransactionListener {
     fn execute_local_transaction(
         &self,
@@ -1285,6 +1305,7 @@ async fn p14_transaction(
         .client_config_mut()
         .set_namesrv_addr(Some(namesrv_address.to_owned()));
     let producer = TransactionProducer::new(config);
+    producer.register_end_transaction_hook(Arc::new(P14EndTransactionProbe));
     producer.set_transaction_listener(Some(Arc::new(FixedTransactionListener {
         state,
         check_state,
@@ -1323,6 +1344,11 @@ async fn p14_transaction(
     } else {
         None
     };
+    if decision == "unknown" {
+        // The one-way end-transaction request is scheduled on the remoting client.
+        // Keep that client alive briefly after the callback before shutdown.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
     producer.shutdown().await?;
     println!(
         "P14\tTX\t{}\t{}\t{}\t{}\t{}\t{}",
