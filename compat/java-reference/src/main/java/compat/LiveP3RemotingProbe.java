@@ -82,7 +82,9 @@ public final class LiveP3RemotingProbe {
         }
 
         assertCleanShutdown(api);
-        boolean expectedAccepted = mode.equals("trusted");
+        // RocketMQ Java 5.5.1 creates the outbound SslHandler without a peer host,
+        // so its verified mode checks the CA chain but does not check the hostname.
+        boolean expectedAccepted = mode.equals("trusted") || mode.equals("wrong-host");
         if (accepted != expectedAccepted) {
             throw new IllegalStateException("unexpected TLS outcome for " + mode + ": " + accepted);
         }

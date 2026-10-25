@@ -688,7 +688,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 2 -config <evidence>/ca.cnf -key
 openssl req -new -newkey rsa:2048 -nodes -config <evidence>/server-req.cnf -keyout <evidence>/server.key -out <evidence>/server.csr
 openssl x509 -req -in <evidence>/server.csr -CA <evidence>/ca.pem -CAkey <evidence>/ca.key -set_serial 1 -days 2 -sha256 -extfile <evidence>/server-ext.cnf -extensions server_cert -out <evidence>/server.pem
 python3 tests/differential/tls_broker_proxy.py --upstream $broker_addr --cert <evidence>/server.pem --key <evidence>/server.key --ready-file <evidence>/tls-proxy-ready.txt --log-file <evidence>/tls-proxy.tsv
-Java and Rust TLS calls use the trusted CA, then independently reject a trusted wrong-host certificate and an untrusted CA; each client shuts down before the next probe.
+Java and Rust TLS calls use the trusted CA, then independently test a wrong-host certificate and an untrusted CA; Rust rejects both while Java 5.5.1 accepts the wrong host because its Netty TLS handler has no peer hostname; all clients shut down before the next probe.
 EOF
 elif [[ "$scenario_id" == "P0-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -2349,13 +2349,13 @@ EOF
     for mode in trusted wrong-host untrusted; do
         tls_addr="$tls_localhost_addr"
         ca_path="$evidence_dir/ca.pem"
-        expected_outcome=accepted
+        rust_expected_outcome=accepted
         if [[ "$mode" == "wrong-host" ]]; then
             tls_addr="$tls_ip_addr"
-            expected_outcome=rejected
+            rust_expected_outcome=rejected
         elif [[ "$mode" == "untrusted" ]]; then
             ca_path="$evidence_dir/untrusted-ca.pem"
-            expected_outcome=rejected
+            rust_expected_outcome=rejected
         fi
         if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
             -Dexec.args="tls $tls_addr $ca_path $mode" exec:java@live-p3-remoting-probe \
@@ -2364,7 +2364,7 @@ EOF
             exit 1
         fi
         if ! "$repo_root/target/debug/live_client" p3-tls "$tls_addr" "$ca_path" \
-            "$mode" "$expected_outcome" >"$evidence_dir/rust-p3-$mode.tsv" \
+            "$mode" "$rust_expected_outcome" >"$evidence_dir/rust-p3-$mode.tsv" \
             2>"$evidence_dir/rust-p3-$mode.stderr"; then
             cat "$evidence_dir/rust-p3-$mode.tsv" "$evidence_dir/rust-p3-$mode.stderr" >&2 || true
             exit 1
@@ -2374,7 +2374,7 @@ EOF
         accepted_count="$(awk -F '\t' '$1 == "TLS_PROXY" && $2 == "TLS_ACCEPTED" { count++ } END { print count + 0 }' "$evidence_dir/tls-proxy.tsv")"
         closed_count="$(awk -F '\t' '$1 == "TLS_PROXY" && $2 == "CONNECTION_CLOSED" { count++ } END { print count + 0 }' "$evidence_dir/tls-proxy.tsv")"
         rejected_count="$(awk -F '\t' '$1 == "TLS_PROXY" && $2 ~ /^HANDSHAKE_REJECTED:/ { count++ } END { print count + 0 }' "$evidence_dir/tls-proxy.tsv")"
-        if ((accepted_count >= 2 && closed_count >= 2 && rejected_count >= 4)); then
+        if ((accepted_count >= 3 && closed_count >= 3 && rejected_count >= 3)); then
             break
         fi
         sleep 0.1
@@ -2389,9 +2389,12 @@ import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
-expected = {"trusted": "ACCEPTED", "wrong-host": "REJECTED", "untrusted": "REJECTED"}
+expected = {
+    "java": {"trusted": "ACCEPTED", "wrong-host": "ACCEPTED", "untrusted": "REJECTED"},
+    "rust": {"trusted": "ACCEPTED", "wrong-host": "REJECTED", "untrusted": "REJECTED"},
+}
 
-def parse(path, kind):
+def parse(path, kind, client=None):
     rows = [line.split("\t") for line in path.read_text().splitlines() if line.startswith("P3\t")]
     if kind == "route":
         if len(rows) != 1 or len(rows[0]) != 7 or rows[0][:3] != ["P3", "ROUTE", "FOUND"]:
@@ -2402,30 +2405,36 @@ def parse(path, kind):
     if len(rows) != 1 or len(rows[0]) != 7 or rows[0][:2] != ["P3", "TLS"]:
         raise SystemExit(f"{path}: malformed TLS result {rows!r}")
     row = rows[0]
-    if row[2] not in expected or row[3] != expected[row[2]] or row[4:] != ["0", "0", "0"]:
+    if row[2] not in expected[client] or row[3] != expected[client][row[2]] or row[4:] != ["0", "0", "0"]:
         raise SystemExit(f"{path}: TLS outcome or shutdown state differs {row!r}")
     return tuple(row[2:])
 
 if parse(root / "java-p3-route.tsv", "route") != parse(root / "rust-p3-route.tsv", "route"):
     raise SystemExit("Java/Rust raw route results differ")
-for mode in expected:
-    java = parse(root / f"java-p3-{mode}.tsv", "tls")
-    rust = parse(root / f"rust-p3-{mode}.tsv", "tls")
-    if java != rust or java[:2] != (mode, expected[mode]):
-        raise SystemExit(f"Java/Rust TLS result differs for {mode}: {java!r} != {rust!r}")
+for mode in expected["java"]:
+    java = parse(root / f"java-p3-{mode}.tsv", "tls", "java")
+    rust = parse(root / f"rust-p3-{mode}.tsv", "tls", "rust")
+    if java[0] != mode or rust[0] != mode:
+        raise SystemExit(f"Java/Rust TLS mode differs for {mode}: {java!r} != {rust!r}")
+    if mode != "wrong-host" and java != rust:
+        raise SystemExit(f"Java/Rust TLS trust outcomes differ for {mode}: {java!r} != {rust!r}")
+if parse(root / "java-p3-wrong-host.tsv", "tls", "java")[1] != "ACCEPTED":
+    raise SystemExit("Java 5.5.1 verified mode did not preserve its observed hostname behavior")
+if parse(root / "rust-p3-wrong-host.tsv", "tls", "rust")[1] != "REJECTED":
+    raise SystemExit("Rust verified mode accepted a certificate for the wrong hostname")
 
 proxy_rows = [line.split("\t") for line in (root / "tls-proxy.tsv").read_text().splitlines()]
 accepted = sum(len(row) >= 2 and row[1] == "TLS_ACCEPTED" for row in proxy_rows)
 closed = sum(len(row) >= 2 and row[1] == "CONNECTION_CLOSED" for row in proxy_rows)
 rejected = sum(len(row) >= 2 and row[1].startswith("HANDSHAKE_REJECTED:") for row in proxy_rows)
-if (accepted, closed, rejected) != (2, 2, 4):
-    raise SystemExit(f"TLS proxy observed accepted/closed/rejected {(accepted, closed, rejected)!r}, expected (2, 2, 4)")
+if (accepted, closed, rejected) != (3, 3, 3):
+    raise SystemExit(f"TLS proxy observed accepted/closed/rejected {(accepted, closed, rejected)!r}, expected (3, 3, 3)")
 PY
     then
         echo "P3-V04 raw route, TLS trust checks, or shutdown lifecycle did not match" >&2
         exit 1
     fi
-    printf 'PASS P3-V04: Java and Rust invoked a live NameServer route, accepted the trusted TLS Broker path, rejected wrong-host and untrusted certificates, and shut down with no pending requests, channels, or worker tasks\n' \
+    printf 'PASS P3-V04: Java and Rust invoked a live NameServer route and accepted the trusted TLS Broker path; both rejected the untrusted CA, Rust rejected the wrong-host certificate, Java 5.5.1 accepted it without endpoint identification, and all clients shut down with no pending requests, channels, or worker tasks\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P6-V04" ]]; then
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
