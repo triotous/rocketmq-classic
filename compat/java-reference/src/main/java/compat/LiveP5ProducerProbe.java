@@ -126,8 +126,16 @@ public final class LiveP5ProducerProbe {
         header.setUnitMode(false);
         header.setBatch(batch);
         header.setBrokerName(BROKER_NAME);
+        CommunicationMode mode = reply ? CommunicationMode.ONEWAY : CommunicationMode.SYNC;
         SendResult result = api.sendMessage(
-            brokerAddress, BROKER_NAME, payload, header, 10_000, CommunicationMode.SYNC, null, null);
+            brokerAddress, BROKER_NAME, payload, header, 10_000, mode, null, null);
+        if (reply) {
+            if (result != null) {
+                throw new IllegalStateException(method + " one-way reply unexpectedly returned a result");
+            }
+            System.out.printf("P5\tRESULT\t%s\tONEWAY%n", method);
+            return;
+        }
         if (result == null || result.getOffsetMsgId() == null || result.getOffsetMsgId().isEmpty()) {
             throw new IllegalStateException(method + " returned an incomplete send result");
         }

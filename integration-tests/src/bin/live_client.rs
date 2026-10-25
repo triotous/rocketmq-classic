@@ -1346,21 +1346,16 @@ async fn p5_producer(
                     message.body().to_vec(),
                     &message_id,
                     kind,
-                    SendMode::Sync,
+                    SendMode::Oneway,
                     Instant::now() + Duration::from_secs(10),
                 )
-                .await?
-                .ok_or("reply producer RPC returned no result")?;
-            if result.offset_msg_id.as_deref().is_none_or(str::is_empty) {
-                return Err(format!("{method} returned an incomplete send result").into());
+                .await?;
+            if result.is_some() {
+                return Err(
+                    format!("{method} one-way reply unexpectedly returned a result").into(),
+                );
             }
-            println!(
-                "P5\tRESULT\t{method}\t{}\t{}\t{}\t{}",
-                result.status.name(),
-                result.topic,
-                result.queue_id,
-                result.queue_offset
-            );
+            println!("P5\tRESULT\t{method}\tONEWAY");
         }
 
         let mut end = EndTransactionRequestHeader::default();

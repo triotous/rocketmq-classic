@@ -1474,22 +1474,25 @@ def parse(path):
     if rows[0][:2] != ["P5", "BASE"] or len(rows[0]) != 3:
         raise SystemExit(f"{path}: missing initial queue offset")
     base = int(rows[0][2])
-    sends = rows[1:6]
-    for index, (row, method) in enumerate(zip(sends, methods, strict=True)):
+    sends = rows[1:4]
+    for index, (row, method) in enumerate(zip(sends, methods[:3], strict=True)):
         if len(row) != 7 or row[:3] != ["P5", "RESULT", method]:
             raise SystemExit(f"{path}: malformed result for {method}: {row!r}")
         if row[3:] != ["SEND_OK", topic, "0", str(base + index)]:
             raise SystemExit(f"{path}: unexpected send result for {method}: {row!r}")
+    for row, method in zip(rows[4:6], methods[3:], strict=True):
+        if row != ["P5", "RESULT", method, "ONEWAY"]:
+            raise SystemExit(f"{path}: one-way reply result differs for {method}: {row!r}")
     if rows[6] != ["P5", "RESULT", "end-transaction", "ONEWAY"]:
         raise SystemExit(f"{path}: end-transaction one-way result differs: {rows[6]!r}")
-    final_offset = base + len(methods)
+    final_offset = base + 3
     if rows[7] != ["P5", "MAX", str(final_offset)]:
         raise SystemExit(f"{path}: unexpected final queue max offset: {rows[7]!r}")
     return base, sends, final_offset
 
 java_base, java_sends, java_max = parse(java_path)
 rust_base, rust_sends, rust_max = parse(rust_path)
-if java_base != 0 or rust_base != java_max or rust_max != java_max + len(methods):
+if java_base != 0 or rust_base != java_max or rust_max != java_max + 3:
     raise SystemExit("Java and Rust producer passes did not execute consecutively from the expected queue offsets")
 for java_row, rust_row in zip(java_sends, rust_sends, strict=True):
     if java_row[2:6] != rust_row[2:6]:
@@ -1499,7 +1502,7 @@ PY
         echo "Java/Rust P5 producer RPC results or committed queue offsets differ" >&2
         exit 1
     fi
-    printf 'PASS P5-V02-producer: Java and Rust matched five send variants and completed endTransactionOneway; five messages from each client were committed\n' \
+    printf 'PASS P5-V02-producer: Java and Rust matched V1, V2, and batch send results, plus one-way reply V1/V2 and endTransactionOneway outcomes\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
     echo "Delaying each direct Broker response beyond the Java/Rust 100 ms send deadline"
