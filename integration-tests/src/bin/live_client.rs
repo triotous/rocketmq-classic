@@ -6,7 +6,7 @@ use rocketmq_classic::{
     ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, LocalTransactionState, MessageSelector,
     Producer, ProducerConfig, ProducerError, PullConsumer, PullConsumerConfig, PushConsumer,
     PushConsumerConfig, PushMessageListener, TransactionCallbackError, TransactionListener,
-    TransactionProducer,
+    TransactionProducer, create_reply_message,
 };
 use rocketmq_classic_common::message::{
     Message, MessageExt, MessageQueue, decode_message_id, encode_compact_messages,
@@ -56,6 +56,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Some("p9-pull") if arguments.len() == 4 => {
             pull_consumer_probe(&arguments[1], &arguments[2], &arguments[3]).await
+        }
+        Some("p19-request") if arguments.len() == 5 => {
+            request_reply_request(&arguments[1], &arguments[2], &arguments[3], &arguments[4]).await
+        }
+        Some("p19-respond") if arguments.len() == 6 => {
+            request_reply_respond(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                &arguments[5],
+            )
+            .await
         }
         Some("transaction") if arguments.len() == 7 => {
             transaction(
@@ -156,7 +169,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -632,6 +645,164 @@ async fn pull_consumer_probe(
     }
     println!("P9\tRESUME\t{resume}");
     Ok(())
+}
+
+async fn request_reply_request(
+    namesrv_address: &str,
+    topic: &str,
+    producer_group: &str,
+    body: &str,
+) -> Result<(), Box<dyn Error>> {
+    let mut config = ProducerConfig::new(producer_group)?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    config.set_send_timeout_millis(10_000);
+    let producer = Arc::new(Producer::new(config));
+    producer.set_send_message_with_vip_channel(false);
+    producer.start().await?;
+
+    let result: Result<(), Box<dyn Error>> = async {
+        let mut request = Message::new(topic, body.as_bytes().to_vec());
+        let reply = producer
+            .request(&mut request, Duration::from_secs(15))
+            .await?;
+        print_request_reply_message("REQUEST", &request);
+        print_request_reply_message("REPLY", &reply);
+        if request.get_property("CORRELATION_ID") != reply.get_property("CORRELATION_ID") {
+            return Err("reply correlation ID differs from request".into());
+        }
+        Ok(())
+    }
+    .await;
+
+    let shutdown = producer.shutdown().await;
+    result?;
+    shutdown?;
+    Ok(())
+}
+
+async fn request_reply_respond(
+    namesrv_address: &str,
+    topic: &str,
+    consumer_group: &str,
+    producer_group: &str,
+    reply_body: &str,
+) -> Result<(), Box<dyn Error>> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let mut producer_config = ProducerConfig::new(producer_group)?;
+    producer_config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    producer_config.set_send_timeout_millis(10_000);
+    let producer = Arc::new(Producer::new(producer_config));
+    producer.set_send_message_with_vip_channel(false);
+
+    let mut consumer_config = PushConsumerConfig::new(consumer_group)?;
+    consumer_config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    let consumer = Arc::new(PushConsumer::new(consumer_config));
+    let (result_tx, mut result_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let replied = Arc::new(AtomicBool::new(false));
+    let listener_producer = producer.clone();
+    let listener_replied = replied.clone();
+    let listener_body = reply_body.as_bytes().to_vec();
+    consumer
+        .set_message_listener(PushMessageListener::concurrently(
+            move |messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| {
+                let producer = listener_producer.clone();
+                let result_tx = result_tx.clone();
+                let replied = listener_replied.clone();
+                let reply_body = listener_body.clone();
+                async move {
+                    let mut status = ConsumeConcurrentlyStatus::ConsumeSuccess;
+                    for request in messages {
+                        if replied.swap(true, Ordering::AcqRel) {
+                            continue;
+                        }
+                        let outcome = match create_reply_message(Some(&request), reply_body.clone())
+                        {
+                            Ok(mut reply) => match producer.send(&mut reply).await {
+                                Ok(sent) if sent.status.name() == "SEND_OK" => {
+                                    format!("SEND_OK\t{}", reply.topic())
+                                }
+                                Ok(sent) => {
+                                    status = ConsumeConcurrentlyStatus::ReconsumeLater;
+                                    format!("ERROR\tBroker send status {}", sent.status)
+                                }
+                                Err(error) => {
+                                    status = ConsumeConcurrentlyStatus::ReconsumeLater;
+                                    format!("ERROR\t{error}")
+                                }
+                            },
+                            Err(error) => {
+                                status = ConsumeConcurrentlyStatus::ReconsumeLater;
+                                format!("ERROR\t{error}")
+                            }
+                        };
+                        let _ = result_tx.send(outcome);
+                    }
+                    (Some(status), context)
+                }
+            },
+        ))
+        .await?;
+    consumer.subscribe(topic, "*").await?;
+
+    let mut producer_started = false;
+    let mut consumer_started = false;
+    let result: Result<(), Box<dyn Error>> = async {
+        producer.start().await?;
+        producer_started = true;
+        consumer.start().await?;
+        consumer_started = true;
+        println!("REQ\tREADY");
+        let outcome = tokio::time::timeout(Duration::from_secs(30), result_rx.recv())
+            .await?
+            .ok_or_else(|| std::io::Error::other("request observation channel closed"))?;
+        if outcome.starts_with("ERROR\t") {
+            return Err(outcome.into());
+        }
+        if !outcome.starts_with("SEND_OK\t") {
+            return Err(format!("unexpected responder outcome: {outcome}").into());
+        }
+        println!("REQ\tRESPONDER\t{outcome}");
+        Ok(())
+    }
+    .await;
+
+    let mut cleanup_failures = Vec::new();
+    if consumer_started {
+        if let Err(error) = consumer.shutdown().await {
+            cleanup_failures.push(format!("consumer shutdown: {error}"));
+        }
+    }
+    if producer_started {
+        if let Err(error) = producer.shutdown().await {
+            cleanup_failures.push(format!("producer shutdown: {error}"));
+        }
+    }
+    result?;
+    if !cleanup_failures.is_empty() {
+        return Err(cleanup_failures.join("; ").into());
+    }
+    Ok(())
+}
+
+fn print_request_reply_message(kind: &str, message: &Message) {
+    let property = |name: &str| message.get_property(name).unwrap_or_else(|| "-".to_owned());
+    println!(
+        "REQ\t{kind}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        message.topic(),
+        encode_hex(message.body().as_ref()),
+        property("CORRELATION_ID"),
+        property("REPLY_TO_CLIENT"),
+        property("TTL"),
+        property("CLUSTER"),
+        property("MSG_TYPE"),
+    );
 }
 
 async fn new_pull_probe_consumer(

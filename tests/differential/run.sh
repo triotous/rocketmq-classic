@@ -158,7 +158,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route" "P0-V03" "P6-V04" "P7-V02" "P9-V03")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route" "P0-V03" "P6-V04" "P7-V02" "P9-V03" "REQ-001-request-reply-success")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -201,6 +201,7 @@ case "$profile:$scenario_id" in
     two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c) ;;
     transaction:TX-001-commit|transaction:TX-002-rollback) ;;
     host-routed:P6-V04|host-routed:P7-V02|host-routed:P9-V03) ;;
+    host-routed:REQ-001-request-reply-success) ;;
     *)
         echo "Scenario metadata differs from the implemented profile" >&2
         exit 3
@@ -301,6 +302,12 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    REQ-001-request-reply-success:compat_phase0_request)
+        if [[ "$profile" != "host-routed" || "$consumer_group" != "compat_req_responder" ]]; then
+            echo "Request/reply metadata differs from the reviewed host-routed case" >&2
+            exit 3
+        fi
+        ;;
     P6-V04:compat_p6_shared)
         if [[ "$profile" != "host-routed" || "$consumer_group" != "compat_p6_consumer" ]]; then
             echo "P6-V04 metadata differs from the reviewed shared-runtime case" >&2
@@ -318,7 +325,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P9-V03" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P9-V03" && "$scenario_id" != "REQ-001-request-reply-success" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -405,6 +412,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveHighLevelProducerProbe.java
     compat/java-reference/src/main/java/compat/LiveSharedRuntimeProbe.java
     compat/java-reference/src/main/java/compat/LivePullConsumerProbe.java
+    compat/java-reference/src/main/java/compat/LiveRequestReplyProbe.java
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
     integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf integration-tests/config/broker-tx.conf integration-tests/config/broker-host.conf
     integration-tests/setup.sh integration-tests/cleanup.sh
@@ -476,6 +484,10 @@ if [[ "$scenario_id" == "REBAL-001-average-10q-3c" ]]; then
 fi
 if [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" ]]; then
     printf 'consumer_group=%s\n' "$consumer_group" >>"$evidence_dir/metadata.txt"
+fi
+if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
+    printf 'consumer_group=%s\nrequest_timeout_ms=15000\n' "$consumer_group" \
+        >>"$evidence_dir/metadata.txt"
 fi
 {
     uname -srm
@@ -557,6 +569,13 @@ docker compose --project-name $project_name --file integration-tests/compose.yam
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed $namesrv_addr $topic" exec:java@live-pull-consumer-probe
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="probe $namesrv_addr $topic ${consumer_group}_java" exec:java@live-pull-consumer-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p9-pull $namesrv_addr $topic ${consumer_group}_rust
+EOF
+elif [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=host-routed COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g $consumer_group -n namesrv:9876
+Rust responder / Java requester, then Java responder / Rust requester; each responder emits READY before its paired request.
 EOF
 elif [[ "$scenario_id" == "P0-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -661,10 +680,15 @@ cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- 
 EOF
 fi
 topic_created=false
+responder_pid=""
 cleanup() {
     status=$?
     trap - EXIT
     set +e
+    if [[ -n "$responder_pid" ]] && kill -0 "$responder_pid" 2>/dev/null; then
+        kill "$responder_pid" 2>/dev/null
+        wait "$responder_pid" 2>/dev/null
+    fi
     if [[ "$topic_created" == true ]]; then
         "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin deleteTopic -c RocketMQLocalTest -t "$topic" -n namesrv:9876 \
             >"$evidence_dir/topic-cleanup.log" 2>&1
@@ -768,11 +792,11 @@ else
 fi
 cat "$evidence_dir/setup.log"
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P9-V03" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     topic_queue_count=4
-    if [[ "$scenario_id" == "P6-V04" || "$scenario_id" == "P9-V03" ]]; then
+    if [[ "$scenario_id" == "P6-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" ]]; then
         topic_queue_count=1
     elif [[ "$scenario_id" == "REBAL-001-average-10q-3c" ]]; then
         topic_queue_count=5
@@ -807,6 +831,13 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
                 exit 1
             fi
         done
+    elif [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
+        echo "Creating scenario-owned responder group $consumer_group"
+        if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$consumer_group" -n namesrv:9876 \
+            >"$evidence_dir/group-create.log" 2>&1; then
+            cat "$evidence_dir/group-create.log" >&2
+            exit 1
+        fi
     fi
 elif [[ "$scenario_id" == "ROUTE-002-topic-not-exist" ]]; then
     echo "Confirming that scenario topic $topic has no route"
@@ -827,6 +858,74 @@ if ! cargo build --locked -p rocketmq-classic-integration --bin live_client \
     cat "$evidence_dir/rust-build.log" >&2
     exit 1
 fi
+
+start_reply_responder() {
+    local language="$1"
+    local reply_body="$2"
+    local output_file="$3"
+    if [[ "$language" == "java" ]]; then
+        mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+            -Dexec.args="respond $namesrv_addr $topic $consumer_group compat_req_java_responder $reply_body" \
+            exec:java@live-request-reply-probe >"$output_file" 2>"${output_file%.tsv}.stderr" &
+    else
+        "$repo_root/target/debug/live_client" p19-respond "$namesrv_addr" "$topic" \
+            "$consumer_group" compat_req_rust_responder "$reply_body" \
+            >"$output_file" 2>"${output_file%.tsv}.stderr" &
+    fi
+    responder_pid=$!
+    for _ in {1..30}; do
+        if grep -Fqx $'REQ\tREADY' "$output_file" 2>/dev/null; then
+            return 0
+        fi
+        if ! kill -0 "$responder_pid" 2>/dev/null; then
+            wait "$responder_pid" 2>/dev/null || true
+            responder_pid=""
+            cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
+            return 1
+        fi
+        sleep 1
+    done
+    echo "$language responder did not become ready" >&2
+    return 1
+}
+
+wait_reply_responder() {
+    local output_file="$1"
+    if ! wait "$responder_pid"; then
+        cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
+        responder_pid=""
+        return 1
+    fi
+    responder_pid=""
+    if ! awk -F '\t' 'NF >= 4 && $1 == "REQ" && $2 == "RESPONDER" && $3 == "SEND_OK" { count++ }
+        END { if (count != 1) exit 1 }' "$output_file"; then
+        echo "responder did not send exactly one successful reply" >&2
+        cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
+        return 1
+    fi
+}
+
+run_reply_requester() {
+    local language="$1"
+    local body="$2"
+    local output_file="$3"
+    if [[ "$language" == "java" ]]; then
+        if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+            -Dexec.args="request $namesrv_addr $topic compat_req_java_requester $body" \
+            exec:java@live-request-reply-probe >"$output_file" \
+            2>"${output_file%.tsv}.stderr"; then
+            cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
+            return 1
+        fi
+    else
+        if ! "$repo_root/target/debug/live_client" p19-request "$namesrv_addr" "$topic" \
+            compat_req_rust_requester "$body" >"$output_file" \
+            2>"${output_file%.tsv}.stderr"; then
+            cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
+            return 1
+        fi
+    fi
+}
 
 if [[ "$scenario_id" == "PROD-001-sync-send" ]]; then
     echo "Sending one message from each language and reading each with the other client"
@@ -1625,6 +1724,68 @@ PY
         exit 1
     fi
     printf 'PASS P9-V03: Java and Rust matched all four pull statuses, suggested broker, boundary RPCs, and persisted resume offset\n' \
+        | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
+    start_reply_responder rust reply-java-to-rust "$evidence_dir/rust-responder.tsv"
+    run_reply_requester java request-java-to-rust "$evidence_dir/java-request-rust-reply.tsv"
+    wait_reply_responder "$evidence_dir/rust-responder.tsv"
+
+    start_reply_responder java reply-rust-to-java "$evidence_dir/java-responder.tsv"
+    run_reply_requester rust request-rust-to-java "$evidence_dir/rust-request-java-reply.tsv"
+    wait_reply_responder "$evidence_dir/java-responder.tsv"
+
+    if ! python3 - "$topic" \
+        "$evidence_dir/java-request-rust-reply.tsv" \
+        "$evidence_dir/rust-responder.tsv" \
+        "$evidence_dir/rust-request-java-reply.tsv" \
+        "$evidence_dir/java-responder.tsv" <<'PY'
+import sys
+from pathlib import Path
+
+topic, java_request_path, rust_responder_path, rust_request_path, java_responder_path = sys.argv[1:]
+
+def parse_request(path, request_body, reply_body):
+    lines = Path(path).read_text().splitlines()
+    requests = [line.split("\t") for line in lines if line.startswith("REQ\tREQUEST\t")]
+    replies = [line.split("\t") for line in lines if line.startswith("REQ\tREPLY\t")]
+    if len(requests) != 1 or len(replies) != 1:
+        raise SystemExit(f"{path}: expected exactly one request and one returned reply")
+    request, reply = requests[0], replies[0]
+    if len(request) != 9 or request[2] != topic or bytes.fromhex(request[3]) != request_body.encode():
+        raise SystemExit(f"{path}: request topic/body or result shape differs: {request!r}")
+    if not request[4] or request[4] == "-" or request[5] == "-" or request[6] != "15000":
+        raise SystemExit(f"{path}: request omitted correlation/reply-to/TTL metadata: {request!r}")
+    if len(reply) != 9 or not reply[2].endswith("_REPLY_TOPIC"):
+        raise SystemExit(f"{path}: reply topic or result shape differs: {reply!r}")
+    if bytes.fromhex(reply[3]) != reply_body.encode() or reply[4] != request[4]:
+        raise SystemExit(f"{path}: reply body or correlation does not match its request: {reply!r}")
+    if reply[5] != request[5] or reply[6] != request[6] or reply[8] != "reply":
+        raise SystemExit(f"{path}: reply-to, TTL, or type metadata differs: {reply!r}")
+    return (request[2], request[3], request[6], request[7], reply[2], reply[3], reply[8])
+
+def parse_responder(path):
+    lines = Path(path).read_text().splitlines()
+    sent = [line.split("\t") for line in lines if line.startswith("REQ\tRESPONDER\t")]
+    if len(sent) != 1 or len(sent[0]) < 4 or sent[0][2] != "SEND_OK":
+        raise SystemExit(f"{path}: expected exactly one successful reply send")
+    if not sent[0][3].endswith("_REPLY_TOPIC"):
+        raise SystemExit(f"{path}: responder sent to an unexpected topic: {sent[0]!r}")
+    return sent[0][3]
+
+java_rust = parse_request(java_request_path, "request-java-to-rust", "reply-java-to-rust")
+rust_java = parse_request(rust_request_path, "request-rust-to-java", "reply-rust-to-java")
+java_rust_topic = parse_responder(rust_responder_path)
+rust_java_topic = parse_responder(java_responder_path)
+if java_rust[4] != java_rust_topic or rust_java[4] != rust_java_topic:
+    raise SystemExit("responder send topic differs from the topic returned to the requester")
+if java_rust[4] != rust_java[4] or java_rust[6] != rust_java[6]:
+    raise SystemExit("Java/Rust request-reply topic or message type semantics differ")
+PY
+    then
+        echo "Cross-client request/reply behavior does not satisfy REQ-001" >&2
+        exit 1
+    fi
+    printf 'PASS REQ-001: Java and Rust each received exactly one correlated Broker reply from the other client; reply body and metadata matched\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P6-V04" ]]; then
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \

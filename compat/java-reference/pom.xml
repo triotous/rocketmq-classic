@@ -63,6 +63,10 @@
             <configuration><mainClass>compat.LivePullConsumerProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-request-reply-probe</id>
+            <configuration><mainClass>compat.LiveRequestReplyProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>live-consumer-probe</id>
             <configuration><mainClass>compat.LiveConsumerProbe</mainClass></configuration>
           </execution>
