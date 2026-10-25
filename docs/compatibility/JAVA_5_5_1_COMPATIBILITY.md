@@ -27,7 +27,9 @@ checks that the Broker suppresses a later nonmatching message, unregisters one
 producer group, and confirms the other producer and consumer remain active.
 `P9-V03` compares explicit pull results, all four pull statuses, suggested
 broker selection, offset-boundary RPCs, and persisted offset resume after
-restart. The other 17 scenarios remain unimplemented and pending. This does
+restart. `REQ-001-request-reply-success` also passes the two cross-language
+request/reply directions with matching correlation and reply metadata. The
+other 16 scenarios remain unimplemented and pending. This does
 not close the broader P18-V01 public API/settings/flow reverse audit or establish
 full client parity. See
 [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server

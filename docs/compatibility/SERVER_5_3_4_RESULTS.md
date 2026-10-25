@@ -59,7 +59,9 @@ consumer rows, the P5 route row, `P6-V04`, `ORDER-001-lock-unlock`,
 `REBAL-001-average-10q-3c`, and the two transaction rows are implemented and
 passed by the current runner; `P0-V03` also passes as an aggregate over eleven
 clean constituent runs, `P7-V02` covers high-level producer send modes, and
-`P9-V03` covers manual pull and offset resume. 17 remain pending. The two-Broker profile covers
+`P9-V03` covers manual pull and offset resume. `REQ-001-request-reply-success`
+checks both cross-language request/reply directions. 16 remain pending. The
+two-Broker profile covers
 lock/unlock and average queue assignment; retry, query, and broader
 interoperability coverage, TLS, ACL, and feature-specific profiles remain
 incomplete. No server limitation is inferred from an unrun case. Phase 19
@@ -229,3 +231,17 @@ resumed at offset 1 after a new consumer instance started. The run exited 0
 and removed its topic and host-routed Compose resources:
 [`20261025T100359Z`](evidence/phase-19/P9-V03/20261025T100359Z/).
 Live coverage is now 20/37, with 17 cases pending.
+
+## Cross-language request/reply — 2026-10-25
+
+`REQ-001-request-reply-success` passed on committed revision
+`bb77548634ac623bd621a1afbb87a4558163c6c5` with `source_code_dirty=false`.
+Java requested on `compat_phase0_request_java` and received the Rust Broker
+reply; Rust requested on `compat_phase0_request_rust` and received the Java
+Broker reply. Both returned exactly one reply with the expected body, matching
+correlation ID, reply-to, 15-second TTL, and `reply` message type. Each
+responder log records the request it consumed and the reply send result.
+Both topics and the isolated host-routed Compose project were removed after
+capture. Evidence is under
+[`20261025T103216Z`](evidence/phase-19/REQ-001-request-reply-success/20261025T103216Z/).
+Live coverage is now 21/37, with 16 cases pending.

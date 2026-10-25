@@ -1,0 +1,33 @@
+REQ	READY
+org.apache.rocketmq.client.exception.MQClientException: Send [3] times, still failed, cost [33]ms, Topic: RocketMQLocalTest_REPLY_TOPIC, BrokersSent: [broker-a, broker-a, broker-a]
+See https://rocketmq.apache.org/docs/faq/ for further details.
+	at org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.sendDefaultImpl(DefaultMQProducerImpl.java:870)
+	at org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.send(DefaultMQProducerImpl.java:1618)
+	at org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.send(DefaultMQProducerImpl.java:1525)
+	at org.apache.rocketmq.client.producer.DefaultMQProducer.sendDirect(DefaultMQProducer.java:764)
+	at org.apache.rocketmq.client.producer.DefaultMQProducer.send(DefaultMQProducer.java:476)
+	at compat.LiveRequestReplyProbe.lambda$respond$0(LiveRequestReplyProbe.java:68)
+	at org.apache.rocketmq.client.impl.consumer.ConsumeMessageConcurrentlyService$ConsumeRequest.run(ConsumeMessageConcurrentlyService.java:411)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:545)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:330)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1527)
+Caused by: org.apache.rocketmq.client.exception.MQBrokerException: CODE: 1  DESC: push reply message fail, channel of <10.10.10.121@45353#748292990050291> not found. BROKER: 127.0.0.1:40911
+For more information, please visit the url, https://rocketmq.apache.org/docs/faq/
+	at org.apache.rocketmq.client.impl.MQClientAPIImpl.processSendResponse(MQClientAPIImpl.java:770)
+	at org.apache.rocketmq.client.impl.MQClientAPIImpl.sendMessageSync(MQClientAPIImpl.java:605)
+	at org.apache.rocketmq.client.impl.MQClientAPIImpl.sendMessage(MQClientAPIImpl.java:587)
+	at org.apache.rocketmq.client.impl.MQClientAPIImpl.sendMessage(MQClientAPIImpl.java:531)
+	at org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.sendKernelImpl(DefaultMQProducerImpl.java:1067)
+	at org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl.sendDefaultImpl(DefaultMQProducerImpl.java:789)
+	... 11 more
+[ERROR] Failed to execute goal org.codehaus.mojo:exec-maven-plugin:3.5.0:java (live-request-reply-probe) on project rocketmq-java-reference: An exception occurred while executing the Java class. reply send failed: ERROR	org.apache.rocketmq.client.exception.MQClientException	Send [3] times, still failed, cost [33]ms, Topic: RocketMQLocalTest_REPLY_TOPIC, BrokersSent: [broker-a, broker-a, broker-a]
+[ERROR] See https://rocketmq.apache.org/docs/faq/ for further details.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

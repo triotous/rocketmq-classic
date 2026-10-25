@@ -10596,3 +10596,17 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - Live coverage is 20/37, with 17 scenarios pending. Full local gates must be
   rerun after the remaining runner additions; broad P18-V01, MAN-01..05, and
   remote Docker CI remain open.
+
+## P19 REQ-001 cross-language request/reply — 2026-10-25 (`bb775486`)
+
+- [x] Isolated the two request directions on scenario-owned Java and Rust
+  topics so each responder observes only its paired requester. The runner
+  verifies the received request, reply body, correlation ID, reply-to, TTL,
+  and reply message type.
+- [x] `REQ-001-request-reply-success` passed at `20261025T103216Z` on
+  `bb77548634ac623bd621a1afbb87a4558163c6c5` with `source_code_dirty=false`.
+  Both responders sent one reply, and each requester returned its matching
+  reply. Topic deletion and host-routed Compose teardown passed.
+- Live coverage is 21/37, with 16 scenarios pending. Full local gates must be
+  rerun after the remaining runner additions; broad P18-V01, MAN-01..05, and
+  remote Docker CI remain open.
