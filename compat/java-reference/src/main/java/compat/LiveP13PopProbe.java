@@ -192,6 +192,7 @@ public final class LiveP13PopProbe {
             String prefix = "compat_p13_pop_" + language;
             String queueZeroBody = "p13-" + language + "-q0";
             String queueOneBody = "p13-" + language + "-q1";
+            printPopOffsetState(api, brokerAddress, topic, prefix + "_expiry", 0, "after-api-start");
 
             MessageExt first = pop(api, brokerAddress, topic, prefix + "_expiry", 0, queueZeroBody, 1_000);
             String firstReceipt = receipt(first);
@@ -270,9 +271,14 @@ public final class LiveP13PopProbe {
         header.setExpType("TAG");
         header.setExp("*");
         MessageQueue queue = new MessageQueue(topic, BROKER_NAME, queueId);
+        printPopOffsetState(api, brokerAddress, topic, group, queueId, "before-min-query");
         long minOffset = api.getMinOffset(brokerAddress, queue, 10_000);
+        printPopOffsetState(api, brokerAddress, topic, group, queueId, "after-min-query");
         long maxOffset = api.getMaxOffset(brokerAddress, queue, 10_000);
+        printPopOffsetState(api, brokerAddress, topic, group, queueId, "after-max-query");
         String committedOffsetBefore = consumerOffset(api, brokerAddress, topic, group, queueId);
+        System.err.printf("P13\tpop-offset-state\tphase=before-pop-request\tgroup=%s\tqueue=%d\toffset=%s%n",
+            group, queueId, committedOffsetBefore);
         PopResult result = api.popMessageAsync(brokerAddress, BROKER_NAME, header, 10_000)
             .get(15, TimeUnit.SECONDS);
         if (result.getPopStatus() == null || !"FOUND".equals(result.getPopStatus().name())
@@ -288,6 +294,12 @@ public final class LiveP13PopProbe {
             throw new IllegalStateException("POP returned an unexpected body: " + Arrays.toString(message.getBody()));
         }
         return message;
+    }
+
+    private static void printPopOffsetState(MQClientAPIImpl api, String brokerAddress, String topic,
+        String group, int queueId, String phase) throws Exception {
+        System.err.printf("P13\tpop-offset-state\tphase=%s\tgroup=%s\tqueue=%d\toffset=%s%n",
+            phase, group, queueId, consumerOffset(api, brokerAddress, topic, group, queueId));
     }
 
     private static String consumerOffset(MQClientAPIImpl api, String brokerAddress, String topic,

@@ -873,6 +873,10 @@ cleanup() {
         kill "$tls_proxy_pid" 2>/dev/null
         wait "$tls_proxy_pid" 2>/dev/null
     fi
+    if [[ "$scenario_id" == "P13-V02" ]]; then
+        "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 broker broker-b \
+            >"$evidence_dir/broker-logs.log" 2>&1
+    fi
     if [[ "$topic_created" == true ]]; then
         : >"$evidence_dir/topic-cleanup.log"
         for topic_to_delete in "${topic_cleanup_list[@]}"; do
