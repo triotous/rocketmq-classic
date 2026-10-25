@@ -195,10 +195,15 @@ if [[ "$selection" != "scenario" ]]; then
 fi
 
 IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids <"$selected_file"
-if [[ "$profile" != "basic" ]] && [[ ( "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" ) || "$profile" != "two-broker" ]]; then
-    echo "Scenario metadata differs from the implemented profile" >&2
-    exit 3
-fi
+case "$profile:$scenario_id" in
+    basic:*) ;;
+    two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c) ;;
+    transaction:TX-001-commit|transaction:TX-002-rollback) ;;
+    *)
+        echo "Scenario metadata differs from the implemented profile" >&2
+        exit 3
+        ;;
+esac
 case "$scenario_id:$topic" in
     ROUTE-001-get-existing-topic:compat_phase0_route|ROUTE-002-topic-not-exist:compat_phase0_missing) ;;
     HEARTBEAT-001:-)
@@ -276,7 +281,7 @@ case "$scenario_id:$topic" in
         if [[ "$scenario_id" == "TX-002-rollback" ]]; then
             expected_transaction_key="compat_tx_rollback"
         fi
-        if [[ "$profile" != "basic" || "$producer_group" != "compat_phase0_tx_group" || "$key_prefix" != "$expected_transaction_key" || "$body" != "transaction-body" ]]; then
+        if [[ "$profile" != "transaction" || "$producer_group" != "compat_phase0_tx_group" || "$key_prefix" != "$expected_transaction_key" || "$body" != "transaction-body" ]]; then
             echo "Transaction metadata differs from the reviewed local commit/rollback cases" >&2
             exit 3
         fi
@@ -327,8 +332,20 @@ fi
 export COMPOSE_PROJECT_NAME="$project_name"
 export ROCKETMQ_PROFILE="$profile"
 export ROCKETMQ_NAMESRV_HOST_PORT="${ROCKETMQ_NAMESRV_HOST_PORT:-19876}"
-export ROCKETMQ_BROKER_HOST_PORT="${ROCKETMQ_BROKER_HOST_PORT:-20911}"
+default_broker_host_port=20911
+if [[ "$profile" == "transaction" ]]; then
+    default_broker_host_port=30911
+fi
+export ROCKETMQ_BROKER_HOST_PORT="${ROCKETMQ_BROKER_HOST_PORT:-$default_broker_host_port}"
+if [[ "$profile" == "transaction" && "$ROCKETMQ_BROKER_HOST_PORT" != "30911" ]]; then
+    echo "The transaction profile advertises broker-a on 127.0.0.1:30911; set ROCKETMQ_BROKER_HOST_PORT=30911" >&2
+    exit 2
+fi
 compose=(docker compose --project-name "$project_name" --file "$repo_root/integration-tests/compose.yaml" --profile "$profile")
+broker_service=broker
+if [[ "$profile" == "transaction" ]]; then
+    broker_service=broker-tx
+fi
 
 if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; then
     echo "Docker Engine and Docker Compose are required for live differential scenarios" >&2
@@ -351,7 +368,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveRebalanceProbe.java
     compat/java-reference/src/main/java/compat/LiveTransactionProbe.java
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
-    integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf
+    integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf integration-tests/config/broker-tx.conf
     integration-tests/setup.sh integration-tests/cleanup.sh
     tests/differential/compare.py tests/differential/run.sh)
 if [[ -n "$(git -C "$repo_root" status --porcelain -- "${code_dirty_paths[@]}")" ]]; then
@@ -428,7 +445,7 @@ fi
     docker version --format 'Docker client {{.Client.Version}} / server {{.Server.Version}}'
     docker compose version
     docker info --format 'Docker platform {{.OSType}}/{{.Architecture}}'
-    python3 - "$repo_root/integration-tests/compose.yaml" "$repo_root/integration-tests/config/broker.conf" "$repo_root/integration-tests/config/broker-b.conf" <<'PY'
+    python3 - "$repo_root/integration-tests/compose.yaml" "$repo_root/integration-tests/config/broker.conf" "$repo_root/integration-tests/config/broker-b.conf" "$repo_root/integration-tests/config/broker-tx.conf" <<'PY'
 import hashlib
 import sys
 from pathlib import Path
@@ -467,7 +484,7 @@ elif [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback"
     fi
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
-docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec $broker_service ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic $producer_group $transaction_decision ${key_prefix}_java $body" exec:java@live-transaction-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- transaction $namesrv_addr $topic $producer_group $transaction_decision ${key_prefix}_rust $body
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- max-offset $broker_addr $topic 0
@@ -566,7 +583,7 @@ cleanup() {
     trap - EXIT
     set +e
     if [[ "$topic_created" == true ]]; then
-        "${compose[@]}" exec --no-TTY broker ./mqadmin deleteTopic -c RocketMQLocalTest -t "$topic" -n namesrv:9876 \
+        "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin deleteTopic -c RocketMQLocalTest -t "$topic" -n namesrv:9876 \
             >"$evidence_dir/topic-cleanup.log" 2>&1
         delete_status=$?
         if ((delete_status)); then
@@ -672,7 +689,7 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
     elif [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" ]]; then
         topic_queue_count=1
     fi
-    if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateTopic -c RocketMQLocalTest -t "$topic" -r "$topic_queue_count" -w "$topic_queue_count" -n namesrv:9876 \
+    if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateTopic -c RocketMQLocalTest -t "$topic" -r "$topic_queue_count" -w "$topic_queue_count" -n namesrv:9876 \
         >"$evidence_dir/topic-create.log" 2>&1; then
         cat "$evidence_dir/topic-create.log" >&2
         exit 1
