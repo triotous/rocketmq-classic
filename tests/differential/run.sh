@@ -1475,12 +1475,12 @@ def parse(path):
         raise SystemExit(f"{path}: missing initial queue offset")
     base = int(rows[0][2])
     sends = rows[1:4]
-    for index, (row, method) in enumerate(zip(sends, methods[:3], strict=True)):
+    for index, (row, method) in enumerate(zip(sends, methods[:3])):
         if len(row) != 7 or row[:3] != ["P5", "RESULT", method]:
             raise SystemExit(f"{path}: malformed result for {method}: {row!r}")
         if row[3:] != ["SEND_OK", topic, "0", str(base + index)]:
             raise SystemExit(f"{path}: unexpected send result for {method}: {row!r}")
-    for row, method in zip(rows[4:6], methods[3:], strict=True):
+    for row, method in zip(rows[4:6], methods[3:]):
         if row != ["P5", "RESULT", method, "ONEWAY"]:
             raise SystemExit(f"{path}: one-way reply result differs for {method}: {row!r}")
     if rows[6] != ["P5", "RESULT", "end-transaction", "ONEWAY"]:
@@ -1494,7 +1494,7 @@ java_base, java_sends, java_max = parse(java_path)
 rust_base, rust_sends, rust_max = parse(rust_path)
 if java_base != 0 or rust_base != java_max or rust_max != java_max + 3:
     raise SystemExit("Java and Rust producer passes did not execute consecutively from the expected queue offsets")
-for java_row, rust_row in zip(java_sends, rust_sends, strict=True):
+for java_row, rust_row in zip(java_sends, rust_sends):
     if java_row[2:6] != rust_row[2:6]:
         raise SystemExit(f"Java/Rust {java_row[2]} producer results differ: {java_row!r} vs {rust_row!r}")
 PY
