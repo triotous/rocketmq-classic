@@ -32,6 +32,7 @@ scenario and profile.
 | `PROD-003-oneway-send` | PASS — Java and Rust oneway calls returned without a Broker response. Broker queue max offsets advanced from 0 to 1 and then 2; Rust read the Java message at queue offset 0, and Java read the Rust message at offset 1. The owned topic and isolated Compose project, network, and volume were removed after the run. | [`20261017T063258Z`](evidence/phase-19/PROD-003-oneway-send/20261017T063258Z/) |
 | `PROD-004-batch-send` | PASS — Java and Rust both returned `SEND_OK` for two messages. Rust read both Java messages by their physical offset IDs at queue offsets 0 and 1; Java read both Rust messages at offsets 2 and 3. Bodies matched `batch-0` and `batch-1`. The owned topic and isolated Compose project, network, and volume were removed after the run. | [`20261017T065458Z`](evidence/phase-19/PROD-004-batch-send/20261017T065458Z/) |
 | `PROD-005-send-timeout` | PASS — a local TCP proxy delayed each direct Broker response by 600 ms beyond the 100 ms client deadline. Java and Rust both reported timeout; Broker max offset reached 2, and both clients pulled the same two distinct messages. The topic and isolated two-Broker Compose project, network, and volumes were removed. | [`20261025T104539Z`](evidence/phase-19/PROD-005-send-timeout/20261025T104539Z/) |
+| `P3-V04` | PASS — Java/Rust raw NameServer routes and trusted/untrusted CA outcomes matched; Rust rejected a trusted wrong-host certificate, while Java 5.5.1 accepted it without endpoint identification. TLS requests used a local terminating proxy forwarding to the isolated plain Broker; all clients shut down cleanly and the project was removed. | [`20261025T113910Z`](evidence/phase-19/P3-V04/20261025T113910Z/) |
 
 The first batch attempt at source revision `2f9396e3` sent successfully from
 Java but failed in the Rust probe because it read only the first returned
@@ -49,25 +50,27 @@ commands, duration, client outputs, and cleanup results. Local home/repository
 paths and the host name are redacted from archived tool output. Current
 results cover route lookup, heartbeat, synchronous/asynchronous/oneway/batch
 sends with cross-language readback, consumer offsets and pulls, queue lock
-contention, average assignment over two live Brokers, and the listed
-transaction commit/rollback visibility cases. They do not complete
-request/reply, retry, TLS, ACL, failover, or stress coverage.
+contention, average assignment over two live Brokers, transaction
+commit/rollback visibility, request/reply, producer timeout, and client TLS
+through a local terminating proxy. They do not complete retry, Broker-native
+TLS/auth, ACL, failover, or stress coverage.
 
 ## Pending local server coverage
 
-The scenario manifest contains 37 live cases. The seven rows above, four
-consumer rows, the P5 route row, `P6-V04`, `ORDER-001-lock-unlock`,
-`REBAL-001-average-10q-3c`, and the two transaction rows are implemented and
-passed by the current runner; `P0-V03` also passes as an aggregate over eleven
-clean constituent runs, `P7-V02` covers high-level producer send modes, and
-`P9-V03` covers manual pull and offset resume. `REQ-001-request-reply-success`
-checks both cross-language request/reply directions, and
-`PROD-005-send-timeout` checks commit visibility after a timed-out send. 15
-remain pending. The
-two-Broker profile covers
-lock/unlock and average queue assignment; retry, query, and broader
-interoperability coverage, TLS, ACL, and feature-specific profiles remain
-incomplete. No server limitation is inferred from an unrun case. Phase 19
+The scenario manifest contains 37 live cases; 25 pass. The eight basic
+route/heartbeat/send scenarios above, `P3-V04`, four consumer cases, the P5
+route row, `P6-V04`, `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, and
+the two transaction rows passed. `P0-V03` also passes as an aggregate over
+eleven clean constituent runs, `P7-V02` covers high-level producer send modes,
+and `P9-V03` covers manual pull and offset resume.
+`REQ-001-request-reply-success` checks both cross-language request/reply
+directions; `PROD-005-send-timeout` checks commit visibility after a timed-out
+send. Twelve remain pending: `P5-V02-extensions`, `P7-V03`, `P7-V04`,
+`P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`, `P13-V02`, `P14-V03`, `P15-V03`,
+`P16-V02`, and `P17-V02`. The two-Broker profile covers lock/unlock and average
+queue assignment; retry, query, and broader interoperability coverage,
+Broker-native TLS/auth, ACL, and feature-specific profiles remain incomplete.
+No server limitation is inferred from an unrun case. Phase 19
 acceptance remains open until each locally reproducible case has Java/Rust
 evidence or a source-backed matched server limitation plus the required
 success-path evidence.

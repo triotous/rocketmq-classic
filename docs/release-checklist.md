@@ -10653,3 +10653,24 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - Live coverage is 24/37, with 13 scenarios pending. Full local gates must be
   rerun after the remaining runner additions; broad P18-V01, MAN-01..05, and
   remote Docker CI remain open.
+
+## P19 P3-V04 raw route and TLS lifecycle — 2026-10-25 (`d673e6ff`)
+
+- [x] Added an isolated TLS profile and Java 5.5.1/Rust live probes. The raw
+  route calls the local NameServer. TLS requests go through a locally generated
+  TLS-terminating proxy to the disposable plain Broker; this validates client
+  TLS behavior, not TLS configuration in the Broker.
+- [x] `P3-V04` passed at `20261025T113910Z` on
+  `d673e6ff6aefcd12831203a5b131c72a37c22678` with `source_code_dirty=false`.
+  Java and Rust matched the route and trusted/untrusted CA outcomes; Rust
+  rejected a trusted wrong-host certificate while Java 5.5.1 accepted it
+  because the client TLS handler has no peer hostname. All clients reported
+  zero pending requests, retained channels, or worker tasks.
+- [x] The runner deleted `compat_p3_tls` and removed its Compose containers,
+  network, and volume after evidence capture.
+- Live coverage is 25/37 with 12 cases still lacking runners:
+  `P5-V02-extensions`, `P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`, `P11-V04`,
+  `P12-V03`, `P13-V02`, `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`.
+  The full `run-local.sh --all` gate must be rerun after the remaining runner
+  additions; broad P18-V01, MAN-01 through MAN-05, and remote Docker CI remain
+  open.

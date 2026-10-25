@@ -43,6 +43,14 @@ ROCKETMQ_PROFILE=basic \
 tests/differential/run.sh --scenario ROUTE-002-topic-not-exist
 ```
 
+The TLS lifecycle handoff uses the isolated TLS profile:
+
+```bash
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable \
+ROCKETMQ_PROFILE=tls \
+tests/differential/run.sh --scenario P3-V04
+```
+
 ```bash
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable \
 ROCKETMQ_PROFILE=basic \
@@ -89,6 +97,12 @@ resuming from a broker-persisted offset after a consumer restart.
 `REQ-001-request-reply-success` checks Java request/Rust reply and Rust
 request/Java reply on separate scenario-owned topics, including the correlated
 reply fields and each responder's observed request.
+`P3-V04` invokes a raw route on the local NameServer, then sends Java and Rust
+RocketMQ requests through a locally generated TLS terminator that forwards to
+the disposable plain Broker. Java 5.5.1 verifies the CA chain but accepts a
+trusted wrong-host certificate; Rust verifies the host and rejects it. Both
+clients reject an untrusted CA and report zero retained remoting resources at
+shutdown.
 `PROD-005-send-timeout` delays each direct Broker response beyond the reviewed
 100 ms deadline and verifies the timed-out sends were each committed once by
 cross-language pull readback.
@@ -99,8 +113,8 @@ consumer-list, send-back, and queue lock/unlock calls on the two-Broker profile.
 It deletes any owned topic and tears down only that project. Toolchain,
 configuration, output, and cleanup evidence is stored under
 `docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
-after comparison and cleanup both succeed. The runner implements 24 of 37
-cases and all 24 have passed: the two Phase 0 route cases, `P0-V03`,
+after comparison and cleanup both succeed. The runner implements 25 of 37
+cases and all 25 have passed: the two Phase 0 route cases, `P0-V03`, `P3-V04`,
 `P5-V02-route`, `P5-V02-producer`, `P5-V02-consumer`, `P6-V04`, `P7-V02`, `P9-V03`,
 `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, `HEARTBEAT-001`,
 `PROD-001-sync-send` through `PROD-004-batch-send`, `PROD-005-send-timeout`, and
@@ -184,8 +198,10 @@ It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
 produce a `BLOCKED` result with the missing IDs in the archived log; the full
 matrix cannot report success until all IDs have passing evidence. Currently
-24 of 37 live cases have runners; the other 13, the remaining two-Broker
-cases, TLS/ACL/feature profiles, and a fresh `run-local.sh --all` pass remain
-pending. The last full local run predates several later runner additions and
-must be rerun against the current revision.
+25 of 37 live cases have runners and passed; 12 remain without runners:
+`P5-V02-extensions`, `P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`, `P11-V04`,
+`P12-V03`, `P13-V02`, `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`.
+The remaining two-Broker cases, ACL/feature profiles, and a fresh
+`run-local.sh --all` pass remain pending. The last full local run predates
+several later runner additions and must be rerun against the current revision.
 Starting a profile by itself does not mark a scenario passed.
