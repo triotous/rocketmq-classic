@@ -1835,7 +1835,7 @@ PY
         echo "Cross-client request/reply behavior does not satisfy REQ-001" >&2
         exit 1
     fi
-    printf 'PASS REQ-001: Java and Rust each received exactly one correlated Broker reply from the other client; reply body and metadata matched\n' \
+    printf 'PASS REQ-001-request-reply-success: Java and Rust each received exactly one correlated Broker reply from the other client; reply body and metadata matched\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P6-V04" ]]; then
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
