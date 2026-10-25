@@ -1916,6 +1916,9 @@ async fn p13_pop_one(
     if reply.status.name() != "FOUND" {
         return Err(format!("POP returned {} for {expected_body}", reply.status.name()).into());
     }
+    let response_header = reply
+        .header
+        .ok_or("successful POP omitted response header")?;
     let raw = reply
         .raw_messages
         .ok_or("successful POP omitted message bytes")?;
@@ -1923,12 +1926,36 @@ async fn p13_pop_one(
     if messages.len() != 1 || messages[0].body().as_ref() != expected_body.as_bytes() {
         return Err(format!("POP returned an unexpected message for {expected_body}").into());
     }
-    let message = messages.remove(0);
-    let raw_receipt = message
-        .properties()
-        .get("POP_CK")
-        .ok_or("POP result omitted POP_CK")?
-        .clone();
+    let mut message = messages.remove(0);
+    let raw_receipt = if let Some(existing) = message.properties().get("POP_CK") {
+        existing.clone()
+    } else {
+        let start_offsets = p13_pop_offset_info(
+            response_header.get_start_offset_info(),
+            queue_id,
+            "startOffsetInfo",
+        )?;
+        let message_offsets = p13_pop_offset_info(
+            response_header.get_msg_offset_info(),
+            queue_id,
+            "msgOffsetInfo",
+        )?;
+        let checkpoint_offset = *start_offsets
+            .first()
+            .ok_or("POP startOffsetInfo omitted checkpoint offset")?;
+        let message_offset = message_offsets
+            .into_iter()
+            .find(|offset| *offset == message.queue_offset())
+            .ok_or("POP msgOffsetInfo omitted the returned queue offset")?;
+        let raw = format!(
+            "{checkpoint_offset} {} {} {} 0 broker-a {queue_id} {message_offset}",
+            response_header.get_pop_time(),
+            response_header.get_invisible_time(),
+            response_header.get_revive_qid(),
+        );
+        message.set_system_property("POP_CK", raw.clone())?;
+        raw
+    };
     let receipt = PopReceipt::parse(raw_receipt)?;
     if message.queue_id() != queue_id || receipt.queue_id() != queue_id {
         return Err(format!(
@@ -1943,6 +1970,29 @@ async fn p13_pop_one(
         message.queue_offset()
     );
     Ok((message, receipt))
+}
+
+fn p13_pop_offset_info(
+    info: Option<&str>,
+    queue_id: i32,
+    field_name: &str,
+) -> Result<Vec<i64>, Box<dyn Error>> {
+    let info = info.ok_or_else(|| format!("POP response omitted {field_name}"))?;
+    for entry in info.split(';') {
+        let fields = entry.split_whitespace().collect::<Vec<_>>();
+        if fields.len() != 3 {
+            return Err(format!("malformed POP {field_name} entry {entry:?}").into());
+        }
+        let entry_queue_id = fields[1].parse::<i32>()?;
+        if fields[0] != "0" || entry_queue_id != queue_id {
+            continue;
+        }
+        return fields[2]
+            .split(',')
+            .map(|offset| offset.parse::<i64>().map_err(Into::into))
+            .collect();
+    }
+    Err(format!("POP {field_name} omitted retry 0 queue {queue_id}").into())
 }
 
 async fn p5_extensions(
