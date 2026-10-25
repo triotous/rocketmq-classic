@@ -1842,10 +1842,12 @@ expected_seed = [
     ["P13", "seed", "p13-java-q1", "1", "0", "1"],
 ]
 seed = [line.split("\t") for line in (root / "java-p13-pop-seed.tsv").read_text().splitlines()]
+seed = [row for row in seed if len(row) >= 2 and row[:2] == ["P13", "seed"]]
 if seed != expected_seed:
     raise SystemExit(f"Java seed rows differ: {seed!r}")
 for language in ("java", "rust"):
     prepare = [line.split("\t") for line in (root / f"{language}-p13-pop-prepare.tsv").read_text().splitlines()]
+    prepare = [row for row in prepare if len(row) >= 2 and row[:2] == ["P13", "prepare"]]
     expected_prepare = [["P13", "prepare", f"compat_p13_pop_{language}_{suffix}", "POP"] for suffix in ("expiry", "change", "mixed")]
     if prepare != expected_prepare:
         raise SystemExit(f"{language} POP mode setup rows differ: {prepare!r}")
@@ -1861,7 +1863,7 @@ expected = {
 normalized = []
 for language in ("java", "rust"):
     rows = [line.split("\t") for line in (root / f"{language}-p13-pop-consume.tsv").read_text().splitlines()]
-    by_name = {row[1]: row for row in rows if len(row) >= 2 and row[0] == "P13"}
+    by_name = {row[1]: row for row in rows if len(row) >= 2 and row[0] == "P13" and row[1] in expected}
     if len(by_name) != len(expected) or by_name != expected:
         raise SystemExit(f"{language} lifecycle rows differ: {rows!r}")
     normalized.append(by_name)

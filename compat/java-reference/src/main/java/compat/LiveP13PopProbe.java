@@ -28,6 +28,7 @@ import org.apache.rocketmq.remoting.protocol.header.ChangeInvisibleTimeRequestHe
 import org.apache.rocketmq.remoting.protocol.header.ExtraInfoUtil;
 import org.apache.rocketmq.remoting.protocol.header.PopMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.UpdateConsumerOffsetRequestHeader;
 
 /** Exercises live POP receipt lifecycle behavior against the pinned Broker. */
 public final class LiveP13PopProbe {
@@ -109,6 +110,7 @@ public final class LiveP13PopProbe {
                     }
                 }
             }
+            initializePopGroupOffsets(api, brokerAddress, topic);
         } finally {
             producer.shutdown();
             api.shutdown();
@@ -155,6 +157,30 @@ public final class LiveP13PopProbe {
             TimeUnit.MILLISECONDS.sleep(100);
         } while (System.nanoTime() < deadlineNanos);
         return maxOffset;
+    }
+
+    private static void initializePopGroupOffsets(MQClientAPIImpl api, String brokerAddress, String topic)
+        throws Exception {
+        for (String language : Arrays.asList("java", "rust")) {
+            for (String suffix : Arrays.asList("expiry", "change", "mixed")) {
+                String group = "compat_p13_pop_" + language + "_" + suffix;
+                for (int queueId = 0; queueId < 2; queueId++) {
+                    UpdateConsumerOffsetRequestHeader header = new UpdateConsumerOffsetRequestHeader();
+                    header.setConsumerGroup(group);
+                    header.setTopic(topic);
+                    header.setQueueId(queueId);
+                    header.setCommitOffset(0L);
+                    header.setBrokerName(BROKER_NAME);
+                    api.updateConsumerOffset(brokerAddress, header, 10_000);
+                    String actualOffset = consumerOffset(api, brokerAddress, topic, group, queueId);
+                    if (!"0".equals(actualOffset)) {
+                        throw new IllegalStateException("failed to initialize POP group " + group
+                            + " queue " + queueId + " at offset 0: " + actualOffset);
+                    }
+                    System.out.printf("P13\tpop-offset-reset\t%s\t%d\t0%n", group, queueId);
+                }
+            }
+        }
     }
 
     private static void consume(String brokerAddress, String topic, String language) throws Exception {
