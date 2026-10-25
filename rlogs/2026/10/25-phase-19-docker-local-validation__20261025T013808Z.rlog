@@ -283,3 +283,7 @@
 - Docker Hub lists official `apache/rocketmq:5.5.0`; `docker buildx imagetools inspect` resolved multi-platform index `sha256:7e8f6c9dbd9df742ed26ba69c00d4ad69e2f86a56f3ca7782ff8144dd0798132` (linux/arm64 manifest `sha256:2bf396167ec51a79f394a1aa3bc232c0a8bed8fbed53489e48c9a2d5af77fa25`). The image was pulled and local inspection reports `linux/arm64`. Official Apache release notes identify Lite Mode as introduced in 5.5.0.
 - Added a separately named/pinned Compose file and an opt-in local supplementary runner that compares Java 5.5.1/Rust Lite subscription registration and Lite POP success while preserving the mandatory 5.3.4 manifest row. It isolates ports/resources and removes the scenario topics and all Compose volumes on exit.
 - Shell syntax and Compose configuration validation pass. The live 5.5.0 success path has not yet run; this entry records only the verified image/profile setup and the next local execution attempt. No production, remote checkout, push, or remote CI was accessed.
+
+## P19-05 supplementary runner portability correction — 2026-10-25
+
+- The first supplementary runner invocation stopped before creating evidence or Docker resources because macOS Bash 3.2 does not support the `${var,,}` lowercase expansion. Changed run-ID normalization to portable `tr`; shell syntax and whitespace checks pass. No scenario result is claimed.
