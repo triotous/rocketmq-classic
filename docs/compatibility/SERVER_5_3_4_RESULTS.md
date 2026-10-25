@@ -57,7 +57,7 @@ TLS/auth, ACL, failover, or stress coverage.
 
 ## Pending local server coverage
 
-The scenario manifest contains 37 live cases; 26 pass. The eight basic
+The scenario manifest contains 37 live cases; 27 pass. The eight basic
 route/heartbeat/send scenarios above, `P3-V04`, four consumer cases, the P5
 route row, `P6-V04`, `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, and
 the two transaction rows passed. `P0-V03` also passes as an aggregate over
@@ -65,11 +65,23 @@ eleven clean constituent runs, `P7-V02` covers high-level producer send modes,
 and `P9-V03` covers manual pull and offset resume.
 `REQ-001-request-reply-success` checks both cross-language request/reply
 directions; `PROD-005-send-timeout` checks commit visibility after a timed-out
-send. `P13-V02` compares the Java/Rust POP receipt lifecycle on two Brokers,
+send. `P5-V02-extensions` compares matching Java/Rust heartbeat, heartbeat V2,
+assignment, request-mode, standard POP, ACK, batch ACK, and visibility-change
+results; both
+clients receive response code 3 for unsupported Lite subscription request 200071
+and Lite POP request 200070. Apache 5.3.4 maps unregistered request codes to
+this response in its [remoting dispatcher](https://github.com/apache/rocketmq/blob/rocketmq-all-5.3.4/remoting/src/main/java/org/apache/rocketmq/remoting/netty/NettyRemotingAbstract.java)
+and defines code 3 as `REQUEST_CODE_NOT_SUPPORTED` in
+[RemotingSysResponseCode](https://github.com/apache/rocketmq/blob/rocketmq-all-5.3.4/remoting/src/main/java/org/apache/rocketmq/remoting/protocol/RemotingSysResponseCode.java).
+This matched rejection does not verify Lite success; the
+[Apache RocketMQ 5.5.0 release](https://github.com/apache/rocketmq/releases/tag/rocketmq-all-5.5.0)
+introduced Lite Mode, so the supplementary success-path profile remains under
+investigation.
+`P13-V02` compares the Java/Rust POP receipt lifecycle on two Brokers,
 including delivery, expiry redelivery, ACK, invisibility changes, mixed queue
-mapping, and malformed receipt rejection. Eleven remain pending:
-`P5-V02-extensions`, `P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`, `P11-V04`,
-`P12-V03`, `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`. The two-Broker
+mapping, and malformed receipt rejection. Ten remain pending:
+`P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`,
+`P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`. The two-Broker
 profile covers lock/unlock and average
 queue assignment; retry, query, and broader interoperability coverage,
 Broker-native TLS/auth, ACL, and feature-specific profiles remain incomplete.
@@ -308,6 +320,21 @@ were deleted, and the isolated Compose project, network, and volume were
 removed. Diagnostic evidence is under
 [`20261025T115801Z`](evidence/phase-19/P5-V02-extensions/20261025T115801Z/).
 Live coverage remains 25/37, with 12 scenarios pending.
+
+## P5 extension RPCs — 2026-10-25 clean-source pass
+
+Run `20261025T132049Z` on clean revision
+`d93c978e04c3619d3c8fe6e1c0d82c4de05f050b` passed the Java/Rust comparison.
+Both clients matched heartbeat, heartbeat V2, assignment, request-mode,
+standard POP, ACK, batch ACK, and visibility-change outcomes, and both
+received response code 3 for unsupported Lite subscription (request 200071)
+and Lite POP (request 200070). The pinned 5.3.4 dispatcher uses code 3 for
+unregistered request processors ([source](https://github.com/apache/rocketmq/blob/rocketmq-all-5.3.4/remoting/src/main/java/org/apache/rocketmq/remoting/netty/NettyRemotingAbstract.java));
+the response constant is
+[`REQUEST_CODE_NOT_SUPPORTED`](https://github.com/apache/rocketmq/blob/rocketmq-all-5.3.4/remoting/src/main/java/org/apache/rocketmq/remoting/protocol/RemotingSysResponseCode.java).
+The runner deleted the parent and derived Lite topics and removed the
+isolated Compose resources. Live coverage is now 27/37 with 10 scenarios
+pending. Evidence: [`20261025T132049Z`](evidence/phase-19/P5-V02-extensions/20261025T132049Z/).
 
 ## P13 POP lifecycle first attempt — 2026-10-25
 

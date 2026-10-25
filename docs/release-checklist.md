@@ -10773,3 +10773,19 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   `P11-V04`, `P12-V03`, `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`.
   The P5 extension attempt remains blocked at unsupported Lite subscription
   request 200071 on Broker 5.3.4; the other listed cases remain unrun.
+
+## P19 P5-V02-extensions parity pass — 2026-10-25 (`d93c978e`)
+
+- [x] Clean-source run `20261025T132049Z` on
+  `d93c978e04c3619d3c8fe6e1c0d82c4de05f050b` passed Java/Rust heartbeat,
+  heartbeat V2, assignment, request-mode, standard POP, ACK, batch ACK, and
+  visibility-change checks. Both clients received the pinned 5.3.4
+  unsupported response (code 3) for Lite subscription request 200071 and
+  Lite POP request 200070. Evidence is under
+  `docs/compatibility/evidence/phase-19/P5-V02-extensions/20261025T132049Z/`.
+- [x] The runner deleted the parent and derived Lite topics and removed its
+  isolated Compose containers, network, and volume. Live coverage is 27/37
+  with 10 runnerless cases pending: `P7-V03`, `P7-V04`, `P10-V03`,
+  `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`, `P15-V03`, `P16-V02`, and
+  `P17-V02`. Positive Lite success-path evidence remains under the
+  supplementary-server investigation required by P19-05.

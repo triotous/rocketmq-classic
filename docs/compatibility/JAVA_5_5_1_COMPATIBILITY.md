@@ -9,7 +9,7 @@ remains in progress.
 
 ## Phase 19 live status — 2026-10-25
 
-Twenty-six of 37 registered local scenarios have passing Java 5.5.1/Rust
+Twenty-seven of 37 registered local scenarios have passing Java 5.5.1/Rust
 evidence against the pinned 5.3.4 image. Four consumer cases cover reciprocal
 offset updates and queries, a found pull with message-body comparison, and an
 empty pull; `P5-V02-route` covers matching results for an existing and missing
@@ -33,17 +33,19 @@ request/reply directions with matching correlation and reply metadata.
 end-transaction RPC outcomes.
 `P5-V02-consumer` matches raw pull/Lite pull, offset update/query,
 consumer-list, send-back, and lock/unlock outcomes on the two-Broker profile.
+`P5-V02-extensions` matches heartbeat, heartbeat V2, assignment, request-mode,
+standard POP, ACK, batch ACK, and visibility-change outcomes. Broker 5.3.4
+returns its source-confirmed unsupported-request response for Lite subscription
+and Lite POP; this records the matched rejection path, not a Lite success path.
 `PROD-005-send-timeout` delays the Broker responses beyond 100 ms, confirms
 both clients report timeout, and verifies each message is committed once by
 matching Java/Rust pull results. `P3-V04` compares raw NameServer routing, CA
 trust, and client shutdown through a local TLS-terminating proxy. Java 5.5.1
 accepts a CA-trusted wrong-host certificate because its TLS handler does not
-receive a peer hostname; Rust rejects it. Eleven cases remain pending: `P5-V02-extensions`, `P7-V03`, `P7-V04`,
-`P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`, `P15-V03`,
-`P16-V02`, and `P17-V02`. Broker 5.3.4 rejected Lite subscription
-request 200071 as unsupported in the `P5-V02-extensions` attempt.
-`P13-V02` now passes the Java/Rust POP lifecycle; its earlier offset and
-redelivery diagnostics are run history. This does
+receive a peer hostname; Rust rejects it. Ten cases remain pending: `P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`,
+`P11-V04`, `P12-V03`, `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`.
+`P13-V02` and `P5-V02-extensions` now have clean Java/Rust evidence; the
+latter records the two unsupported Lite request paths on 5.3.4. This does
 not close the broader P18-V01 public API/settings/flow reverse audit or establish
 full client parity. See
 [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server
@@ -1078,3 +1080,12 @@ receipt ACK, mixed queue mapping, and malformed receipt rejection. The
 manifest records PASS; live coverage is 26/37 with 11 pending. The runner
 removed the topic, two-Broker containers, network, and volumes. Evidence
 is under [`20261025T130156Z`](evidence/phase-19/P13-V02/20261025T130156Z/).
+
+P5-V02-extensions live result: clean-source run `20261025T132049Z` on
+`d93c978e04c3619d3c8fe6e1c0d82c4de05f050b` passed. Java and Rust matched
+heartbeat, heartbeat V2, assignment, request-mode, standard POP, ACK, batch
+ACK, and visibility change. Both received response code 3 for unsupported
+Lite subscription request 200071 and Lite POP request 200070. This proves
+the 5.3.4 rejection mapping; the Lite success path remains to be checked on
+a supplementary unmodified server. Evidence is under
+[`20261025T132049Z`](evidence/phase-19/P5-V02-extensions/20261025T132049Z/).
