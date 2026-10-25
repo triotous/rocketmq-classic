@@ -24,7 +24,7 @@ use rocketmq_classic_core::api::{
     producer::{SendKind, SendMode},
 };
 use rocketmq_classic_core::error::RpcError;
-use rocketmq_classic_core::runtime::ClientRuntimeManager;
+use rocketmq_classic_core::runtime::{ClientRuntimeManager, RuntimeState};
 use rocketmq_classic_core::unique_id::UniqueIdGenerator;
 use rocketmq_classic_protocol::{
     SharedValue,
@@ -97,6 +97,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 &arguments[6],
             )
             .await
+        }
+        Some("p11-push") if arguments.len() == 6 => {
+            p11_push_retry_probe(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                &arguments[5],
+            )
+            .await
+        }
+        Some("p11-producer") if arguments.len() == 5 => {
+            p11_producer_probe(&arguments[1], &arguments[2], &arguments[3], &arguments[4]).await
         }
         Some("p7-lifecycle") if arguments.len() == 3 => {
             producer_lifecycle_probe(&arguments[1], &arguments[2]).await
@@ -239,6 +252,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
+        Some("offset-query-named") if arguments.len() == 6 => {
+            offset_query_named(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                arguments[5].parse()?,
+            )
+            .await
+        }
         Some("offset-update") if arguments.len() == 6 => {
             offset_update(
                 &arguments[1],
@@ -281,7 +304,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p10-push <namesrv-address> <topic> <group> <ready-file> <failure-go-file> | p11-mixed-group <namesrv-address> <topic> <group> <ownership-file> <stop-file> <exited-file> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume|p5-extension-lite-pop <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-timeout|p19-late-timeout <namesrv-address> <topic> <producer-group> <body> <timeout-ms> <hold-ms> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> [delay-ms] | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p10-push <namesrv-address> <topic> <group> <ready-file> <failure-go-file> | p11-mixed-group <namesrv-address> <topic> <group> <ownership-file> <stop-file> <exited-file> | p11-push <namesrv-address> <topic> <group> <body> <ready-file> | p11-producer <namesrv-address> <topic> <producer-group> <body> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume|p5-extension-lite-pop <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-timeout|p19-late-timeout <namesrv-address> <topic> <producer-group> <body> <timeout-ms> <hold-ms> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> [delay-ms] | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-query-named <broker-address> <broker-name> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -626,6 +649,183 @@ async fn p11_mixed_group_probe(
     std::fs::write(&exited_path, "exited\n")?;
     operation?;
     shutdown?;
+    Ok(())
+}
+
+async fn p11_push_retry_probe(
+    namesrv_address: &str,
+    topic: &str,
+    consumer_group: &str,
+    expected_body: &str,
+    ready_file: &str,
+) -> Result<(), Box<dyn Error>> {
+    let manager = ClientRuntimeManager::shared_default();
+    let ready_path = Path::new(ready_file);
+    let mut observed = Vec::new();
+
+    for cycle in 0..3 {
+        let mut config = PushConsumerConfig::new(consumer_group)?;
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(namesrv_address.to_owned()));
+        config.client_config_mut().set_mq_client_api_timeout(5_000);
+        config.set_consume_from_where(ConsumeFromWhere::ConsumeFromFirstOffset);
+        config.set_max_reconsume_times(1);
+        config.set_consume_message_batch_max_size(1);
+        config.set_pull_batch_size(8);
+
+        let consumer = Arc::new(PushConsumer::new(config));
+        let (delivery_tx, mut delivery_rx) =
+            tokio::sync::mpsc::unbounded_channel::<(String, i32, String, i32, i64)>();
+        let expected_body = expected_body.to_owned();
+        let listener_expected_body = expected_body.clone();
+        consumer
+            .set_message_listener(PushMessageListener::concurrently(
+                move |messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| {
+                    let delivery_tx = delivery_tx.clone();
+                    let expected_body = listener_expected_body.clone();
+                    Box::pin(async move {
+                        let mut retry = false;
+                        for message in messages {
+                            let body = String::from_utf8_lossy(message.body().as_ref()).into_owned();
+                            let reconsume_times = message.reconsume_times();
+                            let broker = message.broker_name().unwrap_or_default().to_owned();
+                            println!(
+                                "P11\tDELIVERY\trust\t{body}\t{reconsume_times}\t{}\t{broker}\t{}\t{}",
+                                message.topic(),
+                                message.queue_id(),
+                                message.queue_offset()
+                            );
+                            let _ = delivery_tx.send((
+                                body.clone(),
+                                reconsume_times,
+                                broker,
+                                message.queue_id(),
+                                message.queue_offset(),
+                            ));
+                            retry |= body == expected_body && reconsume_times == 0;
+                        }
+                        if retry {
+                            (Some(ConsumeConcurrentlyStatus::ReconsumeLater), context)
+                        } else {
+                            (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                        }
+                    })
+                },
+            ))
+            .await?;
+        consumer.subscribe(topic, "*").await?;
+        consumer.start().await?;
+        let runtime = consumer
+            .get_client_runtime()
+            .await
+            .ok_or("started Rust Push consumer did not retain its ClientRuntime")?;
+
+        if cycle == 0 {
+            std::fs::write(ready_path, "ready\n")?;
+            let deadline = Duration::from_secs(90);
+            loop {
+                let delivery = tokio::time::timeout(deadline, delivery_rx.recv())
+                    .await
+                    .map_err(|_| "timed out waiting for Java-produced Rust Push retry")?
+                    .ok_or("Rust Push delivery channel closed before the retry completed")?;
+                observed.push(delivery.clone());
+                if delivery.0 == expected_body && delivery.1 > 0 {
+                    break;
+                }
+            }
+            let retry_counts = observed
+                .iter()
+                .filter(|delivery| delivery.0 == expected_body)
+                .map(|delivery| delivery.1)
+                .collect::<Vec<_>>();
+            if retry_counts != [0, 1] {
+                return Err(format!("Rust Push retry counts differ: {retry_counts:?}").into());
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        } else {
+            tokio::time::sleep(Duration::from_millis(750)).await;
+        }
+
+        consumer.shutdown().await?;
+        assert_p11_runtime_stopped(&runtime, &manager, &format!("Rust Push cycle {cycle}"))?;
+        let counts = runtime.remoting().lifecycle_counts();
+        println!(
+            "P11\tCYCLE\trust\t{cycle}\t{}\t{}\t{}\t{}",
+            counts.pending_requests,
+            counts.connections,
+            counts.owned_tasks,
+            runtime.state() == RuntimeState::Stopped
+        );
+    }
+
+    println!("P11\tPASS\tRUST_PUSH_RETRY\tCYCLES=3\tRETRIES=1");
+    Ok(())
+}
+
+async fn p11_producer_probe(
+    namesrv_address: &str,
+    topic: &str,
+    producer_group: &str,
+    body: &str,
+) -> Result<(), Box<dyn Error>> {
+    let manager = ClientRuntimeManager::shared_default();
+    let mut config = ProducerConfig::new(producer_group)?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    config.client_config_mut().set_mq_client_api_timeout(5_000);
+    let producer = Arc::new(Producer::new(config));
+    producer.start().await?;
+    let runtime = manager
+        .factory_table()
+        .snapshot()?
+        .into_values()
+        .next()
+        .ok_or("started Rust producer did not register a ClientRuntime")?;
+
+    let mut message = Message::new(topic, body.as_bytes().to_vec());
+    let result = producer
+        .send_with_selector(&mut message, |queues, _| {
+            queues
+                .iter()
+                .find(|queue| queue.broker_name() == Some("broker-b") && queue.queue_id() == 0)
+                .cloned()
+        })
+        .await;
+    let shutdown = producer.shutdown().await;
+    let result = result?;
+    shutdown?;
+    assert_p11_runtime_stopped(&runtime, &manager, "Rust producer")?;
+    println!(
+        "P11\tPRODUCED\trust\t{body}\t{}\t{}\t{}\t{}",
+        result.status.name(),
+        result.broker_name,
+        result.queue_id,
+        result.queue_offset
+    );
+    Ok(())
+}
+
+fn assert_p11_runtime_stopped(
+    runtime: &rocketmq_classic_core::runtime::ClientRuntime,
+    manager: &ClientRuntimeManager,
+    owner: &str,
+) -> Result<(), Box<dyn Error>> {
+    let counts = runtime.remoting().lifecycle_counts();
+    let factories_empty = manager.factory_table().is_empty()?;
+    if runtime.state() != RuntimeState::Stopped
+        || !factories_empty
+        || counts.pending_requests != 0
+        || counts.connections != 0
+        || counts.owned_tasks != 0
+    {
+        return Err(format!(
+            "{owner} shutdown retained runtime resources: state={:?} factories_empty={factories_empty} counts={counts:?}",
+            runtime.state()
+        )
+        .into());
+    }
     Ok(())
 }
 
@@ -3282,6 +3482,16 @@ async fn offset_query(
     topic: &str,
     queue_id: i32,
 ) -> Result<(), Box<dyn Error>> {
+    offset_query_named(broker_address, "broker-a", group, topic, queue_id).await
+}
+
+async fn offset_query_named(
+    broker_address: &str,
+    broker_name: &str,
+    group: &str,
+    topic: &str,
+    queue_id: i32,
+) -> Result<(), Box<dyn Error>> {
     let remoting = RemotingClient::new(TransportMode::Plain);
     if let Err(error) = remoting.start() {
         remoting.shutdown().await;
@@ -3292,7 +3502,7 @@ async fn offset_query(
     header.set_consumer_group(Some(group.to_owned()));
     header.set_topic(Some(topic.to_owned()));
     header.set_queue_id(Some(queue_id));
-    header.set_broker_name(Some("broker-a".to_owned()));
+    header.set_broker_name(Some(broker_name.to_owned()));
     let result = api
         .query_consumer_offset(
             broker_address,
