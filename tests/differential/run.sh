@@ -158,7 +158,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route" "P0-V03")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -288,12 +288,18 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    P0-V03:-)
+        if [[ "$profile" != "basic" ]]; then
+            echo "P0-V03 must use the reviewed basic-profile aggregate" >&2
+            exit 3
+        fi
+        ;;
     *)
         echo "Scenario metadata differs from the reviewed case implementations" >&2
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P0-V03" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -497,6 +503,20 @@ cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- 
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="pull $broker_addr $consumer_group $topic 0 0" exec:java@live-consumer-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- pull $broker_addr $consumer_group $topic 0 0
 EOF
+elif [[ "$scenario_id" == "P0-V03" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic bash tests/differential/run.sh --scenario ROUTE-001-get-existing-topic
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic bash tests/differential/run.sh --scenario HEARTBEAT-001
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic bash tests/differential/run.sh --scenario PROD-001-sync-send
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic bash tests/differential/run.sh --scenario PROD-002-async-send
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic bash tests/differential/run.sh --scenario PROD-003-oneway-send
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic bash tests/differential/run.sh --scenario PROD-004-batch-send
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic bash tests/differential/run.sh --scenario CONS-001-query-offset
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic bash tests/differential/run.sh --scenario CONS-002-pull-found
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic bash tests/differential/run.sh --scenario CONS-003-pull-no-new-msg
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic bash tests/differential/run.sh --scenario CONS-004-update-offset
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker bash tests/differential/run.sh --scenario ORDER-001-lock-unlock
+EOF
 elif [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
@@ -680,11 +700,16 @@ PY
 trap cleanup EXIT
 
 echo "Provisioning isolated $profile profile in $project_name"
-if ! ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
-    COMPOSE_PROJECT_NAME="$project_name" bash "$repo_root/integration-tests/setup.sh" \
-    >"$evidence_dir/setup.log" 2>&1; then
-    cat "$evidence_dir/setup.log" >&2
-    exit 1
+if [[ "$scenario_id" == "P0-V03" ]]; then
+    printf 'Aggregate parent starts no Broker; each constituent run owns and removes its Compose project.\n' \
+        >"$evidence_dir/setup.log"
+else
+    if ! ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
+        COMPOSE_PROJECT_NAME="$project_name" bash "$repo_root/integration-tests/setup.sh" \
+        >"$evidence_dir/setup.log" 2>&1; then
+        cat "$evidence_dir/setup.log" >&2
+        exit 1
+    fi
 fi
 cat "$evidence_dir/setup.log"
 
@@ -1459,6 +1484,70 @@ PY
         printf 'PASS %s: Java/Rust rollbacks matched; no message was visible and max offset was %s\n' \
             "$scenario_id" "$expected_max_offset" | tee "$evidence_dir/result.txt"
     fi
+elif [[ "$scenario_id" == "P0-V03" ]]; then
+    constituents=(
+        "ROUTE-001-get-existing-topic:basic"
+        "HEARTBEAT-001:basic"
+        "PROD-001-sync-send:basic"
+        "PROD-002-async-send:basic"
+        "PROD-003-oneway-send:basic"
+        "PROD-004-batch-send:basic"
+        "CONS-001-query-offset:basic"
+        "CONS-002-pull-found:basic"
+        "CONS-003-pull-no-new-msg:basic"
+        "CONS-004-update-offset:basic"
+        "ORDER-001-lock-unlock:two-broker"
+    )
+    printf 'scenario\tstatus\tevidence\n' >"$evidence_dir/constituent-results.tsv"
+    expected_revision="$(git -C "$repo_root" rev-parse HEAD)"
+    for item in "${constituents[@]}"; do
+        child_id="${item%%:*}"
+        child_profile="${item#*:}"
+        child_log="$evidence_dir/child-${child_id}.log"
+        echo "Replaying $child_id in a fresh $child_profile project"
+        if ! env -u COMPOSE_PROJECT_NAME \
+            ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$child_profile" \
+            bash "$repo_root/tests/differential/run.sh" --scenario "$child_id" \
+            >"$child_log" 2>&1; then
+            cat "$child_log" >&2
+            exit 1
+        fi
+        if ! python3 - "$manifest" "$repo_root" "$child_id" "$expected_revision" \
+            "$evidence_dir/constituent-results.tsv" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest_path, root, scenario_id, expected_revision, output = sys.argv[1:]
+rows = json.loads(Path(manifest_path).read_text()).get("scenarios", [])
+matches = [row for row in rows if row.get("id") == scenario_id]
+if len(matches) != 1 or matches[0].get("live_status") != "PASS":
+    raise SystemExit(f"constituent {scenario_id} has no passing manifest result")
+evidence = matches[0].get("evidence")
+if not isinstance(evidence, str) or not evidence:
+    raise SystemExit(f"constituent {scenario_id} has no evidence pointer")
+run_dir = Path(root) / evidence
+metadata = dict(
+    line.split("=", 1)
+    for line in (run_dir / "metadata.txt").read_text().splitlines()
+    if "=" in line
+)
+if metadata.get("source_revision") != expected_revision:
+    raise SystemExit(f"constituent {scenario_id} ran a different source revision")
+if metadata.get("source_code_dirty") != "false" or metadata.get("exit_status") != "0":
+    raise SystemExit(f"constituent {scenario_id} did not pass from clean source and cleanup")
+if not (run_dir / "result.txt").read_text().startswith("PASS "):
+    raise SystemExit(f"constituent {scenario_id} result file is not PASS")
+with Path(output).open("a") as stream:
+    stream.write(f"{scenario_id}\tPASS\t{evidence}\n")
+PY
+        then
+            echo "Constituent $child_id does not have clean passing evidence" >&2
+            exit 1
+        fi
+    done
+    printf 'PASS P0-V03: all %s Phase 0 route, producer, consumer, heartbeat, offset, and lock checks passed on %s\n' \
+        "${#constituents[@]}" "$expected_revision" | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "ROUTE-002-topic-not-exist" || "$scenario_id" == "P5-V02-route" ]]; then
     route_topics=("$topic")
     if [[ "$scenario_id" == "P5-V02-route" ]]; then
