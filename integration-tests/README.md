@@ -81,13 +81,15 @@ consumer-offset writes and cross-client queries, pull status/offsets/message
 bodies, batch message bodies read by every returned physical offset ID,
 bidirectional cross-language Broker readback, queue-lock acquisition,
 contention and unlock release, live average queue assignment, and transaction
-commit/rollback visibility through Java and Rust consumer pulls.
+commit/rollback visibility through Java and Rust consumer pulls. `P6-V04`
+checks live subscription changes, Broker-side tag filtering, producer
+unregister, and continued use by the remaining producer.
 It deletes any owned topic and tears down only that project. Toolchain,
 configuration, output, and cleanup evidence is stored under
 `docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
-after comparison and cleanup both succeed. The runner implements 18 of 37
-cases and all 18 have passed: the two Phase 0 route cases, `P0-V03`,
-`P5-V02-route`, `P7-V02`,
+after comparison and cleanup both succeed. The runner implements 19 of 37
+cases and all 19 have passed: the two Phase 0 route cases, `P0-V03`,
+`P5-V02-route`, `P6-V04`, `P7-V02`,
 `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, `HEARTBEAT-001`,
 `PROD-001-sync-send` through `PROD-004-batch-send`, and
 `CONS-001-query-offset` through `CONS-004-update-offset`, plus
@@ -134,6 +136,17 @@ tests/differential/run.sh --scenario P7-V02
 It checks sync, async, oneway, explicit-queue, selector, valid-batch, and
 mixed-topic batch rejection behavior against the same isolated Broker.
 
+The shared-runtime lifecycle check also uses the host-routed profile:
+
+```bash
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable \
+ROCKETMQ_PROFILE=host-routed \
+tests/differential/run.sh --scenario P6-V04
+```
+
+It verifies that changing the consumer filter takes effect at the Broker and
+that producer B remains functional after producer A unregisters.
+
 Live runs require the pinned runner toolchains: Maven on JDK 27 and Rust 1.85.0,
 matching the repository CI configuration.
 
@@ -148,8 +161,8 @@ It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
 produce a `BLOCKED` result with the missing IDs in the archived log; the full
 matrix cannot report success until all IDs have passing evidence. Currently
-18 of 37 live cases have runners; the other 19, the remaining two-Broker
+19 of 37 live cases have runners; the other 18, the remaining two-Broker
 cases, TLS/ACL/feature profiles, and a fresh `run-local.sh --all` pass remain
 pending. The last full local run predates the rebalance, transaction, Phase 0
-aggregate, and P7 producer additions.
+aggregate, P7 producer, and P6 shared-runtime additions.
 Starting a profile by itself does not mark a scenario passed.

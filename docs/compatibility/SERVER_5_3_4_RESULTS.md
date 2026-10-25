@@ -55,10 +55,10 @@ request/reply, retry, TLS, ACL, failover, or stress coverage.
 ## Pending local server coverage
 
 The scenario manifest contains 37 live cases. The seven rows above, four
-consumer rows, the P5 route row, `ORDER-001-lock-unlock`,
+consumer rows, the P5 route row, `P6-V04`, `ORDER-001-lock-unlock`,
 `REBAL-001-average-10q-3c`, and the two transaction rows are implemented and
 passed by the current runner; `P0-V03` also passes as an aggregate over eleven
-clean constituent runs, and `P7-V02` covers high-level producer send modes. 19
+clean constituent runs, and `P7-V02` covers high-level producer send modes. 18
 remain pending. The two-Broker profile covers
 lock/unlock and average queue assignment; retry, query, and broader
 interoperability coverage, TLS, ACL, and feature-specific profiles remain
@@ -204,3 +204,16 @@ queue 1, selector queue 2, a valid two-message batch, and local rejection of a
 mixed-topic batch. The topic and Compose resources were removed after capture:
 [`20261025T094705Z`](evidence/phase-19/P7-V02/20261025T094705Z/).
 Live coverage is now 18/37, with 19 cases pending.
+
+## Shared-runtime heartbeat and unregister — 2026-10-25
+
+`P6-V04` passed on committed revision
+`1261cedd9245fe9d38b32d3ff34333bad8179284` with
+`source_code_dirty=false`. Both Java and Rust started a consumer and two
+producer groups on one client runtime. The Broker delivered a `DROP` message
+before the subscription changed from `*` to `KEEP`, then suppressed a later
+`DROP` while delivering `KEEP`. Producer A unregistered; producer B still
+sent successfully and its message reached the consumer. The run exited 0 and
+removed its topic and host-routed Compose resources:
+[`20261025T095527Z`](evidence/phase-19/P6-V04/20261025T095527Z/).
+Live coverage is now 19/37, with 18 cases pending.

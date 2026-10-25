@@ -10564,3 +10564,19 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - Live coverage is 18/37, with 19 scenarios pending. The full local gate must
   be rerun after these additions; broad P18-V01, MAN-01..05, and remote Docker
   CI remain open.
+
+## P19 P6-V04 shared-runtime heartbeat and unregister — 2026-10-25 (`1261cedd`)
+
+- [x] Added Java 5.5.1 and Rust shared-runtime probes that change the active
+  push-consumer tag filter, verify Broker-side filtering, unregister producer
+  A, and confirm producer B remains usable. Implementation commit: `1261cedd`.
+- [x] `P6-V04` passed at `20261025T095527Z` on
+  `1261cedd9245fe9d38b32d3ff34333bad8179284` with `source_code_dirty=false`.
+  Both clients consumed the initial `DROP` message, consumed `KEEP` after the
+  subscription update, did not receive the later `DROP`, and received a
+  producer B message after producer A unregistered.
+- [x] The manifest points to the clean run. Topic deletion and host-routed
+  Compose teardown passed; no project containers, volume, or network remained.
+- Live coverage is 19/37, with 18 scenarios pending. The full local gate must
+  be rerun after the remaining runner additions; broad P18-V01, MAN-01..05,
+  and remote Docker CI remain open.
