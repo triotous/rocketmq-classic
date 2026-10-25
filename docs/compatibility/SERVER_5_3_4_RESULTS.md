@@ -290,3 +290,18 @@ scenario-owned group were removed with the isolated two-Broker project.
 Evidence is under
 [`20261025T111709Z`](evidence/phase-19/P5-V02-consumer/20261025T111709Z/).
 Live coverage is now 24/37, with 13 cases pending.
+
+## P5 extension RPCs — 2026-10-25
+
+The clean-source attempt `20261025T115801Z` used revision
+`91b0bc564029145a3a1b2193919bc551be67290e` (`source_code_dirty=false`). Java
+5.5.1 successfully completed heartbeat, heartbeat V2, assignment, and
+request-mode setup. Its `syncLiteSubscriptionAsync` call then received Broker
+response code 3 with remark `request type 200071 not supported`. The fail-fast
+runner did not execute the Rust probe, seed POP messages, or assert the other
+extension outcomes, so this run makes no parity or PASS claim. The manifest
+keeps `P5-V02-extensions` pending. The scenario topic and derived Lite topic
+were deleted, and the isolated Compose project, network, and volume were
+removed. Diagnostic evidence is under
+[`20261025T115801Z`](evidence/phase-19/P5-V02-extensions/20261025T115801Z/).
+Live coverage remains 25/37, with 12 scenarios pending.

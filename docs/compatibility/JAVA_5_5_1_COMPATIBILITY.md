@@ -38,8 +38,11 @@ both clients report timeout, and verifies each message is committed once by
 matching Java/Rust pull results. `P3-V04` compares raw NameServer routing, CA
 trust, and client shutdown through a local TLS-terminating proxy. Java 5.5.1
 accepts a CA-trusted wrong-host certificate because its TLS handler does not
-receive a peer hostname; Rust rejects it. The other 12 scenarios remain
-unimplemented and pending. This does
+receive a peer hostname; Rust rejects it. The 12 pending cases include
+`P5-V02-extensions`; its first attempt completed heartbeat, heartbeat V2,
+assignment, and request-mode calls, then Broker 5.3.4 rejected Lite
+subscription request 200071 as unsupported. The run stopped before the Rust
+probe and successful POP/ACK checks, so this case remains pending. This does
 not close the broader P18-V01 public API/settings/flow reverse audit or establish
 full client parity. See
 [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server

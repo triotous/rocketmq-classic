@@ -10674,3 +10674,20 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   The full `run-local.sh --all` gate must be rerun after the remaining runner
   additions; broad P18-V01, MAN-01 through MAN-05, and remote Docker CI remain
   open.
+
+## P19 P5-V02 extension RPC attempt — 2026-10-25 (`91b0bc56`)
+
+- [x] Added Java 5.5.1 and Rust live probes and a fail-closed runner for the
+  Phase 5 heartbeat, assignment, request-mode, Lite subscription, POP, ACK,
+  batch ACK, and visibility-change RPC methods.
+- [ ] The clean-source attempt `20261025T115801Z` stopped after Java had
+  completed heartbeat, heartbeat V2, assignment, and request-mode. Broker
+  5.3.4 returned code 3, `request type 200071 not supported`, for
+  `syncLiteSubscriptionAsync`. No Rust comparison or successful POP/ACK path
+  ran, so `P5-V02-extensions` remains pending. Diagnostic evidence is under
+  `docs/compatibility/evidence/phase-19/P5-V02-extensions/20261025T115801Z/`.
+- [x] The failed run deleted the parent and derived Lite topics and removed
+  its Compose containers, network, and volume. Live coverage remains 25/37,
+  with 12 Phase 19 scenarios pending; full local gates must be rerun after
+  additional passing scenarios, and broad P18-V01, MAN-01..05, and remote
+  Docker CI remain open.
