@@ -51,6 +51,10 @@
             <configuration><mainClass>compat.LiveProducerProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-consumer-probe</id>
+            <configuration><mainClass>compat.LiveConsumerProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-inbound-routing-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

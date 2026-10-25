@@ -4,6 +4,7 @@ use rocketmq_classic::{Producer, ProducerConfig, ProducerError};
 use rocketmq_classic_common::message::{
     Message, decode_message_id, encode_compact_messages, encode_properties,
 };
+use rocketmq_classic_common::sysflag::pull::build_pull_sys_flag;
 use rocketmq_classic_core::api::{
     MQClientApi,
     producer::{SendKind, SendMode},
@@ -11,7 +12,10 @@ use rocketmq_classic_core::api::{
 use rocketmq_classic_core::unique_id::UniqueIdGenerator;
 use rocketmq_classic_protocol::{
     SharedValue,
-    header::{GetMaxOffsetRequestHeader, SendMessageRequestHeaderV1, ViewMessageRequestHeader},
+    header::{
+        GetMaxOffsetRequestHeader, PullMessageRequestHeader, QueryConsumerOffsetRequestHeader,
+        SendMessageRequestHeaderV1, UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
+    },
     heartbeat::{HeartbeatData, ProducerData},
 };
 use rocketmq_classic_remoting::client::{RemotingClient, TransportMode};
@@ -56,7 +60,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("view-batch") if arguments.len() == 4 => {
             view_batch(&arguments[1], &arguments[2], &arguments[3]).await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids>".into()),
+        Some("offset-query") if arguments.len() == 5 => {
+            offset_query(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                arguments[4].parse()?,
+            )
+            .await
+        }
+        Some("offset-update") if arguments.len() == 6 => {
+            offset_update(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                arguments[4].parse()?,
+                arguments[5].parse()?,
+            )
+            .await
+        }
+        Some("pull") if arguments.len() == 6 => {
+            pull(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                arguments[4].parse()?,
+                arguments[5].parse()?,
+            )
+            .await
+        }
+        _ => Err("usage: live_client route <namesrv-address> <topic> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset>".into()),
     }
 }
 
@@ -470,6 +503,121 @@ async fn view_batch(
     .await;
     remoting.shutdown().await;
     result
+}
+
+async fn offset_query(
+    broker_address: &str,
+    group: &str,
+    topic: &str,
+    queue_id: i32,
+) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    if let Err(error) = remoting.start() {
+        remoting.shutdown().await;
+        return Err(error.into());
+    }
+    let api = MQClientApi::new(remoting.clone());
+    let mut header = QueryConsumerOffsetRequestHeader::default();
+    header.set_consumer_group(Some(group.to_owned()));
+    header.set_topic(Some(topic.to_owned()));
+    header.set_queue_id(Some(queue_id));
+    header.set_broker_name(Some("broker-a".to_owned()));
+    let result = api
+        .query_consumer_offset(
+            broker_address,
+            &header,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+    remoting.shutdown().await;
+    let offset = result?.ok_or("Broker reported that the consumer offset was not found")?;
+    println!("OFFSET\t{offset}");
+    Ok(())
+}
+
+async fn offset_update(
+    broker_address: &str,
+    group: &str,
+    topic: &str,
+    queue_id: i32,
+    offset: i64,
+) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    if let Err(error) = remoting.start() {
+        remoting.shutdown().await;
+        return Err(error.into());
+    }
+    let api = MQClientApi::new(remoting.clone());
+    let mut header = UpdateConsumerOffsetRequestHeader::default();
+    header.set_consumer_group(Some(group.to_owned()));
+    header.set_topic(Some(topic.to_owned()));
+    header.set_queue_id(Some(queue_id));
+    header.set_commit_offset(Some(offset));
+    header.set_broker_name(Some("broker-a".to_owned()));
+    let result = api
+        .update_consumer_offset(
+            broker_address,
+            &header,
+            false,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+    remoting.shutdown().await;
+    result?;
+    println!("OFFSET_UPDATED\t{offset}");
+    Ok(())
+}
+
+async fn pull(
+    broker_address: &str,
+    group: &str,
+    topic: &str,
+    queue_id: i32,
+    queue_offset: i64,
+) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    if let Err(error) = remoting.start() {
+        remoting.shutdown().await;
+        return Err(error.into());
+    }
+    let api = MQClientApi::new(remoting.clone());
+    let mut header = PullMessageRequestHeader::default();
+    header.set_consumer_group(Some(group.to_owned()));
+    header.set_topic(Some(topic.to_owned()));
+    header.set_queue_id(Some(queue_id));
+    header.set_queue_offset(Some(queue_offset));
+    header.set_max_msg_nums(Some(32));
+    header.set_sys_flag(Some(build_pull_sys_flag(false, false, true, false)));
+    header.set_commit_offset(Some(0));
+    header.set_suspend_timeout_millis(Some(0));
+    header.set_subscription(Some("*".to_owned()));
+    header.set_sub_version(Some(0));
+    header.set_expression_type(Some("TAG".to_owned()));
+    header.set_broker_name(Some("broker-a".to_owned()));
+    let result = api
+        .pull_message(
+            broker_address,
+            &header,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+    remoting.shutdown().await;
+    let result = result?;
+    let hex = result
+        .raw_messages
+        .as_deref()
+        .map(encode_hex)
+        .unwrap_or_default();
+    println!(
+        "PULL\t{}\t{}\t{}\t{}\t{}\t{}",
+        result.status.name(),
+        result.next_begin_offset,
+        result.min_offset,
+        result.max_offset,
+        result.suggest_which_broker_id,
+        hex
+    );
+    Ok(())
 }
 
 fn decode_batch_offsets(offset_message_ids: &str) -> Result<Vec<i64>, Box<dyn Error>> {

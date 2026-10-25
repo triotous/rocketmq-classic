@@ -121,7 +121,7 @@ for scenario in selected:
     profile = scenario.get("profile")
     inputs = scenario.get("inputs", {})
     topic = inputs.get("topic", "-")
-    producer_group = inputs.get("producer_group", "-")
+    producer_group = inputs.get("producer_group", inputs.get("group", "-"))
     body = inputs.get("body", "-")
     key_prefix = inputs.get("key_prefix", "-")
     java_expected_max_offset = inputs.get("java_expected_max_offset", "-")
@@ -129,6 +129,10 @@ for scenario in selected:
     java_expected_queue_offset = inputs.get("java_expected_queue_offset", "-")
     rust_expected_queue_offset = inputs.get("rust_expected_queue_offset", "-")
     message_count = inputs.get("messages", "-")
+    queue_id = inputs.get("queue_id", "-")
+    java_offset = inputs.get("java_offset", "-")
+    rust_offset = inputs.get("rust_offset", "-")
+    pull_offset = inputs.get("pull_offset", "-")
     if not isinstance(profile, str) or not profile:
         raise SystemExit(f"{scenario_id}: missing profile")
     if not isinstance(key_prefix, str) or not key_prefix:
@@ -136,7 +140,8 @@ for scenario in selected:
     print(
         f"{scenario_id}\t{profile}\t{topic}\t{producer_group}\t{body}\t{key_prefix}\t"
         f"{java_expected_max_offset}\t{rust_expected_max_offset}\t"
-        f"{java_expected_queue_offset}\t{rust_expected_queue_offset}\t{message_count}"
+        f"{java_expected_queue_offset}\t{rust_expected_queue_offset}\t{message_count}\t"
+        f"{java_offset}\t{rust_offset}\t{queue_id}\t{pull_offset}"
     )
 PY
 then
@@ -148,9 +153,9 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset")
 unsupported=()
-while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count; do
+while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset; do
     is_implemented=false
     for implemented_id in "${implemented[@]}"; do
         if [[ "$scenario_id" == "$implemented_id" ]]; then
@@ -185,7 +190,7 @@ if [[ "$selection" != "scenario" ]]; then
     exit 0
 fi
 
-IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count <"$selected_file"
+IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset <"$selected_file"
 if [[ "$profile" != "basic" ]]; then
     echo "Scenario metadata differs from the implemented basic profile" >&2
     exit 3
@@ -220,12 +225,36 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    CONS-001-query-offset:compat_phase0_query_offset)
+        if [[ "$producer_group" != "compat_phase0_query_group" || "$java_offset" != "17" || "$rust_offset" != "23" || "$queue_id" != "0" ]]; then
+            echo "Consumer-offset metadata differs from the reviewed reciprocal update/query case" >&2
+            exit 3
+        fi
+        ;;
+    CONS-004-update-offset:compat_phase0_update_offset)
+        if [[ "$producer_group" != "compat_phase0_update_group" || "$java_offset" != "31" || "$rust_offset" != "47" || "$queue_id" != "0" ]]; then
+            echo "Offset-update metadata differs from the reviewed reciprocal update/query case" >&2
+            exit 3
+        fi
+        ;;
+    CONS-002-pull-found:compat_phase0_pull_found)
+        if [[ "$producer_group" != "compat_phase0_pull_found_group" || "$body" != "pull-seed" || "$queue_id" != "0" || "$pull_offset" != "0" ]]; then
+            echo "Found-pull metadata differs from the reviewed seeded queue case" >&2
+            exit 3
+        fi
+        ;;
+    CONS-003-pull-no-new-msg:compat_phase0_pull_empty)
+        if [[ "$producer_group" != "compat_phase0_pull_empty_group" || "$queue_id" != "0" || "$pull_offset" != "0" ]]; then
+            echo "Empty-pull metadata differs from the reviewed empty queue case" >&2
+            exit 3
+        fi
+        ;;
     *)
         echo "Scenario metadata differs from the reviewed case implementations" >&2
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -286,6 +315,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveRouteProbe.java
     compat/java-reference/src/main/java/compat/LiveHeartbeatProbe.java
     compat/java-reference/src/main/java/compat/LiveProducerProbe.java
+    compat/java-reference/src/main/java/compat/LiveConsumerProbe.java
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
     tests/differential/compare.py tests/differential/run.sh)
 if [[ -n "$(git -C "$repo_root" status --porcelain -- "${code_dirty_paths[@]}")" ]]; then
@@ -333,6 +363,14 @@ if [[ "$scenario_id" == "PROD-004-batch-send" ]]; then
     printf 'message_count=%s\nbody_prefix=%s\n' "$message_count" "$body" \
         >>"$evidence_dir/metadata.txt"
 fi
+if [[ "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-004-update-offset" ]]; then
+    printf 'java_offset=%s\nrust_offset=%s\nqueue_id=%s\n' "$java_offset" "$rust_offset" "$queue_id" \
+        >>"$evidence_dir/metadata.txt"
+fi
+if [[ "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" ]]; then
+    printf 'queue_id=%s\npull_offset=%s\nbody=%s\n' "$queue_id" "$pull_offset" "$body" \
+        >>"$evidence_dir/metadata.txt"
+fi
 {
     uname -srm
     cargo --version
@@ -357,6 +395,31 @@ if [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$broker_addr $producer_group" exec:java@live-heartbeat-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- heartbeat $broker_addr $producer_group
+EOF
+elif [[ "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-004-update-offset" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g $producer_group -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="update $broker_addr $producer_group $topic $queue_id $java_offset" exec:java@live-consumer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- offset-query $broker_addr $producer_group $topic $queue_id
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- offset-update $broker_addr $producer_group $topic $queue_id $rust_offset
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="query $broker_addr $producer_group $topic $queue_id" exec:java@live-consumer-probe
+EOF
+elif [[ "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g $producer_group -n namesrv:9876
+EOF
+    if [[ "$scenario_id" == "CONS-002-pull-found" ]]; then
+        cat >>"$evidence_dir/commands.txt" <<EOF
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="send $broker_addr $topic $body" exec:java@live-producer-probe
+EOF
+    fi
+    cat >>"$evidence_dir/commands.txt" <<EOF
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="pull $broker_addr $producer_group $topic $queue_id $pull_offset" exec:java@live-consumer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- pull $broker_addr $producer_group $topic $queue_id $pull_offset
 EOF
 elif [[ "$scenario_id" == "PROD-001-sync-send" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -509,7 +572,7 @@ if ! ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
 fi
 cat "$evidence_dir/setup.log"
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateTopic -c RocketMQLocalTest -t "$topic" -r 4 -w 4 -n namesrv:9876 \
@@ -517,12 +580,26 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
         cat "$evidence_dir/topic-create.log" >&2
         exit 1
     fi
+    if [[ "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" ]]; then
+        echo "Creating scenario-owned subscription group $producer_group"
+        if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$producer_group" -n namesrv:9876 \
+            >"$evidence_dir/group-create.log" 2>&1; then
+            cat "$evidence_dir/group-create.log" >&2
+            exit 1
+        fi
+    fi
 elif [[ "$scenario_id" == "ROUTE-002-topic-not-exist" ]]; then
     echo "Confirming that scenario topic $topic has no route"
 elif [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
     echo "Sending a Java/Rust heartbeat for producer group $producer_group"
 elif [[ "$scenario_id" == "PROD-003-oneway-send" ]]; then
     echo "Sending Java/Rust oneway messages and querying each by its unique key"
+elif [[ "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-004-update-offset" ]]; then
+    echo "Comparing Java and Rust consumer-offset writes and queries"
+elif [[ "$scenario_id" == "CONS-002-pull-found" ]]; then
+    echo "Seeding one message and comparing Java/Rust pull status, offsets, and body"
+elif [[ "$scenario_id" == "CONS-003-pull-no-new-msg" ]]; then
+    echo "Comparing Java/Rust pulls from an empty queue"
 else
     echo "Querying the same route with both clients"
 fi
@@ -888,6 +965,128 @@ elif [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
     fi
     printf 'PASS %s: matching response version and encoded request body\n' "$scenario_id" \
         | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-004-update-offset" ]]; then
+    echo "Writing the Java offset, querying with Rust, then reversing the client direction"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="update $broker_addr $producer_group $topic $queue_id $java_offset" \
+        exec:java@live-consumer-probe \
+        >"$evidence_dir/java-offset-update.tsv" 2>"$evidence_dir/java-offset-update.stderr"; then
+        cat "$evidence_dir/java-offset-update.stderr" >&2
+        exit 1
+    fi
+    if ! awk -F '\t' -v offset="$java_offset" \
+        'NF != 2 || $1 != "OFFSET_UPDATED" || $2 != offset { exit 1 }
+         END { if (NR != 1) exit 1 }' "$evidence_dir/java-offset-update.tsv"; then
+        echo "Java consumer-offset update returned an unexpected result" >&2
+        exit 1
+    fi
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        offset-query "$broker_addr" "$producer_group" "$topic" "$queue_id" \
+        >"$evidence_dir/rust-offset-query.tsv" 2>"$evidence_dir/rust-offset-query.stderr"; then
+        cat "$evidence_dir/rust-offset-query.stderr" >&2
+        exit 1
+    fi
+    if ! awk -F '\t' -v offset="$java_offset" \
+        'NF != 2 || $1 != "OFFSET" || $2 != offset { exit 1 }
+         END { if (NR != 1) exit 1 }' "$evidence_dir/rust-offset-query.tsv"; then
+        echo "Rust did not read the offset written by Java" >&2
+        exit 1
+    fi
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        offset-update "$broker_addr" "$producer_group" "$topic" "$queue_id" "$rust_offset" \
+        >"$evidence_dir/rust-offset-update.tsv" 2>"$evidence_dir/rust-offset-update.stderr"; then
+        cat "$evidence_dir/rust-offset-update.stderr" >&2
+        exit 1
+    fi
+    if ! awk -F '\t' -v offset="$rust_offset" \
+        'NF != 2 || $1 != "OFFSET_UPDATED" || $2 != offset { exit 1 }
+         END { if (NR != 1) exit 1 }' "$evidence_dir/rust-offset-update.tsv"; then
+        echo "Rust consumer-offset update returned an unexpected result" >&2
+        exit 1
+    fi
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="query $broker_addr $producer_group $topic $queue_id" \
+        exec:java@live-consumer-probe \
+        >"$evidence_dir/java-offset-query.tsv" 2>"$evidence_dir/java-offset-query.stderr"; then
+        cat "$evidence_dir/java-offset-query.stderr" >&2
+        exit 1
+    fi
+    if ! awk -F '\t' -v offset="$rust_offset" \
+        'NF != 2 || $1 != "OFFSET" || $2 != offset { exit 1 }
+         END { if (NR != 1) exit 1 }' "$evidence_dir/java-offset-query.tsv"; then
+        echo "Java did not read the offset written by Rust" >&2
+        exit 1
+    fi
+    printf 'PASS %s: Java and Rust read back each other’s consumer-offset updates\n' "$scenario_id" \
+        | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" ]]; then
+    expected_status="NO_NEW_MSG"
+    if [[ "$scenario_id" == "CONS-002-pull-found" ]]; then
+        expected_status="FOUND"
+        if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+            -Dexec.args="send $broker_addr $topic $body" exec:java@live-producer-probe \
+            >"$evidence_dir/java-seed-send.tsv" 2>"$evidence_dir/java-seed-send.stderr"; then
+            cat "$evidence_dir/java-seed-send.stderr" >&2
+            exit 1
+        fi
+        if ! awk -F '\t' -v topic="$topic" \
+            'NF != 7 || $1 != "SEND" || $2 != "SEND_OK" || $3 != topic || $4 != "0" || $5 != "0" || $6 !~ /^[[:xdigit:]]+$/ || $7 !~ /^[0-9]+$/ { exit 1 }
+             END { if (NR != 1) exit 1 }' "$evidence_dir/java-seed-send.tsv"; then
+            echo "Java pull seed did not land at queue 0 offset 0" >&2
+            exit 1
+        fi
+    fi
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="pull $broker_addr $producer_group $topic $queue_id $pull_offset" \
+        exec:java@live-consumer-probe \
+        >"$evidence_dir/java-pull.tsv" 2>"$evidence_dir/java-pull.stderr"; then
+        cat "$evidence_dir/java-pull.stderr" >&2
+        exit 1
+    fi
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        pull "$broker_addr" "$producer_group" "$topic" "$queue_id" "$pull_offset" \
+        >"$evidence_dir/rust-pull.tsv" 2>"$evidence_dir/rust-pull.stderr"; then
+        cat "$evidence_dir/rust-pull.stderr" >&2
+        exit 1
+    fi
+    if ! cmp -s "$evidence_dir/java-pull.tsv" "$evidence_dir/rust-pull.tsv"; then
+        diff -u "$evidence_dir/java-pull.tsv" "$evidence_dir/rust-pull.tsv" \
+            >"$evidence_dir/pull-diff.txt" || true
+        cat "$evidence_dir/pull-diff.txt" >&2
+        exit 1
+    fi
+    if ! python3 - "$evidence_dir/java-pull.tsv" "$expected_status" "$body" <<'PY'
+import sys
+from pathlib import Path
+
+row = Path(sys.argv[1]).read_text().rstrip("\n").split("\t")
+expected_status = sys.argv[2]
+expected_body = sys.argv[3]
+if len(row) != 7 or row[0] != "PULL" or row[1] != expected_status:
+    raise SystemExit("pull result status/shape differs from the expected case")
+if any(not value.isdecimal() for value in row[2:6]):
+    raise SystemExit("pull result offsets/broker ID must be decimal values")
+if row[6] and (len(row[6]) % 2 or any(ch not in "0123456789abcdef" for ch in row[6])):
+    raise SystemExit("pull response body must be lowercase hexadecimal")
+if expected_status == "FOUND":
+    if row[2:6] != ["1", "0", "1", "0"]:
+        raise SystemExit("found pull must report offsets 0..1 and broker ID 0")
+    if not expected_body or expected_body.encode() not in bytes.fromhex(row[6]):
+        raise SystemExit("found pull response does not contain the seeded message body")
+elif row[6]:
+    raise SystemExit("empty pull must not return a message body")
+PY
+    then
+        echo "Java/Rust pull output does not satisfy the scenario result" >&2
+        exit 1
+    fi
+    if [[ "$expected_status" == "FOUND" ]]; then
+        printf 'PASS %s: matching FOUND status, offsets, and seeded message body\n' "$scenario_id" \
+            | tee "$evidence_dir/result.txt"
+    else
+        printf 'PASS %s: matching NO_NEW_MSG status and empty response body\n' "$scenario_id" \
+            | tee "$evidence_dir/result.txt"
+    fi
 elif [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "ROUTE-002-topic-not-exist" ]]; then
     echo "Querying the same route with both clients"
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
