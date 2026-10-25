@@ -38,6 +38,7 @@ scenario and profile.
 | `P10-V03` | PASS — Java-seeded messages exercised Rust Push success, partial acknowledgement, retry, and failure. The failed message was delivered twice at listener counts 0/1, then reached the configured DLQ with its body/key intact and Broker `reconsumeTimes=2`. Both Brokers' scenario topic and the isolated Compose project were removed. | [`20261025T153016Z`](evidence/phase-19/P10-V03/20261025T153016Z/) |
 | `P11-V03` | PASS — A Java Push consumer first acquired all eight scenario queues. With Rust joined, the clients converged to four disjoint queues each; one transient overlapping snapshot occurred during convergence and was allowed. After Java left, Rust converged to all eight queues. The topic and isolated Compose project were removed. | [`20261025T154631Z`](evidence/phase-19/P11-V03/20261025T154631Z/) |
 | `P11-V04` | PASS — Java producer to Rust Push and Rust producer to Java Push each delivered through one retry on the other Broker. Java and Rust offset queries matched at 1 on both Brokers. Each Push client completed three start/shutdown cycles with schedulers and runtime resources quiesced; scenario topics and the isolated Compose project were removed. | [`20261025T155944Z`](evidence/phase-19/P11-V04/20261025T155944Z/) |
+| `P14-V03` | PASS — Java/Rust commit messages were visible to the opposite-language pull client; both rollback bodies stayed absent and normal queue max offsets were unchanged; Unknown transactions were committed by bounded real Broker checks and read back by the opposite-language client in both directions. | [`20261025T164955Z`](evidence/phase-19/P14-V03/20261025T164955Z/) |
 
 The first batch attempt at source revision `2f9396e3` sent successfully from
 Java but failed in the Rust probe because it read only the first returned
@@ -63,7 +64,7 @@ failover, or stress coverage.
 
 ## Pending local server coverage
 
-The scenario manifest contains 37 live cases; 32 pass. The eight basic
+The scenario manifest contains 37 live cases; 34 pass. The eight basic
 route/heartbeat/send scenarios above, `P3-V04`, four consumer cases, the P5
 route row, `P6-V04`, `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, and
 the two transaction rows passed. `P0-V03` also passes as an aggregate over
@@ -103,8 +104,10 @@ introduced Lite Mode. This supplementary success does not change the 5.3.4
 baseline or by itself establish production support.
 `P13-V02` compares the Java/Rust POP receipt lifecycle on two Brokers,
 including delivery, expiry redelivery, ACK, invisibility changes, mixed queue
-mapping, and malformed receipt rejection. Four remain pending: `P12-V03`,
-`P14-V03`, `P16-V02`, and `P17-V02`. The two-Broker
+mapping, and malformed receipt rejection. `P14-V03` additionally passes
+Java/Rust commit and rollback visibility plus Unknown resolution through actual
+Broker checks in both directions. Three remain pending: `P12-V03`, `P16-V02`,
+and `P17-V02`. The two-Broker
 profiles cover producer retry/deadline/lifecycle, lock/unlock, and average
 queue assignment; broader push-consumer retry/DLQ, query, and interoperability coverage,
 Broker-native TLS/auth, ACL, and feature-specific profiles remain incomplete.
