@@ -118,6 +118,10 @@ clients reject an untrusted CA and report zero retained remoting resources at
 shutdown. `P7-V04` uses two host-routed Brokers to send 20 messages in each of
 three producer start/shutdown cycles and checks that pending requests,
 connections, and task groups return to zero each time.
+`P11-V04` sends Java messages through Rust Push on Broker A and Rust messages
+through Java Push on Broker B; both listeners retry once before succeeding.
+Java and Rust offset queries match at 1 on each Broker, and three Push
+start/shutdown cycles per client finish with no scheduler/runtime work retained.
 `P7-V03` uses two host-routed Brokers and transparent response proxies. Each
 proxy injects one Remoting `NO_PERMISSION` response without forwarding that
 send, then forwards the client's retry to the other Broker; Java and Rust
@@ -149,15 +153,15 @@ matrix or by itself establish production support. It removes its isolated
 topics, containers, network, and volume after the run. Toolchain,
 configuration, output, and cleanup evidence is stored under
 `docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
-after comparison and cleanup both succeed. The runner implements 29 of 37
-cases, and all 29 have passed: the two Phase 0 route cases, `P0-V03`, `P3-V04`,
+after comparison and cleanup both succeed. The runner implements 33 of 37
+cases, and all 33 have passed: the two Phase 0 route cases, `P0-V03`, `P3-V04`,
 `P5-V02-route`, `P5-V02-producer`, `P5-V02-consumer`, `P5-V02-extensions`,
-`P6-V04`, `P7-V02`, `P7-V04`, `P9-V03`, `P13-V02`,
-`ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, `HEARTBEAT-001`,
-`PROD-001-sync-send` through `PROD-004-batch-send`, `PROD-005-send-timeout`, and
-`CONS-001-query-offset` through `CONS-004-update-offset`, plus
-`TX-001-commit`, `TX-002-rollback`, `REQ-001-request-reply-success`, and
-`P15-V03`.
+`P6-V04`, `P7-V02` through `P7-V04`, `P9-V03`, `P10-V03`, `P11-V03`,
+`P11-V04`, `P13-V02`, `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`,
+`HEARTBEAT-001`, `PROD-001-sync-send` through `PROD-004-batch-send`,
+`PROD-005-send-timeout`, `CONS-001-query-offset` through
+`CONS-004-update-offset`, `TX-001-commit`, `TX-002-rollback`,
+`REQ-001-request-reply-success`, and `P15-V03`.
 `--phase N` and `--all` fail closed when any selected case has no runner.
 
 The two-Broker lock case can be replayed with:
@@ -257,8 +261,8 @@ It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
 produce a `BLOCKED` result with the missing IDs in the archived log; the full
 matrix cannot report success until all IDs have passing evidence. Currently
-32 of 37 live cases have passing evidence; five remain without runners:
-`P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02`.
+33 of 37 live cases have passing evidence; four remain without runners:
+`P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02`.
 `P5-V02-extensions`
 passed the 5.3.4 parity case with matching unsupported responses for Lite
 subscription and Lite POP; positive Lite success-path coverage passed

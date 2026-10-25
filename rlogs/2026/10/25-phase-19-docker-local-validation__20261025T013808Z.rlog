@@ -498,3 +498,24 @@
 - The runner filters Broker-managed retry-topic entries from the scenario-topic ownership check and allows transient assignment overlap/redelivery during convergence. Evidence is at `docs/compatibility/evidence/phase-19/P11-V03/20261025T154631Z/`; `source_code_dirty=false`, exit status 0, duration 93 seconds.
 - The runner removed `compat_p11_mixed` from both Brokers and tore down the isolated containers, NameServer, volumes, and network. Filtered exact-project Docker container/volume/network queries were empty. `run.sh --check-all` still fails closed before Docker startup with the five expected remaining cases: `P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02`.
 - Updated the manifest and current server, Java compatibility, Phase 11 matrix, integration-test README, and release checklist counts to 32/37 live PASS with five cases pending. Phase 19 acceptance and full local gates remain open.
+
+## P19-05 P11-V04 clean-source bidirectional Push pass — 2026-10-25
+
+- Implemented the P11-V04 runner in commit `a7066e9f`: Java producer to Rust
+  Push on Broker A and Rust producer to Java Push on Broker B; each consumer
+  retries once, both clients query persisted offsets, and each Push client
+  completes three start/shutdown cycles with lifecycle assertions.
+- Clean-source run `20261025T155944Z` on committed revision
+  `a7066e9fb6fd0739700046e6106f8c7ee4ef1516` passed against the pinned,
+  unmodified RocketMQ 5.3.4 image (`source_code_dirty=false`, exit 0, 168s).
+  Java/Rust offset queries matched at 1 on both Brokers. Java scheduled
+  executors terminated; Rust runtime state stopped, its factory table emptied,
+  and pending requests, connections, and owned remoting tasks were zero.
+- Evidence is archived at
+  `docs/compatibility/evidence/phase-19/P11-V04/20261025T155944Z/`. The runner
+  deleted the scenario topic and retry topic from both Brokers, then removed
+  the isolated containers, NameServer, volumes, and network. Filtered project
+  container/volume/network queries were empty.
+- Updated the manifest and current compatibility summaries to 33/37 live PASS.
+  `run.sh --check-all` should fail closed before Docker with only
+  `P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02` remaining.

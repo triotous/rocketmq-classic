@@ -44,6 +44,11 @@ settled to disjoint ownership of eight scenario queues, then Rust recovered all
 eight after Java shut down. One overlapping snapshot during convergence was
 allowed; four stable disjoint snapshots were required before the joined state
 passed.
+`P11-V04` verifies both public producer-to-Push directions across the two
+Brokers. Each listener observed retry counts 0 and 1; Java and Rust offset
+queries matched at 1 on both Brokers. Three Push start/shutdown cycles per
+client completed with the Java scheduled executors terminated and Rust runtime
+and remoting resources quiesced.
 `P5-V02-producer` matches raw V1, V2, batch, one-way reply V1/V2, and
 end-transaction RPC outcomes.
 `P5-V02-consumer` matches raw pull/Lite pull, offset update/query,
@@ -66,8 +71,8 @@ accepts a CA-trusted wrong-host certificate because its TLS handler does not
 receive a peer hostname; Rust rejects it. P7-V04 now has clean-source live
 evidence for 20 sends over three Java and Rust producer cycles with zero
 pending requests, connections, and owned task groups after every shutdown.
-Five live cases remain pending: `P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`,
-and `P17-V02`.
+Four live cases remain pending: `P12-V03`, `P14-V03`, `P16-V02`, and
+`P17-V02`.
 `P13-V02` and `P5-V02-extensions` now have clean Java/Rust evidence; the
 latter records the two unsupported Lite request paths on 5.3.4 and separate
 positive Lite success evidence on 5.5.0. This does
