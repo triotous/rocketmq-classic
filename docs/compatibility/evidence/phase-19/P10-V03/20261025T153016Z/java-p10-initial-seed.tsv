@@ -1,0 +1,3 @@
+P10	PRODUCED	initial	p10-success	p10-success-key	broker-a	0
+P10	PRODUCED	initial	p10-partial-ack	p10-partial-ack-key	broker-a	0
+P10	PRODUCED	initial	p10-partial-retry	p10-partial-retry-key	broker-a	0

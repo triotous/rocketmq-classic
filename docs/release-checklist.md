@@ -10860,3 +10860,22 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   `P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`, and
   `P17-V02`. Full local gates, reverse audit, and owner manual evidence remain
   pending.
+
+## P19-05 P10-V03 clean-source Push retry and DLQ pass — 2026-10-25
+
+- [x] Clean-source run `20261025T153016Z` on revision
+  `d3a0778bf47a4bd20b4a5129911318cd194ff742` passed against the pinned,
+  unmodified RocketMQ 5.3.4 image. Java 5.5.1 seeded the test topic; Rust Push
+  verified listener success, partial acknowledgement, a retried partial
+  message, and a failure message delivered at listener retry counts 0 and 1.
+  The configured DLQ received the original body and key with Broker
+  `reconsumeTimes=2` for group retry maximum 1.
+- [x] Evidence is under
+  `docs/compatibility/evidence/phase-19/P10-V03/20261025T153016Z/`;
+  metadata records `source_code_dirty=false`, exit status 0, and duration
+  124 seconds. The runner deleted the owned topic from both Brokers and removed
+  the isolated containers, NameServer, volumes, and network. Filtered Docker
+  queries found no project resources.
+- [ ] Live coverage is now 31/37. Six runnerless cases remain:
+  `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02`.
+  Full local gates, reverse audit, and owner manual evidence remain pending.

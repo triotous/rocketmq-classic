@@ -35,6 +35,7 @@ scenario and profile.
 | `P7-V03` | PASS — Java and Rust each received an injected Remoting `NO_PERMISSION` response from both Brokers, then succeeded on attempt three with the same body and unique ID. Each client also exhausted a 900 ms send deadline while a proxy delayed the real Broker response by 1,800 ms. Both scenario topics were deleted before Compose teardown. | [`20261025T150708Z`](evidence/phase-19/P7-V03/20261025T150708Z/) |
 | `P3-V04` | PASS — Java/Rust raw NameServer routes and trusted/untrusted CA outcomes matched; Rust rejected a trusted wrong-host certificate, while Java 5.5.1 accepted it without endpoint identification. TLS requests used a local terminating proxy forwarding to the isolated plain Broker; all clients shut down cleanly and the project was removed. | [`20261025T113910Z`](evidence/phase-19/P3-V04/20261025T113910Z/) |
 | `P15-V03` | PASS — Java/Rust request and reply delivery matched in both directions on two Brokers. Both clients timed out with no responder; delayed opposite-language replies arrived after timeout without a second callback or retained correlation. All six scenario topics were deleted from both Brokers before Compose teardown. | [`20261025T143716Z`](evidence/phase-19/P15-V03/20261025T143716Z/) |
+| `P10-V03` | PASS — Java-seeded messages exercised Rust Push success, partial acknowledgement, retry, and failure. The failed message was delivered twice at listener counts 0/1, then reached the configured DLQ with its body/key intact and Broker `reconsumeTimes=2`. Both Brokers' scenario topic and the isolated Compose project were removed. | [`20261025T153016Z`](evidence/phase-19/P10-V03/20261025T153016Z/) |
 
 The first batch attempt at source revision `2f9396e3` sent successfully from
 Java but failed in the Rust probe because it read only the first returned
@@ -60,7 +61,7 @@ failover, or stress coverage.
 
 ## Pending local server coverage
 
-The scenario manifest contains 37 live cases; 30 pass. The eight basic
+The scenario manifest contains 37 live cases; 31 pass. The eight basic
 route/heartbeat/send scenarios above, `P3-V04`, four consumer cases, the P5
 route row, `P6-V04`, `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, and
 the two transaction rows passed. `P0-V03` also passes as an aggregate over
@@ -70,7 +71,9 @@ Java and Rust producer start/shutdown cycles with 20 sends each and zero
 pending requests, connections, or owned task groups after every shutdown.
 `P7-V03` verifies two-Broker retry avoidance and stable body/unique-ID
 preservation after injected retryable responses, then checks each client's
-bounded send deadline against a delayed real Broker response.
+bounded send deadline against a delayed real Broker response. `P10-V03`
+checks Java-produced messages through Rust Push success, partial acknowledgement,
+retry, and a configured Broker DLQ transition with matching body/key.
 `REQ-001-request-reply-success` checks both cross-language request/reply
 directions; `P15-V03` adds no-responder and late-reply checks for both clients;
 `PROD-005-send-timeout` checks commit visibility after a timed-out send.
@@ -94,11 +97,10 @@ introduced Lite Mode. This supplementary success does not change the 5.3.4
 baseline or by itself establish production support.
 `P13-V02` compares the Java/Rust POP receipt lifecycle on two Brokers,
 including delivery, expiry redelivery, ACK, invisibility changes, mixed queue
-mapping, and malformed receipt rejection. Seven remain pending:
-`P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`, and
-`P17-V02`. The two-Broker
+mapping, and malformed receipt rejection. Six remain pending: `P11-V03`,
+`P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02`. The two-Broker
 profiles cover producer retry/deadline/lifecycle, lock/unlock, and average
-queue assignment; push-consumer retry/DLQ, query, and broader interoperability coverage,
+queue assignment; broader push-consumer retry/DLQ, query, and interoperability coverage,
 Broker-native TLS/auth, ACL, and feature-specific profiles remain incomplete.
 No server limitation is inferred from an unrun case. Phase 19
 acceptance remains open until each locally reproducible case has Java/Rust

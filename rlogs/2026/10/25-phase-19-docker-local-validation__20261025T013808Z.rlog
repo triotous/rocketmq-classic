@@ -478,3 +478,10 @@
 - Updated the Rust probe, archived command/metadata expectations, and runner assertion to require DLQ `reconsumeTimes=retryMaxTimes+1`. A final clean-source replay is pending.
 
 - Evidence archival follow-up: the P10-V03 runner's `.log` files were ignored by the repository-wide `*.log` rule and were not included in the initial diagnostic commit. The failed-run directories have now been path-redacted and those setup, compile, build, topic/group, Broker, topic-cleanup, and Compose-cleanup logs are being force-added so the diagnostic artifacts are complete.
+
+## P19-05 P10-V03 clean-source Push retry and DLQ pass — 2026-10-25
+
+- Clean-source run `20261025T153016Z` on committed revision `d3a0778bf47a4bd20b4a5129911318cd194ff742` passed against the pinned, unmodified RocketMQ 5.3.4 image. Java 5.5.1 seeded the one-queue topic; Rust Push verified success, partial acknowledgement, retry of the partial message, and failure callbacks at listener counts 0/1. The configured `%DLQ%compat_p10_push` message retained body `p10-failure-dlq` and key `p10-failure-dlq-key`; Broker `reconsumeTimes` was 2 for group retry maximum 1.
+- Evidence is archived at `docs/compatibility/evidence/phase-19/P10-V03/20261025T153016Z/`. Metadata records `source_code_dirty=false`, exit status 0, duration 124 seconds, the pinned image digest, and the host-routed Compose profile used to make the two Brokers reachable to host clients.
+- The runner deleted `compat_p10_retry` from both Brokers and removed the isolated containers, NameServer, volumes, and network. Filtered Docker container/volume/network queries found no project resources. `run.sh --check-all` failed closed before Docker startup with only six expected pending cases: `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02`.
+- Updated the manifest to 31/37 live PASS and refreshed the server, Java compatibility, Phase 10 matrix, and release checklist summaries. Phase 19 acceptance and full local gates remain open.
