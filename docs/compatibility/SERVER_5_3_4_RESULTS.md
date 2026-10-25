@@ -39,6 +39,7 @@ scenario and profile.
 | `P11-V03` | PASS — A Java Push consumer first acquired all eight scenario queues. With Rust joined, the clients converged to four disjoint queues each; one transient overlapping snapshot occurred during convergence and was allowed. After Java left, Rust converged to all eight queues. The topic and isolated Compose project were removed. | [`20261025T154631Z`](evidence/phase-19/P11-V03/20261025T154631Z/) |
 | `P11-V04` | PASS — Java producer to Rust Push and Rust producer to Java Push each delivered through one retry on the other Broker. Java and Rust offset queries matched at 1 on both Brokers. Each Push client completed three start/shutdown cycles with schedulers and runtime resources quiesced; scenario topics and the isolated Compose project were removed. | [`20261025T155944Z`](evidence/phase-19/P11-V04/20261025T155944Z/) |
 | `P14-V03` | PASS — Java/Rust commit messages were visible to the opposite-language pull client; both rollback bodies stayed absent and normal queue max offsets were unchanged; Unknown transactions were committed by bounded real Broker checks and read back by the opposite-language client in both directions. | [`20261025T164955Z`](evidence/phase-19/P14-V03/20261025T164955Z/) |
+| `P17-V02` | PASS — Java/Rust duplicate-key and bounded-time results matched. Proxy-injected Broker B failure preserved the Broker A seed; terminal failures from both Brokers mapped to `NO_MESSAGE` (208). The topic and isolated Compose resources were removed. | [`20261025T172205Z`](evidence/phase-19/P17-V02/20261025T172205Z/) |
 
 The first batch attempt at source revision `2f9396e3` sent successfully from
 Java but failed in the Rust probe because it read only the first returned
@@ -58,13 +59,14 @@ results cover route lookup, heartbeat, synchronous/asynchronous/oneway/batch
 sends with cross-language readback, consumer offsets and pulls, queue lock
 contention, average assignment over two live Brokers, transaction
 commit/rollback visibility, bidirectional request/reply including no-responder
-timeouts and late replies, producer timeout, and client TLS through a local
-terminating proxy. They do not complete retry, Broker-native TLS/auth, ACL,
-failover, or stress coverage.
+timeouts and late replies, producer timeout, client TLS through a local
+terminating proxy, and P17-V02 multi-Broker query parity with bounded-time,
+partial-failure, and terminal-error checks. They do not complete Broker-native
+TLS/auth, ACL, failover, or stress coverage.
 
 ## Pending local server coverage
 
-The scenario manifest contains 37 live cases; 34 pass. The eight basic
+The scenario manifest contains 37 live cases; 35 pass. The eight basic
 route/heartbeat/send scenarios above, `P3-V04`, four consumer cases, the P5
 route row, `P6-V04`, `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, and
 the two transaction rows passed. `P0-V03` also passes as an aggregate over
@@ -106,13 +108,20 @@ baseline or by itself establish production support.
 including delivery, expiry redelivery, ACK, invisibility changes, mixed queue
 mapping, and malformed receipt rejection. `P14-V03` additionally passes
 Java/Rust commit and rollback visibility plus Unknown resolution through actual
-Broker checks in both directions. Three remain pending: `P12-V03`, `P16-V02`,
-and `P17-V02`. The two-Broker
-profiles cover producer retry/deadline/lifecycle, lock/unlock, and average
-queue assignment; broader push-consumer retry/DLQ, query, and interoperability coverage,
-Broker-native TLS/auth, ACL, and feature-specific profiles remain incomplete.
-No server limitation is inferred from an unrun case. Phase 19
-acceptance remains open until each locally reproducible case has Java/Rust
+Broker checks in both directions. `P17-V02` compares duplicate-key and bounded
+timestamp queries, then verifies partial and terminal Broker failure behavior
+with injected `SYSTEM_ERROR` query replies. The query records omit Broker names,
+so the check matches the unique bodies of messages explicitly seeded to each
+Broker; both clients return terminal `NO_MESSAGE` code 208 after both Brokers
+fail. Two remain pending: `P12-V03` and `P16-V02`. P12 completed its handoff
+assertions but its Java process retained a non-daemon scheduler thread. P16's
+ACL Broker failed to start on the local ARM64 image because the required
+RocksDB JNI library is absent. The two-Broker profiles cover producer
+retry/deadline/lifecycle, lock/unlock, average queue assignment, the P10 Push
+retry/DLQ path, and the listed P17 query path. Broader query conditions and
+feature-specific profiles remain incomplete. No server limitation is inferred
+from an unrun case. Phase 19 acceptance remains open until each locally
+reproducible case has Java/Rust
 evidence or a source-backed matched server limitation plus the required
 success-path evidence.
 

@@ -10919,3 +10919,20 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [ ] Live coverage is now 33/37. Four runnerless cases remain:
   `P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02`. Full local gates, reverse
   audit, and owner manual evidence remain pending.
+
+## P19-05 P17-V02 clean-source admin query pass — 2026-10-25
+
+- [x] Clean-source run `20261025T172205Z` on committed revision
+  `aff298c39e17aa1f00ed3b021a87e1318587593c` passed against the pinned
+  RocketMQ 5.3.4 image (`source_code_dirty=false`, exit 0, 112 seconds). Java
+  5.5.1 and Rust matched duplicate-key results from the two explicitly seeded
+  Brokers and the timestamp-bounded result. An injected Broker B failure
+  preserved Broker A's result; injected failures at both Brokers mapped to
+  `NO_MESSAGE` response code 208 in both clients.
+- [x] The runner deleted `compat_p17_admin_query` from both Brokers and removed
+  the isolated containers, NameServer, volumes, and network. Filtered exact-
+  project Docker queries found no resources. Evidence is under
+  `docs/compatibility/evidence/phase-19/P17-V02/20261025T172205Z/`.
+- [ ] Live coverage is 35/37 PASS. `P12-V03` and `P16-V02` remain pending;
+  full local gates, the reverse audit, owner manual evidence, and final Phase
+  19 acceptance remain open.

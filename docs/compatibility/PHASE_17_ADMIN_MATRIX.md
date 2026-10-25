@@ -449,11 +449,22 @@ remain separate P17/P18 platform evidence.
   Broker failures. Ordering was checked against the pinned Java callback
   aggregation in `MQAdminImpl.queryMessage`.
 
-**P17-V02** is the Broker-backed query check assigned to Phase 19; it does not
-replace the local evidence above. Phase 18 server-free gates have since been
-implemented and run locally. The remaining parity and release-preparation work
-is tracked in the [Phase 18 release checklist](../release-checklist.md); live
-Broker evidence remains assigned to Phase 19.
+**P17-V02** passed against the pinned RocketMQ 5.3.4 image with Java 5.5.1 and
+Rust. The clean run at
+[`20261025T172205Z`](evidence/phase-19/P17-V02/20261025T172205Z/) seeded
+duplicate keys on both Brokers and an in-range/out-of-range timestamp pair.
+Both clients returned the same two broad duplicate results and the same single
+bounded result. With Broker B query replies changed to `SYSTEM_ERROR`, both
+clients retained the message seeded on Broker A; with both Brokers failing,
+both mapped the terminal result to `NO_MESSAGE` (response code 208). Query
+message records omit the Broker name (`null` in Java and empty in Rust), so the
+live comparison normalizes that absent field and checks the distinct seed
+bodies. The runner removed the scenario topic and isolated Compose resources.
+
+Phase 18 server-free gates have since been implemented and run locally. The
+remaining parity and release-preparation work is tracked in the
+[Phase 18 release checklist](../release-checklist.md); final Phase 19
+acceptance remains open.
 
 Latest local gates passed: locked consumer tests and strict all-target/all-
 feature consumer Clippy on macOS ARM64, Linux AArch64, and Linux x86_64 (164
