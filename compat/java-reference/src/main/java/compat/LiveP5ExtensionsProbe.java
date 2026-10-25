@@ -176,7 +176,7 @@ public final class LiveP5ExtensionsProbe {
             header.setTopic(topic);
             header.setMaxMsgNum(1);
             header.setInvisibleTime(60_000);
-            header.setPollTime(0);
+            header.setPollTime(10_000);
             header.setBornTime(bornTime);
             result = api.popLiteMessageAsync(brokerAddress, BROKER_NAME, header, 15_000)
                 .get(20, TimeUnit.SECONDS);

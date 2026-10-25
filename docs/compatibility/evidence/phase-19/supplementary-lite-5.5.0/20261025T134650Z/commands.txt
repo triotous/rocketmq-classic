@@ -1,0 +1,10 @@
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_SUPPLEMENTARY_NAMESRV_PORT=29876 ROCKETMQ_SUPPLEMENTARY_BROKER_PORT=29911 COMPOSE_PROJECT_NAME=rocketmq-classic-p19-lite-supplementary-20261025t134650z docker compose --project-name rocketmq-classic-p19-lite-supplementary-20261025t134650z --file integration-tests/compose-lite-5.5.0.yaml up --detach --wait --wait-timeout 180
+mqadmin clusterList -n namesrv:9876
+mqadmin updateTopic -c RocketMQLocalTest -t compat_p5_lite_supplementary -r 1 -w 1 -a +message.type=LITE -n namesrv:9876
+mqadmin updateSubGroup --attributes +lite.bind.topic=compat_p5_lite_supplementary for Java/Rust Lite groups
+Java send-lite parent-topic entries p5-extension-lite
+Java 5.5.1 live-p5-extensions-probe prepare and lite-pop
+Rust live_client p5-extension-prepare and p5-extension-lite-pop
+mqadmin deleteTopic -c RocketMQLocalTest -t %LMQ%$compat_p5_lite_supplementary$entries -n namesrv:9876
+mqadmin deleteTopic -c RocketMQLocalTest -t compat_p5_lite_supplementary -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-lite-supplementary-20261025t134650z --file integration-tests/compose-lite-5.5.0.yaml down --volumes --remove-orphans

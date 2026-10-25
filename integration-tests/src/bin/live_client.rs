@@ -2320,7 +2320,7 @@ async fn p5_extension_pop(
         header.set_topic(Some(topic.to_owned()));
         header.set_max_msg_num(1);
         header.set_invisible_time(60_000);
-        header.set_poll_time(0);
+        header.set_poll_time(10_000);
         header.set_born_time(now);
         let reply = api
             .pop_lite_message(broker_address, &header, deadline)

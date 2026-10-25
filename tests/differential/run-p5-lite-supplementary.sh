@@ -56,9 +56,9 @@ ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_SUPPLEMENTARY_NAMESRV_PORT=$
 mqadmin clusterList -n namesrv:9876
 mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -a +message.type=LITE -n namesrv:9876
 mqadmin updateSubGroup --attributes +lite.bind.topic=$topic for Java/Rust Lite groups
-Java send-lite parent-topic entries p5-extension-lite
-Java 5.5.1 live-p5-extensions-probe prepare and lite-pop
-Rust live_client p5-extension-prepare and p5-extension-lite-pop
+Java 5.5.1 live-p5-extensions-probe prepare; Rust live_client p5-extension-prepare
+Java send-lite parent-topic entries p5-extension-lite after subscriptions register
+Java live-p5-extensions-probe lite-pop; Rust live_client p5-extension-lite-pop
 mqadmin deleteTopic -c RocketMQLocalTest -t $lite_topic -n namesrv:9876
 mqadmin deleteTopic -c RocketMQLocalTest -t $topic -n namesrv:9876
 docker compose --project-name $project_name --file integration-tests/compose-lite-5.5.0.yaml down --volumes --remove-orphans
@@ -79,7 +79,7 @@ fi
     printf 'scenario=P5-V02-extensions-lite-success\nprofile=supplementary-lite-5.5.0\nproject=%s\nrun_id=%s\n' "$project_name" "$run_id"
     printf 'java_client=5.5.1\nserver=5.5.0\nserver_image=%s\nsource_revision=%s\nsource_code_dirty=%s\n' \
         "$image_ref" "$repo_commit" "$source_code_dirty"
-    printf 'broker_config=integration-tests/config/broker-lite-5.5.0.conf\nbroker_config_enableLmq=true\n'
+    printf 'broker_config=integration-tests/config/broker-lite-5.5.0.conf\nbroker_config_enableLmq=true\nbroker_config_enableMultiDispatch=true\n'
     printf 'topic=%s\nlite_topic=%s\nconsumer_group_prefix=%s\nmethods=heartbeat,heartbeat-v2,assignment,request-mode,lite-subscription,pop-lite,unregister\n' \
         "$topic" "$lite_topic" "$group"
 } >"$evidence_dir/metadata.txt"
@@ -222,26 +222,26 @@ for language in java rust; do
     done
 done
 
-mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-    -Dexec.args="send-lite $broker_addr $topic entries p5-extension-lite" \
-    exec:java@live-producer-probe >"$evidence_dir/java-lite-seed.tsv" 2>"$evidence_dir/java-lite-seed.stderr" || {
-        cat "$evidence_dir/java-lite-seed.stderr" >&2
-        status=1
-        exit 1
-    }
-mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
     -Dexec.args="prepare $broker_addr $topic ${group}_java" \
-    exec:java@live-p5-extensions-probe >"$evidence_dir/java-prepare.tsv" 2>"$evidence_dir/java-prepare.stderr" || {
-        cat "$evidence_dir/java-prepare.stderr" >&2
-        status=1
-        exit 1
-    }
+    exec:java@live-p5-extensions-probe >"$evidence_dir/java-prepare.tsv" 2>"$evidence_dir/java-prepare.stderr"; then
+    cat "$evidence_dir/java-prepare.stderr" >&2
+    status=1
+    exit 1
+fi
 "$repo_root/target/debug/live_client" p5-extension-prepare "$broker_addr" "$topic" "${group}_rust" \
     >"$evidence_dir/rust-prepare.tsv" 2>"$evidence_dir/rust-prepare.stderr" || {
         cat "$evidence_dir/rust-prepare.stderr" >&2
         status=1
         exit 1
     }
+if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+    -Dexec.args="send-lite $broker_addr $topic entries p5-extension-lite" \
+    exec:java@live-producer-probe >"$evidence_dir/java-lite-seed.tsv" 2>"$evidence_dir/java-lite-seed.stderr"; then
+    cat "$evidence_dir/java-lite-seed.stderr" >&2
+    status=1
+    exit 1
+fi
 mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
     -Dexec.args="lite-pop $broker_addr $topic ${group}_java" \
     exec:java@live-p5-extensions-probe >"$evidence_dir/java-lite-pop.tsv" 2>"$evidence_dir/java-lite-pop.stderr" || {
