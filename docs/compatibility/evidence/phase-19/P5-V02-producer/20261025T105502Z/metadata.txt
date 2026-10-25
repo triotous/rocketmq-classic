@@ -1,0 +1,16 @@
+scenario=P5-V02-producer
+profile=basic
+project=rocketmq-classic-p19-p5-v02-producer-20261025t105502z
+run_id=20261025T105502Z
+java_client=5.5.1
+server=5.3.4
+server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+source_revision=324f56d384718537d21265edb5f731d38d549f8a
+source_code_dirty=false
+producer_group=-
+body=-
+seed=not-applicable
+topic=compat_p5_send
+methods=send-v1,send-v2,batch,reply-v1,reply-v2,end-transaction
+exit_status=1
+duration_seconds=62

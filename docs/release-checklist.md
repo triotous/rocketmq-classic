@@ -10624,3 +10624,18 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - Live coverage is 22/37, with 15 scenarios pending. Full local gates must be
   rerun after the remaining runner additions; broad P18-V01, MAN-01..05, and
   remote Docker CI remain open.
+
+## P19 P5-V02 producer RPC variants — 2026-10-25 (`e00e8c4f`)
+
+- [x] Added direct Java 5.5.1/Rust probes for send V1, send V2, batch, reply
+  V1/V2, and end-transaction RPCs. Reply variants ran in one-way mode and the
+  scenario provisioned a reply consumer group and heartbeat identity.
+- [x] `P5-V02-producer` passed at `20261025T110552Z` on
+  `e00e8c4f161509c392b6116a17a5968dd39a95e2` with `source_code_dirty=false`.
+  Java and Rust matched `SEND_OK`, topic, queue, and sequential offsets for
+  the three stored sends. Both returned one-way results for reply V1/V2 and
+  `endTransactionOneway`; each language stored three messages.
+  Topic deletion and basic-profile Compose teardown passed.
+- Live coverage is 23/37, with 14 scenarios pending. Full local gates must be
+  rerun after the remaining runner additions; broad P18-V01, MAN-01..05, and
+  remote Docker CI remain open.

@@ -262,3 +262,16 @@ with each expected body present once. Topic deletion and two-Broker Compose
 teardown passed. No matching containers remained after cleanup. Evidence is
 under [`20261025T104539Z`](evidence/phase-19/PROD-005-send-timeout/20261025T104539Z/).
 Live coverage is now 22/37, with 15 cases pending.
+
+## P5 producer RPC variants — 2026-10-25
+
+`P5-V02-producer` passed on clean revision
+`e00e8c4f161509c392b6116a17a5968dd39a95e2` with
+`source_code_dirty=false`. Java 5.5.1 and Rust matched `SEND_OK`, topic,
+queue, and sequential offsets for raw send V1, send V2, and batch calls.
+Reply V1/V2 and `endTransactionOneway` both returned the expected one-way
+outcome; the reply calls used a registered scenario-owned client identity.
+Java and Rust each advanced the queue by three stored messages. The topic,
+reply consumer group, and basic-profile Compose project were removed. Evidence
+is under [`20261025T110552Z`](evidence/phase-19/P5-V02-producer/20261025T110552Z/).
+Live coverage is now 23/37, with 14 cases pending.

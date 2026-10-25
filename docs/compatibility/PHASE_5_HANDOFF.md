@@ -1,6 +1,6 @@
 # Phase 5 implementation handoff
 
-Local phase acceptance: P5-V01, P5-V03 and P5-U01 verified. P5-V02 is PENDING_PHASE_19. Branch: `06-phase-05-typed-rpc-api`. No live Broker, NameServer or Docker was required or contacted for this acceptance; no final Java compatibility/release claim is made.
+Local phase acceptance: P5-V01, P5-V03 and P5-U01 verified. P5-V02 has partial Phase 19 evidence: route and producer subcases pass, while consumer and extension subcases remain pending. Branch: `06-phase-05-typed-rpc-api`. No live Broker, NameServer or Docker was required or contacted for the Phase 5 acceptance; no final Java compatibility/release claim is made.
 
 ## Requirement audit
 
