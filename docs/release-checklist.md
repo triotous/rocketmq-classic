@@ -10551,3 +10551,16 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - Live coverage is 17/37, with 20 scenarios pending. The full local gate must
   be rerun after these additions; broad P18-V01, MAN-01..05, and remote Docker
   CI remain open.
+
+## P19 P7-V02 high-level producer modes — 2026-10-25 (`f9bfeb2a`)
+
+- [x] Added a host-routed disposable Broker profile and Java 5.5.1/Rust probes
+  for sync, async, oneway, explicit-queue, selector, valid-batch, and invalid
+  mixed-topic batch behavior. Implementation commit: `f9bfeb2a`.
+- [x] `P7-V02` passed at `20261025T094705Z` on
+  `f9bfeb2aa120638a12ca0eba87c8fb2f7a4ddcec` with `source_code_dirty=false`.
+  Java and Rust matched all seven outcomes; the scenario topic and Compose
+  project, network, and volume were removed after evidence capture.
+- Live coverage is 18/37, with 19 scenarios pending. The full local gate must
+  be rerun after these additions; broad P18-V01, MAN-01..05, and remote Docker
+  CI remain open.

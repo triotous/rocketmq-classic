@@ -58,7 +58,8 @@ The scenario manifest contains 37 live cases. The seven rows above, four
 consumer rows, the P5 route row, `ORDER-001-lock-unlock`,
 `REBAL-001-average-10q-3c`, and the two transaction rows are implemented and
 passed by the current runner; `P0-V03` also passes as an aggregate over eleven
-clean constituent runs. 20 remain pending. The two-Broker profile covers
+clean constituent runs, and `P7-V02` covers high-level producer send modes. 19
+remain pending. The two-Broker profile covers
 lock/unlock and average queue assignment; retry, query, and broader
 interoperability coverage, TLS, ACL, and feature-specific profiles remain
 incomplete. No server limitation is inferred from an unrun case. Phase 19
@@ -190,3 +191,16 @@ archived the constituent status/evidence table and child command logs at
 No Phase 19 Docker containers, volumes, or networks remained afterward. The
 individual manifest pointers were refreshed to the child runs referenced by
 this aggregate. Live coverage is now 17/37, with 20 cases pending.
+
+## High-level producer send modes — 2026-10-25
+
+`P7-V02` passed on committed revision
+`f9bfeb2aa120638a12ca0eba87c8fb2f7a4ddcec` with
+`source_code_dirty=false`. The `host-routed` profile advertises the pinned
+5.3.4 Broker at `127.0.0.1:40911`, allowing both high-level clients to discover
+the same Broker through the NameServer. Java and Rust matched the outcome for
+sync send, one async completion, oneway without a Broker response, explicit
+queue 1, selector queue 2, a valid two-message batch, and local rejection of a
+mixed-topic batch. The topic and Compose resources were removed after capture:
+[`20261025T094705Z`](evidence/phase-19/P7-V02/20261025T094705Z/).
+Live coverage is now 18/37, with 19 cases pending.

@@ -1,0 +1,2 @@
+delete topic [compat_p7_send] from cluster [RocketMQLocalTest] success.
+delete topic [compat_p7_send] from NameServer success.
