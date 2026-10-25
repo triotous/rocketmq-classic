@@ -1,0 +1,1 @@
+PASS P16-V02: Java 5.5.1 and Rust accepted valid ACL signatures and rejected wrong secrets and tampered heartbeat bodies; mutual TLS accepted trusted clients and rejected untrusted CAs and missing client certificates; Rust rejected the trusted wrong-host certificate while Java 5.5.1 accepted its trusted chain without hostname verification

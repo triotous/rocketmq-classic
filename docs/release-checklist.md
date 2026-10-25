@@ -10957,3 +10957,25 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [ ] Live coverage is 36/37 PASS. `P16-V02`, all local suite reconciliation,
   the reverse audit, owner manual evidence, and final Phase 19 acceptance
   remain open.
+
+## P19-05 P16-V02 clean-source ACL and TLS pass — 2026-10-25 (`ba9480cf`)
+
+- [x] Clean-source run `20261025T174649Z` on committed revision
+  `ba9480cff5f607f105c5df6a9578eeff089fa19c` passed (`source_code_dirty=false`,
+  exit 0, 106 seconds). Java 5.5.1 and Rust accepted valid ACL signatures and
+  rejected wrong secrets and tampered request bodies. Both clients accepted
+  the trusted mutual-TLS endpoint, rejected untrusted CAs and missing client
+  certificates, and matched the Java-specific wrong-host behavior.
+- [x] The Broker used the SHA-512-verified official Apache 5.3.4 binary
+  distribution in a digest-pinned amd64 Temurin JDK container because the
+  Linux ARM64 release image lacks its required RocksDB JNI library. The
+  NameServer remained on the pinned 5.3.4 image. Evidence records both image
+  IDs, the distribution checksum, config hashes, toolchains, and redacted
+  Broker logs at
+  `docs/compatibility/evidence/phase-19/P16-V02/20261025T174649Z/`.
+- [x] The per-run synthetic credentials and private keys were removed. The
+  isolated project containers, volume, and network were removed; exact-project
+  Docker queries found no resources.
+- [ ] All 37 live scenarios now have passing evidence. The aggregate
+  `run-local.sh --all` gate, Phase 18 reverse audit, owner manual evidence, and
+  final Phase 19 acceptance remain open.

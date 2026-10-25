@@ -40,6 +40,7 @@ scenario and profile.
 | `P11-V04` | PASS — Java producer to Rust Push and Rust producer to Java Push each delivered through one retry on the other Broker. Java and Rust offset queries matched at 1 on both Brokers. Each Push client completed three start/shutdown cycles with schedulers and runtime resources quiesced; scenario topics and the isolated Compose project were removed. | [`20261025T155944Z`](evidence/phase-19/P11-V04/20261025T155944Z/) |
 | `P12-V03` | PASS — Java held orderly callbacks on both Brokers while Rust joined, acquired the transferred locks, processed redelivered messages and successors, and advanced the offsets to 2 before Java returned. No stale callback regressed either offset; both clients shut down and both queues were lockable and releasable afterward. | [`20261025T173114Z`](evidence/phase-19/P12-V03/20261025T173114Z/) |
 | `P14-V03` | PASS — Java/Rust commit messages were visible to the opposite-language pull client; both rollback bodies stayed absent and normal queue max offsets were unchanged; Unknown transactions were committed by bounded real Broker checks and read back by the opposite-language client in both directions. | [`20261025T164955Z`](evidence/phase-19/P14-V03/20261025T164955Z/) |
+| `P16-V02` | PASS — Java and Rust accepted valid ACL signatures and rejected wrong secrets and tampered heartbeat bodies. Mutual TLS accepted trusted clients and rejected untrusted CAs and missing client certificates; Rust rejected a trusted wrong-host certificate while Java 5.5.1 accepted its trusted chain. The ACL Broker ran from the checksum-verified official 5.3.4 binary distribution in a pinned amd64 JDK container; the NameServer used the pinned 5.3.4 image. | [`20261025T174649Z`](evidence/phase-19/P16-V02/20261025T174649Z/) |
 | `P17-V02` | PASS — Java/Rust duplicate-key and bounded-time results matched. Proxy-injected Broker B failure preserved the Broker A seed; terminal failures from both Brokers mapped to `NO_MESSAGE` (208). The topic and isolated Compose resources were removed. | [`20261025T172205Z`](evidence/phase-19/P17-V02/20261025T172205Z/) |
 
 The first batch attempt at source revision `2f9396e3` sent successfully from
@@ -115,9 +116,11 @@ with injected `SYSTEM_ERROR` query replies. The query records omit Broker names,
 so the check matches the unique bodies of messages explicitly seeded to each
 Broker; both clients return terminal `NO_MESSAGE` code 208 after both Brokers
 fail. `P12-V03` passes mixed-client orderly callback handoff, final offset, and
-post-shutdown lock checks. One local scenario remains pending: `P16-V02`.
-Its ACL Broker failed to start on the local ARM64 image because the required
-RocksDB JNI library is absent. The two-Broker profiles cover producer
+post-shutdown lock checks. `P16-V02` also passes ACL signature and mutual-TLS
+outcomes using the checksum-verified official 5.3.4 binary distribution in an
+amd64 JDK container, which includes the Linux x86_64 RocksDB JNI library that
+the pinned ARM64 image lacks. All 37 registered local scenarios have passing
+evidence. The two-Broker profiles cover producer
 retry/deadline/lifecycle, lock/unlock, average queue assignment, the P10 Push
 retry/DLQ path, and the listed P17 query path. Broader query conditions and
 feature-specific profiles remain incomplete. No server limitation is inferred

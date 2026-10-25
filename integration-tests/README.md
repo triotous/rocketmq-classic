@@ -276,16 +276,14 @@ bash integration-tests/run-local.sh --all
 It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
 produce a `BLOCKED` result with the missing IDs in the archived log; the full
-matrix cannot report success until all IDs have passing evidence. Currently
-36 of 37 live cases have passing evidence; `P16-V02` is the only case without
-a passing run. It already has a runner, including the verified Apache 5.3.4
-binary-distribution profile described above.
+matrix cannot report success until all IDs have passing evidence. All 37 live
+cases have passing evidence, including `P16-V02` through the
+verified Apache 5.3.4 binary-distribution profile described above. A fresh
+`run-local.sh --all` aggregate run remains pending.
 `P5-V02-extensions`
 passed the 5.3.4 parity case with matching unsupported responses for Lite
 subscription and Lite POP; positive Lite success-path coverage passed
 separately on the official 5.5.0 image and is not part of the 5.3.4 manifest
-count.
-The P16 ACL/TLS case and a fresh `run-local.sh --all` pass remain pending. The
-last full local run predates several later runner additions and must be rerun
-against the current revision.
+count. The last full local run predates several later runner additions and
+must be rerun against the current revision.
 Starting a profile by itself does not mark a scenario passed.

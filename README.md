@@ -6,12 +6,13 @@ A Rust reimplementation of the Apache RocketMQ 5.5.1 Java client, with RocketMQ 
 
 Implementation work now covers phases 0–18, including typed protocol/remoting layers, the core RPC/runtime, Producer, Pull/Push/Lite consumers, orderly processing, transactions, request/reply, namespace/security/operations, admin/query APIs, and server-free parity gates. The P18-V02 server-free gates were refreshed on 2026-10-24, and the P18-V03 documentation/package review is recorded. P18-V01 remains open: the broad Phase 6 source/API/input/reverse-export reconciliation is still partial. Native Windows runtime and current-revision Ubuntu CI remain unverified, so P18-V04 remains open. The Phase 9 Pull raw implementation-accessor review is resolved; the Push raw implementation surface has method-level mappings or reviewed dispositions. The project does not claim full compatibility or release readiness. Phase 19 owns live Broker/Docker validation and final acceptance. See the [Phase 6 audit](docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md), [Phase 9 matrix](docs/compatibility/PHASE_9_OFFLINE_METHOD_MATRIX.md), and [release checklist](docs/release-checklist.md) for current evidence and remaining work.
 
-Phase 19 local live coverage is 36/37 PASS. `P17-V02` passes
+All 37 registered Phase 19 local live scenarios now have passing evidence.
+`P17-V02` passes
 duplicate-key, bounded-time, partial-Broker-failure, and terminal-error checks
 against the pinned 5.3.4 image. `P12-V03` also passes mixed-client orderly
-handoff and post-shutdown offset/lock checks; `P16-V02` remains pending while
-the local ARM64 image's missing Linux ARM64 RocksDB JNI library is evaluated.
-See the
+handoff and post-shutdown offset/lock checks. `P16-V02` passes ACL and mutual
+TLS cases using the SHA-512-verified Apache 5.3.4 binary distribution in an
+amd64 JDK container. The aggregate local gate and final audits remain open. See
 [server results](docs/compatibility/SERVER_5_3_4_RESULTS.md) for evidence and
 limits.
 
