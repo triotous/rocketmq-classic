@@ -4570,6 +4570,14 @@ public final class ProducerCoreFixtures {
         return result;
     }
 
+    // These paginated APIs recompute remaining time from System.nanoTime(). The
+    // exact millisecond value varies between runs, so capture whether each
+    // attempted page still has a positive budget. The delayed timeout cases
+    // verify that an exhausted budget prevents a later page request.
+    private static boolean timeoutBudgetPositive(Object timeoutMillis) {
+        return ((Number) timeoutMillis).longValue() > 0;
+    }
+
     private static Map<String, Object> getAllTopicConfigOperations() throws Exception {
         List<Map<String, Object>> cases = new ArrayList<>();
         cases.add(getAllTopicConfigCase("snapshot-single-page", 2345L, List.of(
@@ -4764,7 +4772,7 @@ public final class ProducerCoreFixtures {
                             Map<String, Object> call = new TreeMap<>();
                             call.put("address", values[0]);
                             call.put("requestCode", request.getCode());
-                            call.put("timeoutMillis", values[2]);
+                            call.put("timeoutBudgetPositive", timeoutBudgetPositive(values[2]));
                             call.put("extFields", request.getExtFields());
                             call.put("requestBodyPresent", request.getBody() != null);
                             requests.add(call);
@@ -4907,7 +4915,7 @@ public final class ProducerCoreFixtures {
                             Map<String, Object> call = new TreeMap<>();
                             call.put("address", values[0]);
                             call.put("requestCode", request.getCode());
-                            call.put("timeoutMillis", values[2]);
+                            call.put("timeoutBudgetPositive", timeoutBudgetPositive(values[2]));
                             call.put("extFields", request.getExtFields());
                             call.put("requestBodyPresent", request.getBody() != null);
                             requests.add(call);

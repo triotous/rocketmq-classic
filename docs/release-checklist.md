@@ -10392,3 +10392,16 @@ The Java oracle is RocketMQ 5.5.1 source commit
   `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`; no performance
   threshold is inferred from these machine-specific samples. Run record:
   `rlogs/2026/10/24-phase-18-final-benchmark-refresh__20261024T233124Z.rlog`.
+
+## P18-V02 paginated timeout fixture determinism — 2026-10-25
+
+GitHub run 40143142994 exposed millisecond drift in the pinned Java pagination
+fixtures: `MQClientAPIImpl` derives each page timeout from `System.nanoTime()`,
+and a remaining timeout of 2344 ms differed from the recorded 2345 ms. The
+topic and subscription-group fixture recorders now capture whether each
+attempted request has a positive budget. Their short delayed-timeout cases
+continue to verify that an exhausted budget prevents a later page request.
+The producer fixture was regenerated. Maven verification passes both while
+regenerating the fixture and in default verification mode, and the focused
+Rust pagination test passes. Current-head remote validation is triggered by
+the fixture fix commit. Details: `rlogs/2026/10/25-phase-18-timeout-fixture-determinism__20261025T002216Z.rlog`.
