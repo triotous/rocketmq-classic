@@ -9,7 +9,7 @@ remains in progress.
 
 ## Phase 19 live status — 2026-10-25
 
-Thirty-one of 37 registered local scenarios have passing Java 5.5.1/Rust
+Thirty-two of 37 registered local scenarios have passing Java 5.5.1/Rust
 evidence against the pinned 5.3.4 image. Four consumer cases cover reciprocal
 offset updates and queries, a found pull with message-body comparison, and an
 empty pull; `P5-V02-route` covers matching results for an existing and missing
@@ -39,6 +39,11 @@ time out at 900 ms against a delayed real Broker response.
 acknowledgement, retry callbacks at counts 0/1, and the configured 5.3.4 DLQ
 transition with the original body/key. The terminal DLQ copy records
 `reconsumeTimes=2` when the group's retry maximum is 1.
+`P11-V03` verifies mixed Java/Rust Push group join and leave: the clients
+settled to disjoint ownership of eight scenario queues, then Rust recovered all
+eight after Java shut down. One overlapping snapshot during convergence was
+allowed; four stable disjoint snapshots were required before the joined state
+passed.
 `P5-V02-producer` matches raw V1, V2, batch, one-way reply V1/V2, and
 end-transaction RPC outcomes.
 `P5-V02-consumer` matches raw pull/Lite pull, offset update/query,
@@ -61,8 +66,8 @@ accepts a CA-trusted wrong-host certificate because its TLS handler does not
 receive a peer hostname; Rust rejects it. P7-V04 now has clean-source live
 evidence for 20 sends over three Java and Rust producer cycles with zero
 pending requests, connections, and owned task groups after every shutdown.
-Six live cases remain pending: `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`,
-`P16-V02`, and `P17-V02`.
+Five live cases remain pending: `P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`,
+and `P17-V02`.
 `P13-V02` and `P5-V02-extensions` now have clean Java/Rust evidence; the
 latter records the two unsupported Lite request paths on 5.3.4 and separate
 positive Lite success evidence on 5.5.0. This does

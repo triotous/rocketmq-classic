@@ -10879,3 +10879,21 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [ ] Live coverage is now 31/37. Six runnerless cases remain:
   `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02`.
   Full local gates, reverse audit, and owner manual evidence remain pending.
+
+## P19-05 P11-V03 clean-source mixed-group convergence pass — 2026-10-25
+
+- [x] Clean-source run `20261025T154631Z` on committed revision
+  `7d03c66189d2de34d9d523ff35b8e6b302cc5087` passed against the pinned,
+  unmodified RocketMQ 5.3.4 image. Java initially owned all eight scenario
+  queues. With Rust joined, the clients converged to four disjoint queues each;
+  one transient overlapping snapshot occurred during convergence and was
+  allowed. After Java left, Rust converged to all eight queues.
+- [x] Evidence is under
+  `docs/compatibility/evidence/phase-19/P11-V03/20261025T154631Z/`;
+  metadata records `source_code_dirty=false`, exit status 0, and duration
+  93 seconds. The runner deleted the owned topic from both Brokers and removed
+  the isolated containers, NameServer, volumes, and network. Filtered Docker
+  queries found no project resources.
+- [ ] Live coverage is now 32/37. Five runnerless cases remain:
+  `P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02`. Full local gates,
+  reverse audit, and owner manual evidence remain pending.

@@ -257,9 +257,9 @@ It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
 produce a `BLOCKED` result with the missing IDs in the archived log; the full
 matrix cannot report success until all IDs have passing evidence. Currently
-29 of 37 live cases have passing evidence; eight remain without runners:
-`P7-V03`, `P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`,
-`P14-V03`, `P16-V02`, and `P17-V02`. `P5-V02-extensions`
+32 of 37 live cases have passing evidence; five remain without runners:
+`P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`, and `P17-V02`.
+`P5-V02-extensions`
 passed the 5.3.4 parity case with matching unsupported responses for Lite
 subscription and Lite POP; positive Lite success-path coverage passed
 separately on the official 5.5.0 image and is not part of the 5.3.4 manifest
