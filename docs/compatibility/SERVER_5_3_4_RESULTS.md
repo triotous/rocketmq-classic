@@ -38,6 +38,7 @@ scenario and profile.
 | `P10-V03` | PASS — Java-seeded messages exercised Rust Push success, partial acknowledgement, retry, and failure. The failed message was delivered twice at listener counts 0/1, then reached the configured DLQ with its body/key intact and Broker `reconsumeTimes=2`. Both Brokers' scenario topic and the isolated Compose project were removed. | [`20261025T153016Z`](evidence/phase-19/P10-V03/20261025T153016Z/) |
 | `P11-V03` | PASS — A Java Push consumer first acquired all eight scenario queues. With Rust joined, the clients converged to four disjoint queues each; one transient overlapping snapshot occurred during convergence and was allowed. After Java left, Rust converged to all eight queues. The topic and isolated Compose project were removed. | [`20261025T154631Z`](evidence/phase-19/P11-V03/20261025T154631Z/) |
 | `P11-V04` | PASS — Java producer to Rust Push and Rust producer to Java Push each delivered through one retry on the other Broker. Java and Rust offset queries matched at 1 on both Brokers. Each Push client completed three start/shutdown cycles with schedulers and runtime resources quiesced; scenario topics and the isolated Compose project were removed. | [`20261025T155944Z`](evidence/phase-19/P11-V04/20261025T155944Z/) |
+| `P12-V03` | PASS — Java held orderly callbacks on both Brokers while Rust joined, acquired the transferred locks, processed redelivered messages and successors, and advanced the offsets to 2 before Java returned. No stale callback regressed either offset; both clients shut down and both queues were lockable and releasable afterward. | [`20261025T173114Z`](evidence/phase-19/P12-V03/20261025T173114Z/) |
 | `P14-V03` | PASS — Java/Rust commit messages were visible to the opposite-language pull client; both rollback bodies stayed absent and normal queue max offsets were unchanged; Unknown transactions were committed by bounded real Broker checks and read back by the opposite-language client in both directions. | [`20261025T164955Z`](evidence/phase-19/P14-V03/20261025T164955Z/) |
 | `P17-V02` | PASS — Java/Rust duplicate-key and bounded-time results matched. Proxy-injected Broker B failure preserved the Broker A seed; terminal failures from both Brokers mapped to `NO_MESSAGE` (208). The topic and isolated Compose resources were removed. | [`20261025T172205Z`](evidence/phase-19/P17-V02/20261025T172205Z/) |
 
@@ -113,9 +114,9 @@ timestamp queries, then verifies partial and terminal Broker failure behavior
 with injected `SYSTEM_ERROR` query replies. The query records omit Broker names,
 so the check matches the unique bodies of messages explicitly seeded to each
 Broker; both clients return terminal `NO_MESSAGE` code 208 after both Brokers
-fail. Two remain pending: `P12-V03` and `P16-V02`. P12 completed its handoff
-assertions but its Java process retained a non-daemon scheduler thread. P16's
-ACL Broker failed to start on the local ARM64 image because the required
+fail. `P12-V03` passes mixed-client orderly callback handoff, final offset, and
+post-shutdown lock checks. One local scenario remains pending: `P16-V02`.
+Its ACL Broker failed to start on the local ARM64 image because the required
 RocksDB JNI library is absent. The two-Broker profiles cover producer
 retry/deadline/lifecycle, lock/unlock, average queue assignment, the P10 Push
 retry/DLQ path, and the listed P17 query path. Broader query conditions and

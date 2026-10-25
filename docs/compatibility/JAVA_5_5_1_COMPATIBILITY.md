@@ -49,6 +49,11 @@ Brokers. Each listener observed retry counts 0 and 1; Java and Rust offset
 queries matched at 1 on both Brokers. Three Push start/shutdown cycles per
 client completed with the Java scheduled executors terminated and Rust runtime
 and remoting resources quiesced.
+`P12-V03` passes the mixed Java/Rust orderly handoff: Rust acquired each
+transferred Broker lock, advanced both queue offsets to 2 before Java's held
+callbacks returned, and no stale completion regressed either offset. Both
+clients shut down and each Broker queue became lockable and releasable.
+Evidence: [P12-V03 live run](evidence/phase-19/P12-V03/20261025T173114Z/).
 `P5-V02-producer` matches raw V1, V2, batch, one-way reply V1/V2, and
 end-transaction RPC outcomes.
 `P5-V02-consumer` matches raw pull/Lite pull, offset update/query,
@@ -77,7 +82,7 @@ checks in both directions. `P17-V02` passes duplicate-key and bounded-time
 queries, preserves Broker A results when Broker B fails, and maps terminal
 query failures to `NO_MESSAGE`; see the
 [live evidence](evidence/phase-19/P17-V02/20261025T172205Z/).
-Two live cases remain pending: `P12-V03` and `P16-V02`.
+One live case remains pending: `P16-V02`.
 `P13-V02` and `P5-V02-extensions` now have clean Java/Rust evidence; the
 latter records the two unsupported Lite request paths on 5.3.4 and separate
 positive Lite success evidence on 5.5.0. This does
@@ -813,7 +818,7 @@ The matrix starts with the source areas required by the master plan. Work on eac
 | `client/.../consumer/store/LocalFileOffsetStore.java` | local persistence/recovery | Phase 9; see [Phase 9 offline method matrix](PHASE_9_OFFLINE_METHOD_MATRIX.md) | P9-V02/U01; local offset fixture/tests | UNIT_VERIFIED | PENDING_PHASE_19 / 5.3.4 |
 | `client/.../impl/MQClientAPIImpl.java` | search/min/max/earliest-time offset RPCs | Phase 9; see [Phase 9 offline method matrix](PHASE_9_OFFLINE_METHOD_MATRIX.md) | P9-U01; request codes 29–32 | UNIT_VERIFIED | PENDING_PHASE_19 / 5.3.4 |
 | `client/.../impl/consumer/ConsumeMessageConcurrentlyService.java` | concurrent callbacks/ackIndex/retry/send-back | Phase 10; [offline method/configuration matrix](PHASE_10_OFFLINE_METHOD_MATRIX.md) | P10-06/07/09; P10-U01/V04 | UNIT_VERIFIED — Java-fixture tests cover callback success/partial/failure, panic isolation, scripted send-back/fallback metadata and failed-retry retention; shutdown retains unresolved work. Live Broker DLQ remains P10-V03 | PENDING_PHASE_19 / 5.3.4 |
-| `client/.../impl/consumer/ConsumeMessageOrderlyService.java`, orderly `ProcessQueue` methods, `RebalanceImpl` lock branches | Per-queue ordered callbacks, Broker lock/renewal/expiry, retry and offset-safe lifecycle | Phase 12; see [orderly compatibility matrix](PHASE_12_ORDERLY_MATRIX.md) | P12-V01/V02/U01 | UNIT_VERIFIED — public defaults/context/statuses, partial batch locks, per-response lock freshness, retry/rollback, independent and serialized queues, loss, rebalance and shutdown pass local checks | P12-V03 mixed-client Broker contention remains PENDING_PHASE_19 / 5.3.4 |
+| `client/.../impl/consumer/ConsumeMessageOrderlyService.java`, orderly `ProcessQueue` methods, `RebalanceImpl` lock branches | Per-queue ordered callbacks, Broker lock/renewal/expiry, retry and offset-safe lifecycle | Phase 12; see [orderly compatibility matrix](PHASE_12_ORDERLY_MATRIX.md) | P12-V01/V02/U01 | UNIT_VERIFIED — public defaults/context/statuses, partial batch locks, per-response lock freshness, retry/rollback, independent and serialized queues, loss, rebalance and shutdown pass local checks | P12-V03 PASS — mixed-client lock handoff, stale-offset prevention, and post-shutdown lock recovery on 5.3.4; [run evidence](evidence/phase-19/P12-V03/20261025T173114Z/) |
 | transaction producer/check APIs | half message, check, commit/rollback | Phase 14; [transaction matrix](PHASE_14_TRANSACTION_MATRIX.md) | P14-V01/V02/U01 | UNIT_VERIFIED — half-send, end-transaction fields, inbound checks, callback ownership and shutdown are locally covered | P14-V03 PASS — cross-language commit/rollback visibility and bounded Unknown Broker checks on 5.3.4; [run evidence](evidence/phase-19/P14-V03/20261025T164955Z/) |
 | request/reply APIs | correlation, callback completion and responder | Phase 15; [request/reply matrix](PHASE_15_REQUEST_REPLY_MATRIX.md) | P15-V01/V02/U01/V03 | UNIT_VERIFIED — all six overloads, correlation lifecycle, reply handling, timeout/cancellation races and Java metadata fixtures are locally covered; P15-V03 passes bidirectional 5.3.4 Broker request/reply, timeout, and late-reply checks | [P15-V03 PASS](evidence/phase-19/P15-V03/20261025T143716Z/) |
 | Lite/POP APIs and configuration | complete public methods and receipt lifecycle | Phase 13; [Lite/POP matrix](PHASE_13_LITE_POP_MATRIX.md) | P13-V01/V03/U01/V02 | UNIT_VERIFIED — Lite API/config audit, POP assignment/receipt lifecycle, expiry and replacement cases pass local checks | P13-V02 PASS — Java/Rust live POP lifecycle on pinned 5.3.4; [run evidence](evidence/phase-19/P13-V02/20261025T130156Z/) |

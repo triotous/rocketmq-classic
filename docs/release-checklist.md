@@ -10936,3 +10936,24 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [ ] Live coverage is 35/37 PASS. `P12-V03` and `P16-V02` remain pending;
   full local gates, the reverse audit, owner manual evidence, and final Phase
   19 acceptance remain open.
+
+## P19-05 P12-V03 clean-source orderly handoff pass — 2026-10-25 (`de4212ff`)
+
+- [x] Clean-source run `20261025T173114Z` on committed revision
+  `de4212ffed4013b91f2fc3d694c6c4148eeee295` passed against the pinned
+  unmodified RocketMQ 5.3.4 image (`source_code_dirty=false`, exit 0,
+  141 seconds). Java held callbacks on both Brokers while Rust joined and
+  acquired the transferred locks. Rust processed redelivered messages and
+  successors and committed offset 2 before Java's callbacks were released;
+  final offsets stayed at 2 after both clients stopped.
+- [x] The Java probe's successful consumer path now ends its isolated Maven
+  process after the public consumer shutdown returns, avoiding Maven waiting
+  forever on an idle RocketMQ scheduler thread. The runner confirmed both
+  Broker queues became lockable and releasable afterward.
+- [x] Scenario topic and groups were deleted. The isolated Compose containers,
+  volumes, and network were removed; filtered Docker queries found no resources.
+  Evidence is under
+  `docs/compatibility/evidence/phase-19/P12-V03/20261025T173114Z/`.
+- [ ] Live coverage is 36/37 PASS. `P16-V02`, all local suite reconciliation,
+  the reverse audit, owner manual evidence, and final Phase 19 acceptance
+  remain open.
