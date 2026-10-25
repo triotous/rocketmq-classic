@@ -1,19 +1,23 @@
 package compat;
 
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Map;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.consumer.AckResult;
 import org.apache.rocketmq.client.consumer.AckStatus;
 import org.apache.rocketmq.client.consumer.PopResult;
-import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.impl.MQClientAPIImpl;
+import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.client.impl.mqclient.MQClientAPIExt;
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageConst;
-import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.message.MessageRequestMode;
@@ -22,7 +26,6 @@ import org.apache.rocketmq.remoting.protocol.header.AckMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ChangeInvisibleTimeRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ExtraInfoUtil;
 import org.apache.rocketmq.remoting.protocol.header.PopMessageRequestHeader;
-import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
 
 /** Exercises live POP receipt lifecycle behavior against the pinned Broker. */
 public final class LiveP13PopProbe {
@@ -31,13 +34,15 @@ public final class LiveP13PopProbe {
     private LiveP13PopProbe() {}
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 4 || !("prepare".equals(args[0]) || "seed".equals(args[0]) || "consume".equals(args[0]))) {
-            throw new IllegalArgumentException("usage: LiveP13PopProbe prepare|seed|consume <broker-address> <topic> <language>");
+        boolean seeding = args.length > 0 && "seed".equals(args[0]);
+        if ((!seeding && args.length != 4) || (seeding && args.length != 5)
+            || !("prepare".equals(args[0]) || seeding || "consume".equals(args[0]))) {
+            throw new IllegalArgumentException("usage: LiveP13PopProbe prepare|consume <broker-address> <topic> <language>; seed <broker-address> <nameserver-address> <topic> <language>");
         }
         if ("prepare".equals(args[0])) {
             prepare(args[1], args[2], args[3]);
-        } else if ("seed".equals(args[0])) {
-            seed(args[1], args[2], args[3]);
+        } else if (seeding) {
+            seed(args[1], args[2], args[3], args[4]);
         } else {
             consume(args[1], args[2], args[3]);
         }
@@ -59,30 +64,27 @@ public final class LiveP13PopProbe {
         }
     }
 
-    private static void seed(String brokerAddress, String topic, String language) throws Exception {
+    private static void seed(String brokerAddress, String nameserverAddress, String topic, String language) throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("compat_p13_" + language);
+        producer.setNamesrvAddr(nameserverAddress);
+        producer.setVipChannelEnabled(false);
         MQClientAPIImpl api = producerApi();
         api.start();
         try {
+            producer.start();
+            useHostBrokerAddress(producer, topic, brokerAddress);
             for (int queueId = 0; queueId < 2; queueId++) {
                 String body = "p13-" + language + "-q" + queueId;
                 Message message = new Message(topic, body.getBytes(StandardCharsets.UTF_8));
-                SendMessageRequestHeader header = new SendMessageRequestHeader();
-                header.setProducerGroup("compat_p13_" + language);
-                header.setTopic(topic);
-                header.setDefaultTopic("TBW102");
-                header.setDefaultTopicQueueNums(4);
-                header.setQueueId(queueId);
-                header.setSysFlag(0);
-                header.setBornTimestamp(System.currentTimeMillis());
-                header.setFlag(message.getFlag());
-                header.setProperties(MessageDecoder.messageProperties2String(message.getProperties()));
-                header.setReconsumeTimes(0);
-                header.setUnitMode(false);
-                header.setBatch(false);
-                header.setBrokerName(BROKER_NAME);
-                org.apache.rocketmq.client.producer.SendResult sent = api.sendMessage(
-                    brokerAddress, BROKER_NAME, message, header, 10_000,
-                    CommunicationMode.SYNC, null, null);
+                int requestedQueue = queueId;
+                SendResult sent = producer.send(message, (available, ignored, arg) -> {
+                    int requested = (Integer) arg;
+                    return available.stream()
+                        .filter(candidate -> BROKER_NAME.equals(candidate.getBrokerName()))
+                        .filter(candidate -> candidate.getQueueId() == requested)
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalStateException("route omitted " + BROKER_NAME + ":" + requested));
+                }, requestedQueue);
                 long maxOffset = api.getMaxOffset(brokerAddress,
                     new MessageQueue(topic, BROKER_NAME, queueId), 10_000);
                 if (sent == null || !"SEND_OK".equals(sent.getSendStatus().name())
@@ -95,7 +97,36 @@ public final class LiveP13PopProbe {
                     body, queueId, sent.getQueueOffset(), maxOffset);
             }
         } finally {
+            producer.shutdown();
             api.shutdown();
+        }
+    }
+
+    private static void useHostBrokerAddress(DefaultMQProducer producer, String topic, String brokerAddress)
+        throws Exception {
+        MQClientInstance client = producer.getDefaultMQProducerImpl().getMqClientFactory();
+        if (!client.updateTopicRouteInfoFromNameServer(topic)) {
+            throw new IllegalStateException("NameServer did not provide a route for " + topic);
+        }
+        Field addressTableField = MQClientInstance.class.getDeclaredField("brokerAddrTable");
+        addressTableField.setAccessible(true);
+        Object rawTable = addressTableField.get(client);
+        if (!(rawTable instanceof ConcurrentMap<?, ?>)) {
+            throw new IllegalStateException("unexpected Broker address table type: " + rawTable);
+        }
+        Object rawAddresses = ((ConcurrentMap<?, ?>) rawTable).get(BROKER_NAME);
+        if (!(rawAddresses instanceof Map<?, ?>)) {
+            throw new IllegalStateException("NameServer route omitted Broker " + BROKER_NAME);
+        }
+        @SuppressWarnings("unchecked")
+        Map<Long, String> addresses = (Map<Long, String>) rawAddresses;
+        if (!addresses.containsKey(0L)) {
+            throw new IllegalStateException("NameServer route omitted master address for " + BROKER_NAME);
+        }
+        // The two-Broker test profile advertises Docker-only service names to host-side clients.
+        addresses.put(0L, brokerAddress);
+        if (!brokerAddress.equals(client.findBrokerAddressInPublish(BROKER_NAME))) {
+            throw new IllegalStateException("producer did not adopt host Broker address " + brokerAddress);
         }
     }
 
