@@ -1,0 +1,3 @@
+This clean-source diagnostic run compiled the Java 5.5.1 and Rust live probes and created the isolated two-Broker 5.3.4 project. It created the scenario topic and six POP lifecycle groups, then seeded one Java message on broker-a queue 0 and one on queue 1.
+
+Java's first immediate POP for the expiry group returned POLLING_NOT_FOUND. No POP/ACK lifecycle assertion passed and the Rust consume probe did not run. The probes had not switched each consumer group to POP request mode. The runner removed the scenario topic and cleaned the Compose containers, network, and both volumes. The manifest remains pending.

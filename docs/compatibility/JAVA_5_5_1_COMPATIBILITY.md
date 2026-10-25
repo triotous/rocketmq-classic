@@ -41,8 +41,10 @@ accepts a CA-trusted wrong-host certificate because its TLS handler does not
 receive a peer hostname; Rust rejects it. The 12 pending cases include
 `P5-V02-extensions`; its first attempt completed heartbeat, heartbeat V2,
 assignment, and request-mode calls, then Broker 5.3.4 rejected Lite
-subscription request 200071 as unsupported. The run stopped before the Rust
-probe and successful POP/ACK checks, so this case remains pending. This does
+subscription request 200071 as unsupported. A first `P13-V02` attempt seeded
+two queues but Java POP returned `POLLING_NOT_FOUND`; inspection showed its
+per-group POP request mode had not been set. That diagnostic run was cleaned
+up and remains pending while the probe is corrected. This does
 not close the broader P18-V01 public API/settings/flow reverse audit or establish
 full client parity. See
 [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server

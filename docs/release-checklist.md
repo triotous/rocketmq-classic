@@ -10691,3 +10691,14 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   with 12 Phase 19 scenarios pending; full local gates must be rerun after
   additional passing scenarios, and broad P18-V01, MAN-01..05, and remote
   Docker CI remain open.
+
+## P19 P13-V02 POP lifecycle first attempt — 2026-10-25 (`61d46867`)
+
+- [ ] The clean-source run `20261025T121016Z` seeded queue 0 and queue 1, then
+  Java POP returned `POLLING_NOT_FOUND` because the probe did not set POP
+  request mode for the lifecycle group. No POP/ACK lifecycle result passed;
+  the P13 manifest row remains pending. Diagnostic evidence is under
+  `docs/compatibility/evidence/phase-19/P13-V02/20261025T121016Z/`.
+- [x] The runner deleted the scenario topic and removed its isolated
+  two-Broker containers, network, and volumes. Coverage remains 25/37 PASS
+  with 12 Phase 19 scenarios pending.

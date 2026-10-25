@@ -305,3 +305,16 @@ were deleted, and the isolated Compose project, network, and volume were
 removed. Diagnostic evidence is under
 [`20261025T115801Z`](evidence/phase-19/P5-V02-extensions/20261025T115801Z/).
 Live coverage remains 25/37, with 12 scenarios pending.
+
+## P13 POP lifecycle first attempt — 2026-10-25
+
+The clean-source run `20261025T121016Z` used revision
+`61d4686732423ded5393a54b542a6ab4d3d1d04f` (`source_code_dirty=false`). It
+created the isolated two-Broker project and the scenario-owned topic, groups,
+and Java queue 0/1 messages. Java's first immediate POP returned
+`POLLING_NOT_FOUND`; no lifecycle assertion passed and Rust consumption did
+not run. The probe had not switched each POP group to POP request mode before
+calling POP. The runner removed the topic, containers, network, and both
+volumes. Evidence is under
+[`20261025T121016Z`](evidence/phase-19/P13-V02/20261025T121016Z/). The
+manifest remains pending and coverage remains 25/37, with 12 cases pending.
