@@ -196,7 +196,7 @@ public final class LiveP13PopProbe {
 
             MessageExt first = pop(api, brokerAddress, topic, prefix + "_expiry", 0, queueZeroBody, 1_000);
             String firstReceipt = receipt(first);
-            TimeUnit.MILLISECONDS.sleep(1_400);
+            TimeUnit.MILLISECONDS.sleep(6_000);
             MessageExt redelivered = pop(api, brokerAddress, topic, prefix + "_expiry", 0, queueZeroBody, 10_000);
             String redeliveryReceipt = receipt(redelivered);
             if (firstReceipt.equals(redeliveryReceipt)) {
@@ -293,6 +293,8 @@ public final class LiveP13PopProbe {
         if (!expectedBody.equals(new String(message.getBody(), StandardCharsets.UTF_8))) {
             throw new IllegalStateException("POP returned an unexpected body: " + Arrays.toString(message.getBody()));
         }
+        System.err.printf("P13\tpop-found\tgroup=%s\tqueue=%d\tmessageOffset=%d%n",
+            group, queueId, message.getQueueOffset());
         return message;
     }
 

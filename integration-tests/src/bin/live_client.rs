@@ -1758,7 +1758,7 @@ async fn p13_pop_consume(
             1_000,
         )
         .await?;
-        tokio::time::sleep(Duration::from_millis(1_400)).await;
+        tokio::time::sleep(Duration::from_millis(6_000)).await;
         let (redelivered, redelivery_receipt) = p13_pop_one(
             &api,
             broker_address,
@@ -1794,7 +1794,8 @@ async fn p13_pop_consume(
             60_000,
         )
         .await?;
-        let change_header = old_receipt.change_invisible_header(topic, &format!("{prefix}_change"), 120_000);
+        let change_header =
+            old_receipt.change_invisible_header(topic, &format!("{prefix}_change"), 120_000);
         let changed = api
             .change_invisible_time(
                 broker_address,
@@ -1846,8 +1847,10 @@ async fn p13_pop_consume(
             60_000,
         )
         .await?;
-        if queue_zero.queue_id() != 0 || queue_one.queue_id() != 1
-            || receipt_zero.queue_id() != 0 || receipt_one.queue_id() != 1
+        if queue_zero.queue_id() != 0
+            || queue_one.queue_id() != 1
+            || receipt_zero.queue_id() != 0
+            || receipt_one.queue_id() != 1
         {
             return Err("POP message and receipt queue mapping did not preserve queue 0/1".into());
         }
@@ -1913,7 +1916,9 @@ async fn p13_pop_one(
     if reply.status.name() != "FOUND" {
         return Err(format!("POP returned {} for {expected_body}", reply.status.name()).into());
     }
-    let raw = reply.raw_messages.ok_or("successful POP omitted message bytes")?;
+    let raw = reply
+        .raw_messages
+        .ok_or("successful POP omitted message bytes")?;
     let mut messages = decode_many_as_client_compatible(&raw, DecodeOptions::default());
     if messages.len() != 1 || messages[0].body().as_ref() != expected_body.as_bytes() {
         return Err(format!("POP returned an unexpected message for {expected_body}").into());
@@ -1926,8 +1931,17 @@ async fn p13_pop_one(
         .clone();
     let receipt = PopReceipt::parse(raw_receipt)?;
     if message.queue_id() != queue_id || receipt.queue_id() != queue_id {
-        return Err(format!("POP queue {queue_id} mapped to message/receipt {}/{}", message.queue_id(), receipt.queue_id()).into());
+        return Err(format!(
+            "POP queue {queue_id} mapped to message/receipt {}/{}",
+            message.queue_id(),
+            receipt.queue_id()
+        )
+        .into());
     }
+    eprintln!(
+        "P13\tpop-found\tgroup={group}\tqueue={queue_id}\tmessageOffset={}",
+        message.queue_offset()
+    );
     Ok((message, receipt))
 }
 

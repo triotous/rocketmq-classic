@@ -876,6 +876,19 @@ cleanup() {
     if [[ "$scenario_id" == "P13-V02" ]]; then
         "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 broker broker-b \
             >"$evidence_dir/broker-logs.log" 2>&1
+        for log_service in broker broker-b; do
+            {
+                printf '%s internal POP and Broker logs:\n' "$log_service"
+                "${compose[@]}" exec --no-TTY "$log_service" sh -c '
+                    for log in /home/rocketmq/logs/rocketmqlogs/pop.log /home/rocketmq/logs/rocketmqlogs/broker.log; do
+                        if [ -f "$log" ]; then
+                            echo "--- $log"
+                            tail -n 2000 "$log"
+                        fi
+                    done
+                '
+            } >>"$evidence_dir/broker-internal-logs.log" 2>&1
+        done
     fi
     if [[ "$topic_created" == true ]]; then
         : >"$evidence_dir/topic-cleanup.log"
