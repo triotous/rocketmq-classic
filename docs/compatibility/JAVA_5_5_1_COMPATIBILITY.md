@@ -45,8 +45,10 @@ subscription request 200071 as unsupported. A first `P13-V02` attempt seeded
 two queues but Java POP returned `POLLING_NOT_FOUND`; the next set each group
 to POP mode immediately before POP but still returned `POLLING_NOT_FOUND`.
 A third run prepared both clients' POP groups before seeding and got the same
-response. All three diagnostic runs were cleaned up; P13 remains pending while
-the raw seed and POP exchange is investigated. This does
+response. A fourth stopped before POP when a Java send requested queue 0 but
+the Broker returned queue 1; the requested queue's max offset stayed zero.
+All four diagnostic runs were cleaned up. P13 remains pending while the seed
+routing is corrected and the live POP exchange is investigated. This does
 not close the broader P18-V01 public API/settings/flow reverse audit or establish
 full client parity. See
 [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server

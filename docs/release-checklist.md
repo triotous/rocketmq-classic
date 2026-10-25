@@ -10697,8 +10697,10 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [ ] Runs `20261025T121016Z`, `20261025T121249Z`, and `20261025T121555Z`
   seeded queue 0 and queue 1, then Java POP returned `POLLING_NOT_FOUND`. The
   third run prepared both clients' POP modes before seeding and still got the
-  response. No POP/ACK lifecycle result passed; the P13 manifest row remains
-  pending while the raw seed/POP exchange is investigated. Diagnostic evidence is under
+  response. Run `20261025T122129Z` stopped before POP: Java requested queue 0,
+  but the Broker returned queue 1 and queue 0 remained empty. No POP/ACK
+  lifecycle result passed; the P13 manifest row remains pending while seed
+  routing and the live POP exchange are corrected. Diagnostic evidence is under
   `docs/compatibility/evidence/phase-19/P13-V02/`.
 - [x] The runner deleted the scenario topic and removed its isolated
   two-Broker containers, network, and volumes. Coverage remains 25/37 PASS

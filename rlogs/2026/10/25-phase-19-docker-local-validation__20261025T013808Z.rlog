@@ -187,3 +187,8 @@
 
 - The clean-source run `20261025T121555Z` on `dcee59c3` set Java and Rust POP request modes for all lifecycle groups before Java seeded queue 0/1. Java still received `POLLING_NOT_FOUND` on the first POP; no lifecycle assertion passed and Rust consumption did not run. Evidence is retained at `docs/compatibility/evidence/phase-19/P13-V02/20261025T121555Z/`.
 - The scenario topic and isolated two-Broker project, network, and volumes were removed. P13 remains pending; coverage remains 25/37 PASS with 12 pending. Further investigation needs to capture the actual send result and POP response fields before another full lifecycle attempt. No production, remote checkout, or owner environment was accessed.
+
+## P19 P13-V02 seed queue verification attempt — 2026-10-25
+
+- The clean-source run `20261025T122129Z` on `9d196db1` stopped during Java seeding before POP. The probe requested `broker-a:0`, but the Broker returned `SEND_OK` for `broker-a:1`; the max offset of requested queue 0 remained 0. The guard rejected the mismatched queue, so no POP/ACK lifecycle assertion passed and Rust consumption did not run. Evidence is retained at `docs/compatibility/evidence/phase-19/P13-V02/20261025T122129Z/`.
+- The runner removed the scenario topic, both Brokers, the isolated network, and both volumes. P13 remains pending and coverage remains 25/37 PASS with 12 pending. The next runner revision will seed through the Java route-aware queue selector and verify the returned queue IDs and offsets before starting lifecycle checks. No production, remote checkout, or owner environment was accessed.

@@ -322,5 +322,12 @@ assertion or started Rust consumption. All runs removed the topic, containers,
 network, and volumes. Evidence is under
 [`20261025T121016Z`](evidence/phase-19/P13-V02/20261025T121016Z/),
 [`20261025T121249Z`](evidence/phase-19/P13-V02/20261025T121249Z/), and
-[`20261025T121555Z`](evidence/phase-19/P13-V02/20261025T121555Z/). The
-manifest remains pending and coverage remains 25/37, with 12 cases pending.
+[`20261025T121555Z`](evidence/phase-19/P13-V02/20261025T121555Z/). A fourth
+clean-source run `20261025T122129Z` on `9d196db1` added a seed-queue guard and
+stopped before POP: Java requested queue 0, but the Broker returned `SEND_OK`
+for `broker-a:1`, while queue 0's max offset stayed 0. No lifecycle assertion
+passed and Rust consumption did not run. This identifies a Java seed-routing
+mismatch; the next probe will use the route-aware queue selector. Evidence is
+under [`20261025T122129Z`](evidence/phase-19/P13-V02/20261025T122129Z/).
+All runs removed the topic and isolated Compose resources. The manifest remains
+pending and coverage remains 25/37, with 12 cases pending.

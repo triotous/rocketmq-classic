@@ -1,0 +1,8 @@
+P13	seed	p13-java-q0	0	0	1
+[ERROR] Failed to execute goal org.codehaus.mojo:exec-maven-plugin:3.5.0:java (live-p13-pop-probe) on project rocketmq-java-reference: An exception occurred while executing the Java class. seed send was not committed to the requested queue: SendResult [sendStatus=SEND_OK, msgId=null, offsetMsgId=C0A86B0300002A9F00000000000000E9, messageQueue=MessageQueue [topic=compat_p13_pop, brokerName=broker-a, queueId=1], queueOffset=0, recallHandle=null] maxOffset=0 -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException
