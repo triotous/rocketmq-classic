@@ -1458,21 +1458,21 @@ java_path, rust_path, proxy_path, max_offset_path, java_pull_path, rust_pull_pat
 def lines(path):
     return [line.split("\t") for line in Path(path).read_text().splitlines()]
 
-def check_timeout(path, language, body):
+def check_timeout(path, language, body, expected_offset):
     rows = lines(path)
     ready = [row for row in rows if row[:3] == ["TIMEOUT", "READY", language]]
     result = [row for row in rows if row[:4] == ["TIMEOUT", "RESULT", language, "TIMEOUT"]]
-    if len(ready) != 1 or len(ready[0]) != 4 or ready[0][3] != "0":
-        raise SystemExit(f"{path}: client did not prime queue zero from an empty starting offset")
+    if len(ready) != 1 or len(ready[0]) != 4 or ready[0][3] != str(expected_offset):
+        raise SystemExit(f"{path}: client did not prime the expected starting offset {expected_offset}")
     if len(result) != 1 or len(result[0]) != 7 or not result[0][4]:
         raise SystemExit(f"{path}: expected one typed timeout outcome")
     elapsed = int(result[0][5])
-    if elapsed < timeout_ms or elapsed >= 2_000 or result[0][6] != "0":
+    if elapsed < timeout_ms or elapsed >= 2_000 or result[0][6] != str(expected_offset):
         raise SystemExit(f"{path}: timeout duration or starting queue offset differs: {result[0]!r}")
     return body.encode().hex()
 
-java_body = check_timeout(java_path, "java", "timeout-java-body")
-rust_body = check_timeout(rust_path, "rust", "timeout-rust-body")
+java_body = check_timeout(java_path, "java", "timeout-java-body", 0)
+rust_body = check_timeout(rust_path, "rust", "timeout-rust-body", 1)
 proxy_rows = lines(proxy_path)
 delayed = [row for row in proxy_rows if row[:2] == ["PROXY", "DELAY_DONE"]]
 if len(delayed) != 2:
