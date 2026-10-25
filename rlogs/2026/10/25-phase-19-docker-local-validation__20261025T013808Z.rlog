@@ -74,3 +74,12 @@
 - All 19 server-free gates passed: Cargo format/diff, default and all-feature workspace tests, workspace check, strict Clippy, pinned Maven verify, differential self-test and manifest, race/leak and fuzz smoke, release examples, benchmark build/run, Cargo/workspace metadata, package-content validation, and UTC/Taipei Unique ID checks.
 - The final `differential-live-coverage` step returned `BLOCKED` with the 24 IDs listed in the evidence log. No Docker resources were started by this gate. Evidence is `docs/compatibility/evidence/phase-19/run-local/20261025T083442Z/` (`result.txt` is `BLOCKED`).
 - Current live status remains 13/37. The remaining 24 locally runnable cases and the broad P18-V01 audit are not complete; MAN-01..05 and remote Docker CI remain open.
+
+## P19 REBAL-001-average-10q-3c — 2026-10-25
+
+- Added pinned Java 5.5.1 and Rust live average-allocation probes, the two-Broker scenario runner, exact 10-queue/3-consumer manifest inputs, and fail-closed handling for any selected scenario without an assertion handler. Implementation commit: `b347d11c5e33c18d3e443c852bc8680e83892c2f`.
+- Focused validations passed: `cargo fmt --all -- --check`, locked offline integration binary build, offline Maven compile, `bash -n tests/differential/run.sh`, `git diff --check`, and 37-row differential manifest validation. `--check-all` refused to skip 23 remaining scenarios and started no Docker resources.
+- Initial rehearsal `20261025T085632Z` exposed a false-positive path: setup and cleanup completed without executing probes. Its manifest PASS pointer was removed; `diagnostic-note.txt` marks the run invalid. The assertion handler was moved after compilation and a missing handler now exits 3.
+- Corrected dirty-source rehearsal `20261025T085935Z` passed: Java and Rust emitted identical assignment rows covering five queues on each Broker, with a 4/3/3 split. It is retained as diagnostic evidence only.
+- Clean-source run `20261025T090131Z` passed on commit `b347d11c5e33c18d3e443c852bc8680e83892c2f` (`source_code_dirty=false`). Evidence records identical Java/Rust TSVs, all ten unique live queues, exact 4/3/3 assignment, topic deletion, and Compose cleanup. No project containers or volumes remained.
+- Updated the manifest and compatibility/release documentation to 14/37 passing and 23 pending. The full local gate was last run at `a96aad3d` before this implementation and remains to be rerun. Broad P18-V01, MAN-01 through MAN-05, and remote Docker CI remain open.

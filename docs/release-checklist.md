@@ -10494,3 +10494,24 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   `docs/compatibility/evidence/phase-19/run-local/20261025T083442Z/`.
   Live coverage remains 13/37; the other 24 local scenarios, broad P18-V01,
   MAN-01 through MAN-05, and remote Docker CI remain open.
+
+## P19 two-Broker average queue assignment — 2026-10-25 (`b347d11c`)
+
+- [x] Added the Java 5.5.1 and Rust live rebalance probes and a two-Broker
+  `REBAL-001-average-10q-3c` runner. Commit: `b347d11c`.
+- [x] The first dirty rehearsal exposed a false-positive setup path: it created
+  the topic and cleaned up without executing the probes. Its manifest PASS
+  pointer was removed; `20261025T085632Z/diagnostic-note.txt` records why the
+  run is invalid. The runner now fails closed when an assertion handler is
+  missing.
+- [x] A corrected dirty rehearsal passed with identical assignment output and
+  a 4/3/3 split; it is retained as diagnostic evidence at
+  `20261025T085935Z/` and is not the manifest pointer.
+- [x] Clean-source run `20261025T090131Z` passed on
+  `b347d11c5e33c18d3e443c852bc8680e83892c2f`, with
+  `source_code_dirty=false`. It checked identical Java/Rust output, all ten
+  unique queues across both Brokers, the three sorted consumer rows, and the
+  4/3/3 split. Topic and Compose resources were removed after capture.
+- Live coverage is now 14/37; 23 cases remain without runners. The last full
+  `run-local.sh --all` gate was at `a96aad3d` before this probe and must be
+  rerun. Broad P18-V01, MAN-01 through MAN-05, and remote Docker CI remain open.

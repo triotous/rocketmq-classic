@@ -45,20 +45,22 @@ The two route runs used source commit `91ecd510`; the heartbeat run used
 `8262d722`. Evidence metadata records the
 full revision, toolchains, Docker platform, Compose/configuration hashes,
 commands, duration, client outputs, and cleanup results. Local home/repository
-paths and the host name are redacted from archived tool output. The current
-results cover route lookup, one heartbeat, synchronous, asynchronous, oneway,
-and batch sends with cross-language message readback. They do not exercise
-Broker-side consumer operations, TLS, ACL, transactions, retries, failover, or
-stress behavior.
+paths and the host name are redacted from archived tool output. Current
+results cover route lookup, heartbeat, synchronous/asynchronous/oneway/batch
+sends with cross-language readback, consumer offsets and pulls, queue lock
+contention, and average assignment over two live Brokers. They do
+not complete transaction, request/reply, retry, TLS, ACL, failover, or stress
+coverage.
 
 ## Pending local server coverage
 
 The scenario manifest contains 37 live cases. The seven rows above, four
-consumer rows, the P5 route row, and `ORDER-001-lock-unlock` are implemented
-and passed by the current runner; 24 remain pending. The two-Broker profile
-now covers the lock/unlock case, while its retry, query, rebalance, and
-interoperability coverage, TLS, ACL, and feature-specific profiles remain
-incomplete. No server limitation is inferred from an unrun case. Phase 19
+consumer rows, the P5 route row, `ORDER-001-lock-unlock`, and
+`REBAL-001-average-10q-3c` are implemented and passed by the current runner;
+23 remain pending. The two-Broker profile covers lock/unlock and average queue
+assignment; retry, query, and broader interoperability coverage, TLS, ACL, and
+feature-specific profiles remain incomplete. No server limitation is inferred
+from an unrun case. Phase 19
 acceptance remains open until each locally reproducible case has Java/Rust
 evidence or a source-backed matched server limitation plus the required
 success-path evidence.
@@ -130,5 +132,23 @@ again. The scenario topic, group, project, network, and volumes were cleaned:
 [`20261025T083111Z`](evidence/phase-19/ORDER-001-lock-unlock/20261025T083111Z/).
 
 This validates two-Broker profile startup and the listed lock behavior; it is
-not replicated HA or failover evidence. Live coverage is now 13/37, with 24
-cases pending.
+not replicated HA or failover evidence. Live coverage at that checkpoint was
+13/37, with 24 cases pending.
+
+## Two-Broker average queue assignment — 2026-10-25
+
+`REBAL-001-average-10q-3c` passed on committed revision
+`b347d11c5e33c18d3e443c852bc8680e83892c2f` with
+`source_code_dirty=false`. Java 5.5.1 and Rust fetched the same live route of
+five queues from each Broker, then produced identical assignments for three
+sorted consumer IDs: 4, 3, and 3 queues. The assertion checked that all ten
+unique queue IDs across `broker-a` and `broker-b` were covered. The topic,
+Compose project, containers, network, and volumes were removed after capture:
+[`20261025T090131Z`](evidence/phase-19/REBAL-001-average-10q-3c/20261025T090131Z/).
+
+An earlier rehearsal at `20261025T085632Z` was a false positive: the runner
+provisioned and cleaned up but did not execute either probe. Its manifest PASS
+pointer was removed and the directory is retained with a diagnostic note. A
+corrected dirty-source replay at `20261025T085935Z` passed the assertions but
+is diagnostic-only; the clean run above is authoritative. Live coverage is
+now 14/37, with 23 cases pending.
