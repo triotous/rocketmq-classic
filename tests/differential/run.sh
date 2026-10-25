@@ -1837,7 +1837,10 @@ import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
-expected_seed = [["P13", "seed", "p13-java-q0", "0"], ["P13", "seed", "p13-java-q1", "1"]]
+expected_seed = [
+    ["P13", "seed", "p13-java-q0", "0", "0", "1"],
+    ["P13", "seed", "p13-java-q1", "1", "0", "1"],
+]
 seed = [line.split("\t") for line in (root / "java-p13-pop-seed.tsv").read_text().splitlines()]
 if seed != expected_seed:
     raise SystemExit(f"Java seed rows differ: {seed!r}")

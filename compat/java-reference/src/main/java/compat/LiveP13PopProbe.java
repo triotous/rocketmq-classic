@@ -15,6 +15,7 @@ import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.message.MessageRequestMode;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.protocol.header.AckMessageRequestHeader;
@@ -79,9 +80,19 @@ public final class LiveP13PopProbe {
                 header.setUnitMode(false);
                 header.setBatch(false);
                 header.setBrokerName(BROKER_NAME);
-                api.sendMessage(brokerAddress, BROKER_NAME, message, header, 10_000,
+                org.apache.rocketmq.client.producer.SendResult sent = api.sendMessage(
+                    brokerAddress, BROKER_NAME, message, header, 10_000,
                     CommunicationMode.SYNC, null, null);
-                System.out.printf("P13\tseed\t%s\t%d%n", body, queueId);
+                long maxOffset = api.getMaxOffset(brokerAddress,
+                    new MessageQueue(topic, BROKER_NAME, queueId), 10_000);
+                if (sent == null || !"SEND_OK".equals(sent.getSendStatus().name())
+                    || sent.getMessageQueue().getQueueId() != queueId
+                    || maxOffset <= sent.getQueueOffset()) {
+                    throw new IllegalStateException("seed send was not committed to the requested queue: " + sent
+                        + " maxOffset=" + maxOffset);
+                }
+                System.out.printf("P13\tseed\t%s\t%d\t%d\t%d%n",
+                    body, queueId, sent.getQueueOffset(), maxOffset);
             }
         } finally {
             api.shutdown();
