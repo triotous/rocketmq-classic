@@ -221,11 +221,11 @@ public final class LiveP13PopProbe {
 
     private static MessageExt pop(MQClientAPIExt api, String brokerAddress, String topic,
         String group, int queueId, String expectedBody, long invisibleTime) throws Exception {
-        api.setMessageRequestMode(brokerAddress, topic, group, MessageRequestMode.POP, 1, 10_000);
         PopMessageRequestHeader header = new PopMessageRequestHeader();
         header.setConsumerGroup(group);
         header.setTopic(topic);
         header.setQueueId(queueId);
+        header.setInitMode(0);
         header.setMaxMsgNums(1);
         header.setInvisibleTime(invisibleTime);
         header.setPollTime(0);

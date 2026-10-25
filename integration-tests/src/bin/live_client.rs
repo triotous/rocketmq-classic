@@ -1887,17 +1887,6 @@ async fn p13_pop_one(
     expected_body: &str,
     invisible_time: i64,
 ) -> Result<(MessageExt, PopReceipt), Box<dyn Error>> {
-    let mut mode = SetMessageRequestModeRequestBody::default();
-    mode.set_topic(Some(topic.to_owned()));
-    mode.set_consumer_group(Some(group.to_owned()));
-    mode.set_mode(Some(MessageRequestMode::Pop));
-    mode.set_pop_share_queue_num(1);
-    api.set_message_request_mode(
-        broker_address,
-        &mode,
-        Instant::now() + Duration::from_secs(10),
-    )
-    .await?;
     let born_time = i64::try_from(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
@@ -1907,6 +1896,7 @@ async fn p13_pop_one(
     header.set_consumer_group(Some(group.to_owned()));
     header.set_topic(Some(topic.to_owned()));
     header.set_queue_id(queue_id);
+    header.set_init_mode(0);
     header.set_max_msg_nums(1);
     header.set_invisible_time(invisible_time);
     header.set_poll_time(0);
