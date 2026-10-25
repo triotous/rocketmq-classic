@@ -6,9 +6,14 @@ scenario and profile.
 
 ## Pinned basic profile
 
-- Image: `apache/rocketmq:5.3.4`, multi-platform index digest
+- Official ASF image: [`apache/rocketmq:5.3.4` Docker Hub tag](https://hub.docker.com/layers/apache/rocketmq/5.3.4/images/sha256-a6976cd5841facfda294616a0b8797e7f41fa0292d51ad4e46b2ff224ce64995), tied to the Apache [5.3.4 release](https://rocketmq.apache.org/release-notes/2025/11/26/5.3.4/).
+  Multi-platform index digest
   `sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8`.
-- Observed runtime: Docker Engine 29.8.2, Compose 5.5.0, `linux/aarch64`;
+- Image inspection and runtime: Ubuntu 24.04, Eclipse Temurin OpenJDK 8u472,
+  `linux/arm64`; Docker Engine 29.8.2 and Compose 5.5.0 on the host. The pinned
+  image ID matches the configured digest, and `mqadmin clusterList` reported
+  server version `V5_3_4`.
+- Observed host runtime: Docker Engine 29.8.2, Compose 5.5.0, `linux/aarch64`;
   `mqadmin clusterList` reported server version `V5_3_4`.
 - NameServer and Broker health checks passed. Broker `broker-a` advertised
   `broker:10911` on the isolated Compose network.
@@ -55,3 +60,26 @@ are not complete. No server limitation is inferred from an unrun case. Phase 19
 acceptance remains open until each locally reproducible case has Java/Rust
 evidence or a source-backed matched server limitation plus the required
 success-path evidence.
+
+## Current-candidate rerun — 2026-10-25
+
+The seven implemented cases were rerun against the pinned image on candidate
+revision `698172cd9882e87e610edb19bcee40798f23ecc6`, using fresh isolated
+Compose projects, recreated topics, Java 5.5.1 Maven probes, and Rust 1.85.0
+probes. All seven passed and their new evidence replaced the manifest pointers:
+
+| Scenario | Result | Evidence |
+| --- | --- | --- |
+| `ROUTE-001-get-existing-topic` | PASS — four matching route rows | [`20261025T013825Z`](evidence/phase-19/ROUTE-001-get-existing-topic/20261025T013825Z/) |
+| `ROUTE-002-topic-not-exist` | PASS — both clients returned no route | [`20261025T014009Z`](evidence/phase-19/ROUTE-002-topic-not-exist/20261025T014009Z/) |
+| `HEARTBEAT-001` | PASS — encoded heartbeat and response version match | [`20261025T014103Z`](evidence/phase-19/HEARTBEAT-001/20261025T014103Z/) |
+| `PROD-001-sync-send` | PASS — send results and bidirectional readback match | [`20261025T014214Z`](evidence/phase-19/PROD-001-sync-send/20261025T014214Z/) |
+| `PROD-002-async-send` | PASS — single completion and bidirectional readback match | [`20261025T014347Z`](evidence/phase-19/PROD-002-async-send/20261025T014347Z/) |
+| `PROD-003-oneway-send` | PASS — no-response sends reached queues and cross-readback matched | [`20261025T014507Z`](evidence/phase-19/PROD-003-oneway-send/20261025T014507Z/) |
+| `PROD-004-batch-send` | PASS — both messages from each client were readable by the other | [`20261025T014652Z`](evidence/phase-19/PROD-004-batch-send/20261025T014652Z/) |
+
+The evidence records the image digest, runtime platform, server startup version,
+toolchains, commands, and project cleanup. The remaining 30 scenario IDs have
+no live runner, and no two-Broker, TLS, ACL, or feature-specific profile was
+executed. These seven results do not establish complete client parity or final
+release acceptance.

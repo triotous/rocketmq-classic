@@ -7,6 +7,16 @@ It inventories 79 declared public instance methods against the Rust API and
 the invoked Java/Rust direct-consume evidence; the broader P18-V01 inventory
 remains in progress.
 
+## Phase 19 live status — 2026-10-25
+
+Seven of 37 registered Broker scenarios have fresh passing Java 5.5.1/Rust
+evidence on the pinned 5.3.4 image. The other 30 scenarios remain unimplemented
+and pending. This does not close the broader P18-V01 public API/settings/flow
+reverse audit or establish full client parity. See
+[`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server
+cases and [`../owner-validation.md`](../owner-validation.md) for the blocked
+owner inputs. Final compatibility and release approval remain blocked.
+
 Phase 18 Fastjson U+001A end-of-input continuation (`12de2474`, 2026-10-24):
 the pinned Java 5.5.1 heartbeat DTO oracle accepts 108 new inputs with control
 or Unicode characters after U+001A and between repeated markers, and two more

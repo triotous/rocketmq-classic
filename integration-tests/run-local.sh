@@ -30,25 +30,14 @@ if ! command -v cargo >/dev/null || ! command -v mvn >/dev/null || ! command -v 
     exit 2
 fi
 
-# Coverage validation is read-only and happens before any Docker resource or
-# evidence directory is created. A missing local implementation must stay a
-# failure, never a skipped case.
-if ! "$repo_root/tests/differential/run.sh" --check-all; then
-    echo "Local validation stopped before provisioning: the manifest is not fully implemented." >&2
-    exit 3
-fi
-
-if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; then
-    echo "Docker Engine and Docker Compose are required for Phase 19 validation" >&2
-    exit 2
-fi
-
 cd "$repo_root"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 started_epoch="$(date +%s)"
 evidence_dir="$repo_root/docs/compatibility/evidence/phase-19/run-local/$run_id"
 mkdir -p "$evidence_dir"
 result="FAIL"
+steps_file="$evidence_dir/steps.tsv"
+: >"$steps_file"
 
 redact_paths() {
     python3 - "$evidence_dir" "$repo_root" "${HOME:-}" <<'PY'
@@ -74,6 +63,11 @@ finish() {
     ended_epoch="$(date +%s)"
     if [[ "$result" == "PASS" && $exit_code -eq 0 ]]; then
         printf 'PASS all local gates and all Phase 19 scenario IDs\n' >"$evidence_dir/result.txt"
+    elif [[ "$result" == "BLOCKED" ]]; then
+        if [[ $exit_code -eq 0 ]]; then
+            exit_code=3
+        fi
+        printf 'BLOCKED full local validation: one or more Phase 19 scenario implementations are missing\n' >"$evidence_dir/result.txt"
     else
         result="FAIL"
         if [[ $exit_code -eq 0 ]]; then
@@ -87,6 +81,8 @@ finish() {
     redact_paths || exit_code=1
     if [[ "$result" == "PASS" && $exit_code -eq 0 ]]; then
         echo "Local validation passed. Evidence: ${evidence_dir#"$repo_root"/}"
+    elif [[ "$result" == "BLOCKED" ]]; then
+        echo "Local validation blocked by missing live implementations. Evidence: ${evidence_dir#"$repo_root"/}" >&2
     else
         echo "Local validation failed. Evidence: ${evidence_dir#"$repo_root"/}" >&2
     fi
@@ -100,9 +96,11 @@ run_step() {
     log_file="$evidence_dir/$step_name.log"
     printf 'Running %s\n' "$step_name"
     if "$@" >"$log_file" 2>&1; then
+        printf 'PASS\t%s\n' "$step_name" >>"$steps_file"
         printf 'PASS %s\n' "$step_name"
     else
         step_status=$?
+        printf 'FAIL\t%s\t%s\n' "$step_name" "$step_status" >>"$steps_file"
         printf 'FAIL %s (exit=%s)\n' "$step_name" "$step_status" >&2
         tail -n 100 "$log_file" >&2 || true
         return "$step_status"
@@ -110,15 +108,29 @@ run_step() {
 }
 
 {
+    printf 'ROCKETMQ_CLASSIC_TEST_ENV=local-disposable bash integration-tests/run-local.sh --all\n'
     printf 'ROCKETMQ_CLASSIC_TEST_ENV=local-disposable\n'
     printf 'java_client=5.5.1\nserver=5.3.4\n'
     printf 'cargo fmt --all -- --check\n'
-    printf 'cargo test --workspace --locked --offline\n'
-    printf 'cargo test --workspace --all-features --locked --offline\n'
+    printf 'cargo test --workspace --locked --offline -- --test-threads=1\n'
+    printf 'cargo test --workspace --all-features --locked --offline -- --test-threads=1\n'
     printf 'cargo check --workspace --all-targets --all-features --locked --offline\n'
     printf 'cargo clippy --workspace --all-targets --all-features --locked --offline -- -D warnings\n'
     printf 'TZ=UTC mvn -o -q -f compat/java-reference/pom.xml verify\n'
-    printf 'tests/differential/run.sh --all\n'
+    printf 'python3 tests/differential/compare.py --self-test\n'
+    printf 'python3 tests/differential/compare.py --validate-manifest\n'
+    printf 'bash tests/stress/run-offline-smoke.sh\n'
+    printf 'cargo run --locked --offline -p rocketmq-classic-remoting --example fuzz_smoke\n'
+    printf 'cargo build -p rocketmq-classic --examples --release --locked --offline\n'
+    printf 'cargo bench --workspace --no-run --locked --offline\n'
+    printf 'cargo bench -p rocketmq-classic --bench offline --locked --offline\n'
+    printf 'cargo metadata --locked --format-version 1 --no-deps\n'
+    printf 'python3 scripts/check-workspace-metadata.py\n'
+    printf 'cargo package --workspace --list --locked --allow-dirty\n'
+    printf 'TZ=UTC cargo test --locked --offline -p rocketmq-classic-core unique_id\n'
+    printf 'TZ=Asia/Taipei cargo test --locked --offline -p rocketmq-classic-core unique_id\n'
+    printf 'tests/differential/run.sh --check-all\n'
+    printf 'Conditional after successful --check-all: tests/differential/run.sh --all\n'
 } >"$evidence_dir/commands.txt"
 {
     uname -srm
@@ -150,6 +162,25 @@ run_step workspace-metadata python3 scripts/check-workspace-metadata.py
 run_step package-content cargo package --workspace --list --locked --allow-dirty
 run_step unique-id-utc env TZ=UTC cargo test --locked --offline -p rocketmq-classic-core unique_id
 run_step unique-id-taipei env TZ=Asia/Taipei cargo test --locked --offline -p rocketmq-classic-core unique_id
+
+printf 'Running differential-live-coverage\n'
+coverage_log="$evidence_dir/differential-live-coverage.log"
+if "$repo_root/tests/differential/run.sh" --check-all >"$coverage_log" 2>&1; then
+    printf 'PASS\tdifferential-live-coverage\n' >>"$steps_file"
+    cat "$coverage_log"
+else
+    coverage_status=$?
+    cat "$coverage_log" >&2
+    if [[ $coverage_status -eq 3 ]]; then
+        result="BLOCKED"
+        printf 'BLOCKED\tdifferential-live-coverage\t%s\n' "$coverage_status" >>"$steps_file"
+        exit "$coverage_status"
+    fi
+    printf 'FAIL\tdifferential-live-coverage\t%s\n' "$coverage_status" >>"$steps_file"
+    exit "$coverage_status"
+fi
+
+run_step docker-toolchain bash -c 'command -v docker >/dev/null && docker version --format "Docker client {{.Client.Version}} / server {{.Server.Version}}" && docker compose version'
 run_step live-scenarios env ROCKETMQ_CLASSIC_TEST_ENV=local-disposable "$repo_root/tests/differential/run.sh" --all
 run_step scenario-evidence-reconciliation python3 - "$manifest" "$repo_root" <<'PY'
 import json

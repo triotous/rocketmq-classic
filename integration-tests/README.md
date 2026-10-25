@@ -98,11 +98,10 @@ ROCKETMQ_CLASSIC_TEST_ENV=local-disposable \
 bash integration-tests/run-local.sh --all
 ```
 
-It first checks that every manifest row has a runner, then runs the offline
-workspace gates and each profile-specific live case in its own Compose
-project. It reconciles every Phase 19 manifest row against a `PASS` result and
-archived evidence before reporting success. It refuses to start Docker when
-any selected scenario is unimplemented. Currently seven of 37 live cases have
-runners; the other 30, the two-Broker/TLS/ACL/feature profiles, and the full
-`run-local.sh --all` pass remain pending. Starting the basic profile by itself
-does not mark a scenario passed.
+It records and runs all server-free gates first. It then checks every Phase 19
+manifest row before starting any Docker resource. Missing scenario runners
+produce a `BLOCKED` result with the missing IDs in the archived log; the full
+matrix cannot report success until all IDs have passing evidence. Currently
+seven of 37 live cases have runners; the other 30, the two-Broker/TLS/ACL/
+feature profiles, and the full `run-local.sh --all` pass remain pending.
+Starting the basic profile by itself does not mark a scenario passed.

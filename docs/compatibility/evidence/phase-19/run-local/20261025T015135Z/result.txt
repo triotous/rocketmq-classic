@@ -1,0 +1,1 @@
+BLOCKED full local validation: one or more Phase 19 scenario implementations are missing

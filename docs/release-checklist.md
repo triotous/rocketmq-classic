@@ -1,8 +1,9 @@
 # Release preparation checklist
 
-This checklist records Phase 18 preparation only. It does not authorize a
-compatibility claim, registry publication, release tag, or deployment. The
-Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
+This checklist records Phase 18 preparation and current Phase 19 validation.
+It does not authorize a compatibility claim, registry publication, release
+tag, or deployment. The Java client baseline is RocketMQ 5.5.1; the Phase 19
+Broker baseline is 5.3.4.
 
 ## Compatibility and validation
 

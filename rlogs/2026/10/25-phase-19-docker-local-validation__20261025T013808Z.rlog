@@ -1,0 +1,26 @@
+# Execution log: Phase 19 Docker local validation
+
+- Session started: 2026-10-25T01:38:08Z
+- Plan: `plan/2026/09/20-phase-19-docker-local-validation.md` (read in full)
+- Starting revision: `698172cd9882e87e610edb19bcee40798f23ecc6` (`Additional update`)
+- Starting branch: `phase/18-phase-18-compatibility-closure`, clean, one commit ahead of origin
+- Preserved all existing work and created `phase/19-docker-local-validation` at the existing Phase 19 commit.
+- Initial inventory: 37 Phase 19 live manifest rows; 7 implemented/pass, 30 pending. Current runner refuses `--all` until all 37 have implementations.
+- Docker Engine available, runtime `linux/aarch64`; pinned `apache/rocketmq:5.3.4` image is not present locally yet.
+- Local Rust/Cargo `1.85.0`; Maven reports Java `27`; default `java` command is OpenJDK `21.0.12.1`.
+- No Phase 19 source files have been modified in this session yet.
+
+## Docker artifact and current live results
+
+- Verified the Docker Hub Apache Software Foundation `apache/rocketmq:5.3.4` official image page and 5.3.4 Apache release page. Docker pulled the pinned multi-platform index digest `sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8` for this `linux/arm64` engine. `docker image inspect` reported the same image ID/repository digest; image runtime inspection reported Ubuntu 24.04 and Eclipse Temurin OpenJDK 8u472. `mqadmin clusterList` reported `V5_3_4` during every basic-profile run.
+- Refreshed and passed `ROUTE-001-get-existing-topic`, `ROUTE-002-topic-not-exist`, `HEARTBEAT-001`, and `PROD-001-sync-send` through `PROD-004-batch-send`, each in a unique Compose project with scenario-owned resources, Java 5.5.1 and Rust 1.85.0 outputs, cleanup, and archived evidence. Run IDs are in `docs/compatibility/SERVER_5_3_4_RESULTS.md` and `tests/differential/scenarios.yaml`.
+- Ran `ROCKETMQ_CLASSIC_TEST_ENV=local-disposable bash integration-tests/run-local.sh --all` at repository revision `698172cd9882e87e610edb19bcee40798f23ecc6`. All 19 server-free steps passed: format, diff, default/all-feature workspace tests, workspace check, strict Clippy, Maven verify, differential self-test/manifest, race/leak and fuzz smoke, release examples, benchmark build/run, metadata/package checks, and UTC/Taipei unique-ID checks. The live-coverage gate reported all 30 unimplemented scenario IDs and returned 3 before starting Docker. Evidence is `docs/compatibility/evidence/phase-19/run-local/20261025T015135Z/`.
+- `integration-tests/run-local.sh` now records each step, archives the missing-ID log, reports that incomplete matrix as `BLOCKED`, and runs all server-free gates before the live coverage check. Its latest status/command-log presentation edits and the differential runner's manifest-status-only dirty check were made after the archived run; shell syntax and the comparator/self-test/manifest checks passed afterward.
+
+## Remaining Phase 19 gaps
+
+- 30 of 37 required live scenarios have no implementation; there is no two-Broker, TLS, ACL, transaction, consumer, admin-query, or feature-specific profile matrix. No unsupported case is counted as a pass or reassigned to manual validation.
+- The broad P18-V01 Java source/public API/settings/flow reverse audit remains open, so P19-V04 cannot pass. Java/Rust matched results and success-path evidence are not available for the unimplemented cases.
+- `docs/owner-validation.md` records MAN-01 through MAN-05 as BLOCKED because owner topology/identity/workload inputs are absent and the security/failover/stress probes are incomplete. No owner environment was accessed; no production mutation was made.
+- The new Docker CI job is defined but has not been run remotely. It will fail closed at the current live coverage gate until the 30 missing runners and evidence exist.
+- No final compatibility or release approval is supported by the present evidence.

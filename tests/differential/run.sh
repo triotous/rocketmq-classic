@@ -287,11 +287,37 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveHeartbeatProbe.java
     compat/java-reference/src/main/java/compat/LiveProducerProbe.java
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
-    tests/differential/compare.py tests/differential/run.sh tests/differential/scenarios.yaml)
+    tests/differential/compare.py tests/differential/run.sh)
 if [[ -n "$(git -C "$repo_root" status --porcelain -- "${code_dirty_paths[@]}")" ]]; then
     source_code_dirty=true
 else
     source_code_dirty=false
+fi
+if ! python3 - "$repo_root" <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+try:
+    committed = subprocess.check_output(
+        ["git", "show", "HEAD:tests/differential/scenarios.yaml"], cwd=root, text=True
+    )
+    current = (root / "tests/differential/scenarios.yaml").read_text()
+    before = json.loads(committed)
+    after = json.loads(current)
+    for manifest in (before, after):
+        for scenario in manifest.get("scenarios", []):
+            scenario.pop("live_status", None)
+            scenario.pop("evidence", None)
+    if before != after:
+        raise SystemExit(1)
+except (OSError, subprocess.CalledProcessError, json.JSONDecodeError):
+    raise SystemExit(1)
+PY
+then
+    source_code_dirty=true
 fi
 mkdir -p "$evidence_dir"
 cp "$selected_file" "$evidence_dir/selected.tsv"
