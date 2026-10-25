@@ -1,7 +1,7 @@
 # Owner validation handoff
 
 Status date: 2026-10-25. The Phase 19 production code candidate is
-`21430d58d0d094da7425949921f525a08716dc51`; the latest evidence and manifest
+`d3c7d2e845364e40ad72f0540a0a498fc1582247`; the latest evidence and manifest
 commit is `fa263c60`. This document is a handoff, not
 owner approval or release evidence. The owner is the RocketMQ service owner
 plus the relevant network/security/operations owner; names and authorized

@@ -19,10 +19,9 @@ MAN-04 owner-environment checks.
   [PHASE_3_REMOTING_INVENTORY.md](../../../PHASE_3_REMOTING_INVENTORY.md).
 - P18 final closure code revision: `0cf294b710d06d40bd72ccec1ca5d1df121c5225`.
 - Current production code revision under audit:
-  `21430d58d0d094da7425949921f525a08716dc51`. The follow-up code commit
-  removes one redundant borrow found by strict Clippy; it does not change
-  runtime behavior. Other later commits updated evidence pointers and
-  documentation.
+  `d3c7d2e845364e40ad72f0540a0a498fc1582247`. Two follow-up code commits
+  remove redundant borrows found by strict Clippy; they do not change runtime
+  behavior. Other later commits updated evidence pointers and documentation.
 
 ## Post-closure source/API delta
 
