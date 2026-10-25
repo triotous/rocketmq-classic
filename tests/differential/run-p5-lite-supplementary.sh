@@ -79,7 +79,7 @@ fi
     printf 'scenario=P5-V02-extensions-lite-success\nprofile=supplementary-lite-5.5.0\nproject=%s\nrun_id=%s\n' "$project_name" "$run_id"
     printf 'java_client=5.5.1\nserver=5.5.0\nserver_image=%s\nsource_revision=%s\nsource_code_dirty=%s\n' \
         "$image_ref" "$repo_commit" "$source_code_dirty"
-    printf 'broker_config=integration-tests/config/broker-lite-5.5.0.conf\nbroker_config_enableLmq=true\n' >>"$evidence_dir/metadata.txt"
+    printf 'broker_config=integration-tests/config/broker-lite-5.5.0.conf\nbroker_config_enableLmq=true\n'
     printf 'topic=%s\nlite_topic=%s\nconsumer_group_prefix=%s\nmethods=heartbeat,heartbeat-v2,assignment,request-mode,lite-subscription,pop-lite,unregister\n' \
         "$topic" "$lite_topic" "$group"
 } >"$evidence_dir/metadata.txt"
