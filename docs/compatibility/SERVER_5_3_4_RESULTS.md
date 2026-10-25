@@ -356,3 +356,13 @@ the topic and Compose resources; evidence is under
 [`20261025T123522Z`](evidence/phase-19/P13-V02/20261025T123522Z/). The next
 diagnostic will record min/max queue offsets and the POP group's committed
 offset around the request.
+
+Run `20261025T123824Z` on `6837d847` added that capture: queue 0 had min/max
+offsets `0/1`, the request used init mode 0, and the POP group's committed
+offset was already 1 before the first POP and remained 1 afterward. Java
+returned `POLLING_NOT_FOUND`, so no lifecycle assertion passed and Rust
+consumption did not run. This shows the group begins past the only seeded
+message. The runner removed the topic and Compose resources; evidence is under
+[`20261025T123824Z`](evidence/phase-19/P13-V02/20261025T123824Z/). The next
+probe will locate when that offset is advanced by recording it after mode
+preparation and after each seed.

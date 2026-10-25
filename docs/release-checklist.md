@@ -10712,6 +10712,9 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [ ] Run `20261025T123522Z` used the pre-seed mode and `initMode=0`, passed both
   seed checks, and still returned `POLLING_NOT_FOUND`. Capture queue min/max and
   group offset in the next diagnostic.
+- [ ] Run `20261025T123824Z` captured queue min/max `0/1` and group offset 1
+  before and after the first POP. The group offset was already past the seeded
+  message; trace when it advances before changing lifecycle assertions.
 - [x] The runner deleted the scenario topic and removed its isolated
   two-Broker containers, network, and volumes. Coverage remains 25/37 PASS
   with 12 Phase 19 scenarios pending.

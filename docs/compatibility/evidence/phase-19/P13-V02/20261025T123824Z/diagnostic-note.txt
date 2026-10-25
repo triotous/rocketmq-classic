@@ -1,0 +1,16 @@
+Run: 20261025T123824Z
+Source revision: 6837d847034e9006a8285708b8b5794b60f28d26 (clean source)
+Exit status: 1
+
+Java verified p13-java-q0 and p13-java-q1 on broker-a queues 0 and 1, each
+with SEND_OK, queue offset 0, and max offset 1. Around the first Java POP, the
+probe observed queue 0 minOffset=0/maxOffset=1, request initMode=0, and
+consumer-group offset 1 both before and after the request. POP returned
+POLLING_NOT_FOUND. The group's committed offset is already beyond the only
+seeded queue 0 message before POP. No lifecycle assertion passed and Rust
+lifecycle consumption did not run.
+
+The runner deleted the scenario topic and removed both isolated Brokers, the
+Compose network, and project volumes. The next probe will record the consumer
+group offset after request-mode preparation and after each seed to determine
+when it advances.
