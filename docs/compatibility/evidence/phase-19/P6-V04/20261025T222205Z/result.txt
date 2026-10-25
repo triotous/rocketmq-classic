@@ -1,0 +1,1 @@
+PASS P6-V04: Java and Rust applied the new subscription, filtered the old tag, and retained the surviving producer
