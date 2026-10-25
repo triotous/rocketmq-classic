@@ -23,6 +23,7 @@ use rocketmq_classic_core::api::{
     producer::{SendKind, SendMode},
 };
 use rocketmq_classic_core::error::RpcError;
+use rocketmq_classic_core::runtime::ClientRuntimeManager;
 use rocketmq_classic_core::unique_id::UniqueIdGenerator;
 use rocketmq_classic_protocol::{
     SharedValue,
@@ -62,6 +63,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Some("p7-producer") if arguments.len() == 3 => {
             high_level_producer_modes(&arguments[1], &arguments[2]).await
+        }
+        Some("p7-lifecycle") if arguments.len() == 3 => {
+            producer_lifecycle_probe(&arguments[1], &arguments[2]).await
         }
         Some("p5-producer") if arguments.len() == 4 => {
             p5_producer(&arguments[1], &arguments[2], &arguments[3]).await
@@ -579,6 +583,61 @@ async fn high_level_producer_modes(
     let shutdown = producer.shutdown().await;
     shutdown?;
     result
+}
+
+async fn producer_lifecycle_probe(
+    namesrv_address: &str,
+    topic: &str,
+) -> Result<(), Box<dyn Error>> {
+    const CYCLES: usize = 3;
+    const SENDS_PER_CYCLE: usize = 20;
+    let manager = ClientRuntimeManager::shared_default();
+
+    for cycle in 0..CYCLES {
+        let mut config = ProducerConfig::new(format!("compat_p7_lifecycle_rust_{cycle}"))?;
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(namesrv_address.to_owned()));
+        let producer = Arc::new(Producer::new(config.clone()));
+        producer.start().await?;
+        let runtime = manager.get_or_create(config.client_config()).await?;
+
+        for sequence in 0..SENDS_PER_CYCLE {
+            let body = format!("p7-lifecycle-{cycle}-{sequence}");
+            let mut message = Message::new(topic, body.into_bytes());
+            let result = producer.send(&mut message).await?;
+            if result.status.name() != "SEND_OK" {
+                return Err(format!("lifecycle send returned {}", result.status.name()).into());
+            }
+        }
+
+        producer.shutdown().await?;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let counts = loop {
+            let counts = runtime.remoting().lifecycle_counts();
+            let factories_empty = manager.factory_table().is_empty()?;
+            if counts.pending_requests == 0
+                && counts.connections == 0
+                && counts.owned_tasks == 0
+                && factories_empty
+            {
+                break counts;
+            }
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "producer lifecycle did not quiesce after shutdown: {counts:?}, factories_empty={factories_empty}"
+                )
+                .into());
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        };
+        println!(
+            "P7L\tCYCLE\trust\t{cycle}\t{SENDS_PER_CYCLE}\t{}\t{}\t{}",
+            counts.pending_requests, counts.connections, counts.owned_tasks
+        );
+    }
+
+    Ok(())
 }
 
 async fn shared_runtime_probe(

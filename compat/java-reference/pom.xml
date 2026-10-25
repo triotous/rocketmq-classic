@@ -75,6 +75,10 @@
             <configuration><mainClass>compat.LiveHighLevelProducerProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-producer-lifecycle-probe</id>
+            <configuration><mainClass>compat.LiveProducerLifecycleProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>live-shared-runtime-probe</id>
             <configuration><mainClass>compat.LiveSharedRuntimeProbe</mainClass></configuration>
           </execution>

@@ -345,3 +345,29 @@
   `rocketmq-classic-p19-two-broker-host-check`; `cleanup.sh` removed its
   containers, network, and both volumes, and filtered Docker queries returned
   no remaining project resources. Host-client scenario execution is pending.
+
+## P19-04 P7-V04 producer lifecycle runner — 2026-10-25
+
+- Added Java/Rust live probes and a `two-broker-host` differential runner for
+  three start/shutdown cycles with 20 successful sends per cycle. Each cycle
+  checks zero pending requests, connections, and owned task groups. The
+  scenario creates four queues on each Broker, because both host-routed
+  addresses must appear in the topic route.
+- Initial attempts `20261025T140537Z`, `20261025T140730Z`, and
+  `20261025T140938Z` are archived under
+  `docs/compatibility/evidence/phase-19/P7-V04/`. They identified unsupported
+  `mqadmin deleteTopic -b`, cluster-wide topic cleanup that could not reach a
+  peer Broker's loopback advertisement, and an event-loop termination check
+  that ran before the bounded shutdown wait. Added direct per-Broker topic
+  deletion through the pinned Java API and waited for Netty executor shutdown.
+  All three attempts removed their isolated Compose resources.
+- Diagnostic run `20261025T141128Z` passed Java and Rust for all three cycles;
+  each reported 20 sends and zero retained resources. Topic deletion succeeded
+  directly on `127.0.0.1:50911` and `127.0.0.1:50921`, and cleanup removed
+  both Broker volumes, the NameServer, and the project network. Because this
+  replay had `source_code_dirty=true`, it is not manifest evidence. P7-V04
+  remains `PENDING_PHASE_19` until the committed clean-source replay.
+- Shell syntax, `cargo fmt`, integration binary build, offline Maven compile,
+  differential manifest validation, and `git diff --check` passed. The
+  fail-closed coverage check now identifies nine cases without runners; the
+  complete local gate remains pending.
