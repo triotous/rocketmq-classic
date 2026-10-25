@@ -1495,7 +1495,8 @@ subjectKeyIdentifier=hash
 authorityKeyIdentifier=keyid,issuer
 EOF
     openssl x509 -req -days 2 -in "$p16_tls_dir/server.csr" \
-        -CA "$p16_tls_dir/ca.pem" -CAkey "$p16_tls_dir/ca.key" -CAcreateserial \
+        -CA "$p16_tls_dir/ca.pem" -CAkey "$p16_tls_dir/ca.key" \
+        -CAcreateserial -CAserial "$p16_tls_dir/ca.srl" \
         -extfile "$p16_tls_dir/server.ext" -out "$p16_tls_dir/server.pem" \
         >"$p16_tls_dir/server-signing.log" 2>&1
     openssl req -new -newkey rsa:2048 -nodes \
@@ -1509,7 +1510,8 @@ subjectKeyIdentifier=hash
 authorityKeyIdentifier=keyid,issuer
 EOF
     openssl x509 -req -days 2 -in "$p16_tls_dir/client.csr" \
-        -CA "$p16_tls_dir/ca.pem" -CAkey "$p16_tls_dir/ca.key" -CAcreateserial \
+        -CA "$p16_tls_dir/ca.pem" -CAkey "$p16_tls_dir/ca.key" \
+        -CAcreateserial -CAserial "$p16_tls_dir/ca.srl" \
         -extfile "$p16_tls_dir/client.ext" -out "$p16_tls_dir/client.pem" \
         >"$p16_tls_dir/client-signing.log" 2>&1
     chmod 600 "$p16_tls_dir"/*.key
