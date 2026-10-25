@@ -51,6 +51,10 @@
             <configuration><mainClass>compat.LiveP16SecurityProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-p17-admin-query-probe</id>
+            <configuration><mainClass>compat.LiveP17AdminQueryProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>live-heartbeat-probe</id>
             <configuration><mainClass>compat.LiveHeartbeatProbe</mainClass></configuration>
           </execution>

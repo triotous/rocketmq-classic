@@ -221,6 +221,19 @@ for scenario in selected:
         ]
     ):
         raise SystemExit("P16-V02 security inputs differ from the reviewed live case")
+    if scenario_id == "P17-V02" and (
+        profile != "two-broker"
+        or inputs.get("topic") != "compat_p17_admin_query"
+        or inputs.get("keys") != ["duplicate-key", "bounded-time-range"]
+        or inputs.get("checks") != [
+            "java-rust-results-match", "partial-broker-failure", "terminal-error-mapping"
+        ]
+        or scenario.get("assertions") != inputs.get("checks")
+        or scenario.get("client_directions") != [
+            "java-5.5.1-client->server-5.3.4", "rust-client->server-5.3.4"
+        ]
+    ):
+        raise SystemExit("P17-V02 query inputs differ from the reviewed live case")
     if scenario_id == "P5-V02-producer" and inputs.get("methods") != [
         "send-v1", "send-v2", "batch", "reply-v1", "reply-v2", "end-transaction"
     ]:
@@ -272,7 +285,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P5-V02-extensions" "P0-V03" "P6-V04" "P7-V02" "P7-V03" "P7-V04" "P9-V03" "P10-V03" "P11-V03" "P11-V04" "P12-V03" "P13-V02" "P14-V03" "P16-V02" "REQ-001-request-reply-success" "P15-V03")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P5-V02-extensions" "P0-V03" "P6-V04" "P7-V02" "P7-V03" "P7-V04" "P9-V03" "P10-V03" "P11-V03" "P11-V04" "P12-V03" "P13-V02" "P14-V03" "P16-V02" "P17-V02" "REQ-001-request-reply-success" "P15-V03")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -342,7 +355,7 @@ if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
 fi
 case "$profile:$scenario_id" in
     basic:*) ;;
-    two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c|two-broker:PROD-005-send-timeout|two-broker:P5-V02-consumer|two-broker:P10-V03|two-broker:P11-V03|two-broker:P11-V04|two-broker:P12-V03|two-broker:P13-V02|two-broker:P14-V03) ;;
+    two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c|two-broker:PROD-005-send-timeout|two-broker:P5-V02-consumer|two-broker:P10-V03|two-broker:P11-V03|two-broker:P11-V04|two-broker:P12-V03|two-broker:P13-V02|two-broker:P14-V03|two-broker:P17-V02) ;;
     two-broker-host:P7-V03|two-broker-host:P7-V04|two-broker-host:P15-V03) ;;
     tls-auth:P16-V02) ;;
     transaction:TX-001-commit|transaction:TX-002-rollback) ;;
@@ -505,6 +518,7 @@ case "$scenario_id:$topic" in
         fi
         ;;
     P16-V02:-) ;;
+    P17-V02:compat_p17_admin_query) ;;
     P7-V04:compat_p7_lifecycle)
         if [[ "$profile" != "two-broker-host" ]]; then
             echo "P7-V04 requires the host-routed two-Broker profile" >&2
@@ -552,7 +566,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P5-V02-extensions" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P7-V03" && "$scenario_id" != "P7-V04" && "$scenario_id" != "P9-V03" && "$scenario_id" != "P10-V03" && "$scenario_id" != "P11-V03" && "$scenario_id" != "P11-V04" && "$scenario_id" != "P12-V03" && "$scenario_id" != "P13-V02" && "$scenario_id" != "P14-V03" && "$scenario_id" != "P16-V02" && "$scenario_id" != "REQ-001-request-reply-success" && "$scenario_id" != "P15-V03" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P5-V02-extensions" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P7-V03" && "$scenario_id" != "P7-V04" && "$scenario_id" != "P9-V03" && "$scenario_id" != "P10-V03" && "$scenario_id" != "P11-V03" && "$scenario_id" != "P11-V04" && "$scenario_id" != "P12-V03" && "$scenario_id" != "P13-V02" && "$scenario_id" != "P14-V03" && "$scenario_id" != "P16-V02" && "$scenario_id" != "P17-V02" && "$scenario_id" != "REQ-001-request-reply-success" && "$scenario_id" != "P15-V03" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -565,7 +579,7 @@ if [[ "${ROCKETMQ_PROFILE:-}" != "$profile" ]]; then
     exit 2
 fi
 manifest_profile="$profile"
-if [[ "$scenario_id" == "P10-V03" || "$scenario_id" == "P11-V03" || "$scenario_id" == "P11-V04" || "$scenario_id" == "P12-V03" || "$scenario_id" == "P14-V03" ]]; then
+if [[ "$scenario_id" == "P10-V03" || "$scenario_id" == "P11-V03" || "$scenario_id" == "P11-V04" || "$scenario_id" == "P12-V03" || "$scenario_id" == "P14-V03" || "$scenario_id" == "P17-V02" ]]; then
     # The manifest topology is two Brokers. Host-run probes need reachable
     # addresses from the two-Broker Compose variant.
     profile="two-broker-host"
@@ -636,10 +650,10 @@ if [[ "$profile" == "two-broker-host" ]]; then
         echo "The two-Broker host profile advertises 127.0.0.1:50911 and 127.0.0.1:50921" >&2
         exit 2
     fi
-    if [[ "$scenario_id" == "P7-V03" ]]; then
+    if [[ "$scenario_id" == "P7-V03" || "$scenario_id" == "P17-V02" ]]; then
         if [[ "${ROCKETMQ_BROKER_A_PUBLISHED_HOST_PORT:-51911}" != "51911" || \
             "${ROCKETMQ_BROKER_B_PUBLISHED_HOST_PORT:-51921}" != "51921" ]]; then
-            echo "P7-V03 requires direct Broker ports 51911/51921 behind proxies at advertised ports 50911/50921" >&2
+            echo "$scenario_id requires direct Broker ports 51911/51921 behind proxies at advertised ports 50911/50921" >&2
             exit 2
         fi
         export ROCKETMQ_BROKER_A_PUBLISHED_HOST_PORT=51911
@@ -680,6 +694,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveRouteProbe.java
     compat/java-reference/src/main/java/compat/LiveP3RemotingProbe.java
     compat/java-reference/src/main/java/compat/LiveP16SecurityProbe.java
+    compat/java-reference/src/main/java/compat/LiveP17AdminQueryProbe.java
     compat/java-reference/src/main/java/compat/LiveHeartbeatProbe.java
     compat/java-reference/src/main/java/compat/LiveProducerProbe.java
     compat/java-reference/src/main/java/compat/LiveP5ProducerProbe.java
@@ -693,7 +708,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveSharedRuntimeProbe.java
     compat/java-reference/src/main/java/compat/LivePullConsumerProbe.java
     compat/java-reference/src/main/java/compat/LiveRequestReplyProbe.java
-    tests/differential/delayed_response_proxy.py tests/differential/tls_broker_proxy.py tests/differential/acl_tampering_proxy.py
+    tests/differential/delayed_response_proxy.py tests/differential/tls_broker_proxy.py tests/differential/acl_tampering_proxy.py tests/differential/query_failure_proxy.py tests/differential/check_p17_admin_query.py
     crates/rocketmq-classic-remoting/src/client/mod.rs
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
     integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf integration-tests/config/broker-tx.conf integration-tests/config/broker-host.conf integration-tests/config/broker-a-host.conf integration-tests/config/broker-b-host.conf integration-tests/config/broker-a-transaction-host.conf integration-tests/config/broker-b-transaction-host.conf integration-tests/config/broker-auth.conf
@@ -806,6 +821,10 @@ if [[ "$scenario_id" == "P16-V02" ]]; then
     printf 'checks=signed-request-accepted,wrong-secret-rejected,tampered-body-rejected,trusted-ca-accepted,wrong-hostname-rejected,untrusted-ca-rejected,missing-client-certificate-rejected\nmutual_tls=true\ninsecure_tls_bypass=false\ncredentials=per-run-random-synthetic-and-redacted\n' \
         >>"$evidence_dir/metadata.txt"
 fi
+if [[ "$scenario_id" == "P17-V02" ]]; then
+    printf 'topic=%s\nquery_keys=duplicate-key,bounded-time-range\nbrokers=broker-a,broker-b\nproxy_listeners=127.0.0.1:50911,127.0.0.1:50921\ndirect_broker_ports=51911,51921\npartial_failure=broker-b\nterminal_failure=both-brokers\n' \
+        "$topic" >>"$evidence_dir/metadata.txt"
+fi
 if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
     printf 'topic=%s\nsend_timeout_ms=%s\nproxy_response_delay_ms=600\nexpected_committed_messages=2\n' "$topic" "$timeout_ms" \
         >>"$evidence_dir/metadata.txt"
@@ -854,7 +873,22 @@ for filename in sys.argv[1:]:
     print(f"sha256 {hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
 PY
 } >"$evidence_dir/toolchain.txt" 2>&1
-if [[ "$scenario_id" == "P16-V02" ]]; then
+if [[ "$scenario_id" == "P17-V02" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker COMPOSE_PROJECT_NAME=$project_name bash tests/differential/run.sh --scenario P17-V02
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateTopic -b 127.0.0.1:50911 -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateTopic -b 127.0.0.1:50921 -t $topic -r 1 -w 1 -n namesrv:9876
+python3 tests/differential/query_failure_proxy.py --label broker-a --listen-port 50911 --upstream 127.0.0.1:51911 --mode-file <evidence>/proxy-a-mode.txt --ready-file <evidence>/proxy-a-ready.txt --log-file <evidence>/proxy-a-events.tsv
+python3 tests/differential/query_failure_proxy.py --label broker-b --listen-port 50921 --upstream 127.0.0.1:51921 --mode-file <evidence>/proxy-b-mode.txt --ready-file <evidence>/proxy-b-ready.txt --log-file <evidence>/proxy-b-events.tsv
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed $namesrv_addr $topic" exec:java@live-p17-admin-query-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="query $namesrv_addr $topic p17-duplicate-key 0 9223372036854775807" exec:java@live-p17-admin-query-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p17-query $namesrv_addr $topic p17-duplicate-key 0 9223372036854775807
+python3 tests/differential/check_p17_admin_query.py prepare <evidence>
+# Repeat the Java/Rust query commands with the begin/end values from bounded-range.txt.
+# Set proxy-b-mode.txt to error for the partial-failure probes, then proxy-a-mode.txt to error for terminal mapping.
+python3 tests/differential/check_p17_admin_query.py verify <evidence>
+EOF
+elif [[ "$scenario_id" == "P16-V02" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=tls-auth COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 python3 tests/differential/acl_tampering_proxy.py --upstream $broker_addr --ready-file <evidence>/acl-proxy-ready.txt --log-file <evidence>/acl-proxy-events.tsv
@@ -1247,6 +1281,7 @@ p12_java_pid=""
 p12_rust_pid=""
 group_created=false
 p16_proxy_pids=()
+p17_proxy_pids=()
 p16_auth_config_path=""
 cleanup() {
     status=$?
@@ -1305,7 +1340,7 @@ cleanup() {
             } >>"$evidence_dir/broker-internal-logs.log" 2>&1
         done
     fi
-    if [[ "$scenario_id" == "P7-V03" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P10-V03" || "$scenario_id" == "P11-V03" || "$scenario_id" == "P11-V04" || "$scenario_id" == "P12-V03" || "$scenario_id" == "P14-V03" || "$scenario_id" == "P15-V03" ]]; then
+    if [[ "$scenario_id" == "P7-V03" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P10-V03" || "$scenario_id" == "P11-V03" || "$scenario_id" == "P11-V04" || "$scenario_id" == "P12-V03" || "$scenario_id" == "P14-V03" || "$scenario_id" == "P15-V03" || "$scenario_id" == "P17-V02" ]]; then
         "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 broker-a-host broker-b-host \
             >"$evidence_dir/broker-logs.log" 2>&1
     fi
@@ -1375,6 +1410,12 @@ cleanup() {
         if [[ -n "$p16_proxy_pid" ]] && kill -0 "$p16_proxy_pid" 2>/dev/null; then
             kill "$p16_proxy_pid" 2>/dev/null
             wait "$p16_proxy_pid" 2>/dev/null
+        fi
+    done
+    for p17_proxy_pid in "${p17_proxy_pids[@]:-}"; do
+        if [[ -n "$p17_proxy_pid" ]] && kill -0 "$p17_proxy_pid" 2>/dev/null; then
+            kill "$p17_proxy_pid" 2>/dev/null
+            wait "$p17_proxy_pid" 2>/dev/null
         fi
     done
     ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
@@ -1659,6 +1700,140 @@ if [[ "$scenario_id" == "P16-V02" ]]; then
     p16_proxy_pids=()
     printf 'PASS P16-V02: Java 5.5.1 and Rust accepted valid ACL signatures and rejected wrong secrets and tampered heartbeat bodies; mutual TLS accepted trusted clients and rejected untrusted CAs and missing client certificates; Rust rejected the trusted wrong-host certificate while Java 5.5.1 accepted its trusted chain without hostname verification\n' \
         | tee "$evidence_dir/result.txt"
+    exit 0
+fi
+
+if [[ "$scenario_id" == "P17-V02" ]]; then
+    echo "Starting per-Broker forwarding proxies for the two-Broker admin-query case"
+    printf 'forward\n' >"$evidence_dir/proxy-a-mode.txt"
+    printf 'forward\n' >"$evidence_dir/proxy-b-mode.txt"
+    start_p17_proxy() {
+        local label="$1"
+        local listen_port="$2"
+        local upstream_port="$3"
+        local mode_file="$evidence_dir/proxy-${label#broker-}-mode.txt"
+        local ready_file="$evidence_dir/proxy-${label#broker-}-ready.txt"
+        local log_file="$evidence_dir/proxy-${label#broker-}-events.tsv"
+        local prefix="$evidence_dir/proxy-${label#broker-}"
+        python3 -u "$repo_root/tests/differential/query_failure_proxy.py" \
+            --label "$label" --listen-port "$listen_port" \
+            --upstream "127.0.0.1:$upstream_port" \
+            --mode-file "$mode_file" --ready-file "$ready_file" --log-file "$log_file" \
+            >"$prefix.stdout.log" 2>"$prefix.stderr.log" &
+        local proxy_pid=$!
+        p17_proxy_pids+=("$proxy_pid")
+        for _ in {1..100}; do
+            if [[ -s "$ready_file" ]]; then
+                return 0
+            fi
+            if ! kill -0 "$proxy_pid" 2>/dev/null; then
+                cat "$prefix.stdout.log" "$prefix.stderr.log" >&2 2>/dev/null || true
+                return 1
+            fi
+            sleep 0.1
+        done
+        echo "P17 proxy $label did not become ready on 127.0.0.1:$listen_port" >&2
+        return 1
+    }
+    start_p17_proxy broker-a 50911 51911
+    start_p17_proxy broker-b 50921 51921
+
+    echo "Creating the scenario-owned topic on each Broker"
+    topic_created=true
+    : >"$evidence_dir/topic-create.log"
+    for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
+        topic_service="${broker_admin_target%%:*}"
+        topic_broker="${broker_admin_target#*:}"
+        if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateTopic \
+            -b "$topic_broker" -t "$topic" -r 1 -w 1 -n namesrv:9876 \
+            >>"$evidence_dir/topic-create.log" 2>&1; then
+            cat "$evidence_dir/topic-create.log" >&2
+            exit 1
+        fi
+    done
+
+    echo "Seeding duplicate keys and the bounded timestamp fixtures"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        "-Dexec.args=seed $namesrv_addr $topic" exec:java@live-p17-admin-query-probe \
+        >"$evidence_dir/java-seed.tsv" 2>"$evidence_dir/java-seed.stderr.log"; then
+        cat "$evidence_dir/java-seed.tsv" "$evidence_dir/java-seed.stderr.log" >&2 2>/dev/null || true
+        exit 1
+    fi
+    if [[ "$(awk -F '\t' '$1 == "P17" && $2 == "SEND" { count++ } END { print count + 0 }' "$evidence_dir/java-seed.tsv")" != 4 ]] \
+        || ! grep -Fxq $'P17\tSEED\t4\t2\t2' "$evidence_dir/java-seed.tsv"; then
+        echo "Java seed did not report all four Broker-targeted messages" >&2
+        exit 1
+    fi
+    sleep 1
+
+    run_p17_java_query() {
+        local label="$1"
+        local key="$2"
+        local begin_timestamp="$3"
+        local end_timestamp="$4"
+        if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+            "-Dexec.args=query $namesrv_addr $topic $key $begin_timestamp $end_timestamp" \
+            exec:java@live-p17-admin-query-probe \
+            >"$evidence_dir/java-${label}.tsv" 2>"$evidence_dir/java-${label}.stderr.log"; then
+            cat "$evidence_dir/java-${label}.tsv" "$evidence_dir/java-${label}.stderr.log" >&2 2>/dev/null || true
+            echo "Java P17 query $label failed" >&2
+            exit 1
+        fi
+    }
+    run_p17_rust_query() {
+        local label="$1"
+        local key="$2"
+        local begin_timestamp="$3"
+        local end_timestamp="$4"
+        if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+            p17-query "$namesrv_addr" "$topic" "$key" "$begin_timestamp" "$end_timestamp" \
+            >"$evidence_dir/rust-${label}.tsv" 2>"$evidence_dir/rust-${label}.stderr.log"; then
+            cat "$evidence_dir/rust-${label}.tsv" "$evidence_dir/rust-${label}.stderr.log" >&2 2>/dev/null || true
+            echo "Rust P17 query $label failed" >&2
+            exit 1
+        fi
+    }
+    run_p17_java_query duplicate p17-duplicate-key 0 9223372036854775807
+    run_p17_rust_query duplicate p17-duplicate-key 0 9223372036854775807
+    run_p17_java_query bounded-all p17-bounded-time-range 0 9223372036854775807
+    run_p17_rust_query bounded-all p17-bounded-time-range 0 9223372036854775807
+    if ! python3 "$repo_root/tests/differential/check_p17_admin_query.py" prepare "$evidence_dir" \
+        >"$evidence_dir/prepare.tsv" 2>"$evidence_dir/prepare.stderr.log"; then
+        cat "$evidence_dir/prepare.tsv" "$evidence_dir/prepare.stderr.log" >&2 2>/dev/null || true
+        exit 1
+    fi
+    IFS=$'\t' read -r p17_marker p17_begin_timestamp p17_end_timestamp \
+        < <(grep -F $'P17_PREPARED\t' "$evidence_dir/prepare.tsv")
+    if [[ "$p17_marker" != "P17_PREPARED" || ! "$p17_begin_timestamp" =~ ^[0-9]+$ || ! "$p17_end_timestamp" =~ ^[0-9]+$ ]]; then
+        echo "P17 checker did not provide a valid bounded query interval" >&2
+        exit 1
+    fi
+    run_p17_java_query bounded-range p17-bounded-time-range "$p17_begin_timestamp" "$p17_end_timestamp"
+    run_p17_rust_query bounded-range p17-bounded-time-range "$p17_begin_timestamp" "$p17_end_timestamp"
+
+    set_p17_proxy_mode() {
+        local label="$1"
+        local mode="$2"
+        local target="$evidence_dir/proxy-${label#broker-}-mode.txt"
+        local temporary="$target.tmp.$$"
+        printf '%s\n' "$mode" >"$temporary"
+        mv "$temporary" "$target"
+    }
+    echo "Injecting a Broker B query failure while Broker A remains available"
+    set_p17_proxy_mode broker-b error
+    run_p17_java_query partial p17-duplicate-key 0 9223372036854775807
+    run_p17_rust_query partial p17-duplicate-key 0 9223372036854775807
+    echo "Injecting query failures at both Brokers to verify terminal mapping"
+    set_p17_proxy_mode broker-a error
+    run_p17_java_query terminal p17-duplicate-key 0 9223372036854775807
+    run_p17_rust_query terminal p17-duplicate-key 0 9223372036854775807
+
+    if ! python3 "$repo_root/tests/differential/check_p17_admin_query.py" verify "$evidence_dir" \
+        >"$evidence_dir/verify.tsv" 2>"$evidence_dir/verify.stderr.log"; then
+        cat "$evidence_dir/verify.tsv" "$evidence_dir/verify.stderr.log" >&2 2>/dev/null || true
+        exit 1
+    fi
+    cat "$evidence_dir/result.txt"
     exit 0
 fi
 

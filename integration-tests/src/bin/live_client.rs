@@ -80,6 +80,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
+        Some("p17-query") if arguments.len() == 6 => {
+            p17_query(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                arguments[4].parse()?,
+                arguments[5].parse()?,
+            )
+            .await
+        }
         Some("rebalance") if arguments.len() == 4 => {
             rebalance(&arguments[1], &arguments[2], &arguments[3]).await
         }
@@ -1254,6 +1264,65 @@ async fn p16_tls(
         counts.connections,
         counts.owned_tasks,
     );
+    Ok(())
+}
+
+async fn p17_query(
+    namesrv_address: &str,
+    topic: &str,
+    key: &str,
+    begin_timestamp: i64,
+    end_timestamp: i64,
+) -> Result<(), Box<dyn Error>> {
+    let mut config = ProducerConfig::new("compat_p17_admin_query_rust")?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    let producer = Arc::new(Producer::new(config));
+    producer.start().await?;
+    let result = producer
+        .query_message(topic, key, 32, begin_timestamp, end_timestamp)
+        .await;
+    producer.shutdown().await?;
+    let result = match result {
+        Ok(result) => result,
+        Err(ProducerError::AdminQuery(
+            rocketmq_classic_core::api::admin::AdminQueryError::Rpc(RpcError::Response {
+                request_code: request::QUERY_MESSAGE,
+                code,
+                ..
+            }),
+        )) => {
+            println!("P17\tERROR\t{key}\t{code}");
+            return Ok(());
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let mut messages = result
+        .get_message_list()
+        .map(|messages| messages.snapshot())
+        .unwrap_or_default()
+        .into_iter()
+        .flatten()
+        .map(|message| message.snapshot())
+        .collect::<Vec<_>>();
+    let mut rows = messages
+        .drain(..)
+        .map(|message| {
+            let body = String::from_utf8_lossy(message.body().as_ref()).into_owned();
+            (
+                message.store_timestamp(),
+                message.broker_name().unwrap_or_default().to_owned(),
+                message.queue_id(),
+                body,
+            )
+        })
+        .collect::<Vec<_>>();
+    rows.sort();
+    println!("P17\tRESULT\t{key}\t{}", rows.len());
+    for (store_timestamp, broker_name, queue_id, body) in rows {
+        println!("P17\tMESSAGE\t{key}\t{broker_name}\t{queue_id}\t{store_timestamp}\t{body}");
+    }
     Ok(())
 }
 
