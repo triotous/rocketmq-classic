@@ -1,0 +1,1 @@
+PASS P5-V02 supplementary Lite success: Java and Rust registered and consumed Lite messages on unmodified RocketMQ 5.5.0

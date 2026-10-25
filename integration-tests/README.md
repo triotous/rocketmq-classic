@@ -120,10 +120,11 @@ bash tests/differential/run-p5-lite-supplementary.sh
 ```
 
 That runner pins the multi-platform 5.5.0 image digest and uses an isolated
-Broker config with LMQ enabled; it archives its own results and does not change
-the mandatory 5.3.4 matrix or by itself establish
-production support. It removes its isolated topics, containers, network, and
-volume after the run. Toolchain,
+Broker config with LMQ and multi-dispatch enabled. Clean run
+`20261025T135033Z` passed matching Java/Rust Lite subscription and Lite POP
+success. It archives its own results and does not change the mandatory 5.3.4
+matrix or by itself establish production support. It removes its isolated
+topics, containers, network, and volume after the run. Toolchain,
 configuration, output, and cleanup evidence is stored under
 `docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
 after comparison and cleanup both succeed. The runner implements 27 of 37
@@ -216,8 +217,9 @@ matrix cannot report success until all IDs have passing evidence. Currently
 `P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`,
 `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`. `P5-V02-extensions`
 passed the 5.3.4 parity case with matching unsupported responses for Lite
-subscription and Lite POP; positive Lite success-path coverage still needs
-the supplementary profile described in the compatibility report.
+subscription and Lite POP; positive Lite success-path coverage passed
+separately on the official 5.5.0 image and is not part of the 5.3.4 manifest
+count.
 The remaining two-Broker cases, ACL/feature profiles, and a fresh
 `run-local.sh --all` pass remain pending. The last full local run predates
 several later runner additions and must be rerun against the current revision.

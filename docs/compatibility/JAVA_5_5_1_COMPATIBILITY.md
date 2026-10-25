@@ -36,7 +36,13 @@ consumer-list, send-back, and lock/unlock outcomes on the two-Broker profile.
 `P5-V02-extensions` matches heartbeat, heartbeat V2, assignment, request-mode,
 standard POP, ACK, batch ACK, and visibility-change outcomes. Broker 5.3.4
 returns its source-confirmed unsupported-request response for Lite subscription
-and Lite POP; this records the matched rejection path, not a Lite success path.
+and Lite POP; this records the matched 5.3.4 rejection path. A separate clean
+run on official RocketMQ 5.5.0 image digest
+`sha256:7e8f6c9dbd9df742ed26ba69c00d4ad69e2f86a56f3ca7782ff8144dd0798132`
+matched Java/Rust Lite subscription and Lite POP success, including the seeded
+message body. This supplementary result does not alter the 5.3.4 manifest row
+or establish production support; evidence is under
+[`supplementary-lite-5.5.0/20261025T135033Z`](evidence/phase-19/supplementary-lite-5.5.0/20261025T135033Z/).
 `PROD-005-send-timeout` delays the Broker responses beyond 100 ms, confirms
 both clients report timeout, and verifies each message is committed once by
 matching Java/Rust pull results. `P3-V04` compares raw NameServer routing, CA
@@ -45,7 +51,8 @@ accepts a CA-trusted wrong-host certificate because its TLS handler does not
 receive a peer hostname; Rust rejects it. Ten cases remain pending: `P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`,
 `P11-V04`, `P12-V03`, `P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`.
 `P13-V02` and `P5-V02-extensions` now have clean Java/Rust evidence; the
-latter records the two unsupported Lite request paths on 5.3.4. This does
+latter records the two unsupported Lite request paths on 5.3.4 and separate
+positive Lite success evidence on 5.5.0. This does
 not close the broader P18-V01 public API/settings/flow reverse audit or establish
 full client parity. See
 [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server

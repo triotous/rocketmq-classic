@@ -10787,5 +10787,22 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   isolated Compose containers, network, and volume. Live coverage is 27/37
   with 10 runnerless cases pending: `P7-V03`, `P7-V04`, `P10-V03`,
   `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`, `P15-V03`, `P16-V02`, and
-  `P17-V02`. Positive Lite success-path evidence remains under the
-  supplementary-server investigation required by P19-05.
+  `P17-V02`. Positive Lite success-path evidence is recorded separately under
+  P19-05; it does not alter the 5.3.4 manifest row.
+
+## P19-05 supplementary Lite success-path pass — 2026-10-25 (`3eb70c19`)
+
+- [x] Clean-source run `20261025T135033Z` on
+  `3eb70c192a885ea831cdc496ca24399a182552b5` passed against the unmodified
+  official `apache/rocketmq:5.5.0` image pinned by index digest
+  `sha256:7e8f6c9dbd9df742ed26ba69c00d4ad69e2f86a56f3ca7782ff8144dd0798132`.
+  Java 5.5.1 and Rust matched heartbeat, heartbeat V2, assignment, request
+  mode, Lite subscription, Lite POP `FOUND`, and the seeded message body.
+  The isolated profile enabled LMQ and multi-dispatch; `source_code_dirty=false`,
+  exit status 0, duration 100 seconds. Evidence:
+  `docs/compatibility/evidence/phase-19/supplementary-lite-5.5.0/20261025T135033Z/`.
+- [x] The runner deleted the derived Lite topic and parent topic, then removed
+  its containers, network, and volume. Filtered Docker queries returned no
+  remaining project resources. This supplementary result does not modify the
+  required 5.3.4 `P5-V02-extensions` manifest row or establish production
+  support. Ten runnerless manifest cases remain pending.

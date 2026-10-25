@@ -311,3 +311,24 @@
 
 - Run `20261025T134349Z` passed the group bind check, and both languages again matched Lite subscription registration. Lite POP returned `POLLING_NOT_FOUND` because the stored Lite message had no active LMQ dispatch queue. Apache 5.5.0 `MessageStoreConfig.enableLmq` defaults to false, so the supplementary Broker was not writing Lite LMQ consume queues.
 - Added a separate `broker-lite-5.5.0.conf` with `enableLmq=true` and mounted it only in the supplementary Compose profile. The mandatory 5.3.4 Broker configuration remains unchanged. Shell syntax, Compose configuration, and whitespace checks pass before the next run.
+
+## P19-05 supplementary Lite POP dispatch correction — 2026-10-25
+
+- Run `20261025T134650Z` passed Lite registration and accepted the Lite seed, but Java Lite POP returned `POLLING_NOT_FOUND`. The attempt seeded before either client registered, used zero poll time, and had `enableMultiDispatch` unset. Evidence is under `docs/compatibility/evidence/phase-19/supplementary-lite-5.5.0/20261025T134650Z/`.
+- Enabled `enableMultiDispatch` in the isolated 5.5.0 Broker config, moved the seed after both Java and Rust Lite subscriptions, and set a bounded 10-second Lite POP poll time in both probes. The 5.3.4 runner and manifest row remain unchanged.
+
+## P19-05 supplementary Lite success-path pass — 2026-10-25 (`3eb70c19`)
+
+- Clean-source run `20261025T135033Z` on
+  `3eb70c192a885ea831cdc496ca24399a182552b5` passed against the official
+  unmodified 5.5.0 image (index digest
+  `sha256:7e8f6c9dbd9df742ed26ba69c00d4ad69e2f86a56f3ca7782ff8144dd0798132`).
+  Java 5.5.1 and Rust matched heartbeat, heartbeat V2, assignment, request-mode,
+  Lite subscription, Lite POP `FOUND`, and the seeded message body. The
+  supplementary Broker config enabled LMQ and multi-dispatch. Archived evidence:
+  `docs/compatibility/evidence/phase-19/supplementary-lite-5.5.0/20261025T135033Z/`.
+- Exit status 0, duration 100 seconds, `source_code_dirty=false`. The runner
+  removed the derived Lite and parent topics, containers, network, and volume;
+  filtered Docker queries found no remaining project resources. The required
+  5.3.4 manifest row remains unchanged, with 10 runnerless Phase 19 cases
+  pending. Supplementary success does not establish production support.

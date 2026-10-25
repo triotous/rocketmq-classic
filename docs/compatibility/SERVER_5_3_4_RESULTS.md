@@ -73,10 +73,16 @@ and Lite POP request 200070. Apache 5.3.4 maps unregistered request codes to
 this response in its [remoting dispatcher](https://github.com/apache/rocketmq/blob/rocketmq-all-5.3.4/remoting/src/main/java/org/apache/rocketmq/remoting/netty/NettyRemotingAbstract.java)
 and defines code 3 as `REQUEST_CODE_NOT_SUPPORTED` in
 [RemotingSysResponseCode](https://github.com/apache/rocketmq/blob/rocketmq-all-5.3.4/remoting/src/main/java/org/apache/rocketmq/remoting/protocol/RemotingSysResponseCode.java).
-This matched rejection does not verify Lite success; the
+This matched rejection does not verify Lite success. A separate supplementary
+run against the unmodified official 5.5.0 image passed Lite subscription and
+Lite POP with matching Java/Rust results and message body; it is archived at
+[`supplementary-lite-5.5.0/20261025T135033Z`](evidence/phase-19/supplementary-lite-5.5.0/20261025T135033Z/).
+The profile pins image digest
+`sha256:7e8f6c9dbd9df742ed26ba69c00d4ad69e2f86a56f3ca7782ff8144dd0798132`
+and enables LMQ plus multi-dispatch only in its isolated Broker config. The
 [Apache RocketMQ 5.5.0 release](https://github.com/apache/rocketmq/releases/tag/rocketmq-all-5.5.0)
-introduced Lite Mode, so the supplementary success-path profile remains under
-investigation.
+introduced Lite Mode. This supplementary success does not change the 5.3.4
+baseline or by itself establish production support.
 `P13-V02` compares the Java/Rust POP receipt lifecycle on two Brokers,
 including delivery, expiry redelivery, ACK, invisibility changes, mixed queue
 mapping, and malformed receipt rejection. Ten remain pending:
