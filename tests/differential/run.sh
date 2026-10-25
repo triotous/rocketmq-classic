@@ -1516,10 +1516,12 @@ EOF
         >"$p16_tls_dir/client-signing.log" 2>&1
     chmod 600 "$p16_tls_dir"/*.key
     {
-        openssl x509 -in "$p16_tls_dir/server.pem" -noout -fingerprint -sha256 -ext subjectAltName -ext extendedKeyUsage
-        openssl x509 -in "$p16_tls_dir/client.pem" -noout -fingerprint -sha256 -ext extendedKeyUsage
-        openssl x509 -in "$p16_tls_dir/ca.pem" -noout -fingerprint -sha256
-        openssl x509 -in "$p16_tls_dir/untrusted-ca.pem" -noout -fingerprint -sha256
+        openssl dgst -sha256 "$p16_tls_dir/server.pem"
+        openssl dgst -sha256 "$p16_tls_dir/client.pem"
+        openssl dgst -sha256 "$p16_tls_dir/ca.pem"
+        openssl dgst -sha256 "$p16_tls_dir/untrusted-ca.pem"
+        openssl x509 -in "$p16_tls_dir/server.pem" -noout -subject -issuer
+        openssl x509 -in "$p16_tls_dir/client.pem" -noout -subject -issuer
     } >"$p16_tls_dir/certificate-fingerprints.txt" 2>&1
 fi
 
