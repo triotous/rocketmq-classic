@@ -55,9 +55,10 @@ cat >"$evidence_dir/commands.txt" <<COMMANDS
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_SUPPLEMENTARY_NAMESRV_PORT=$namesrv_port ROCKETMQ_SUPPLEMENTARY_BROKER_PORT=$broker_port COMPOSE_PROJECT_NAME=$project_name docker compose --project-name $project_name --file integration-tests/compose-lite-5.5.0.yaml up --detach --wait --wait-timeout 180
 mqadmin clusterList -n namesrv:9876
 mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -a +message.type=LITE -n namesrv:9876
+mqadmin updateSubGroup --attributes +lite.bind.topic=$topic for Java/Rust Lite groups
+Java send-lite parent-topic entries p5-extension-lite
 Java 5.5.1 live-p5-extensions-probe prepare and lite-pop
 Rust live_client p5-extension-prepare and p5-extension-lite-pop
-Java send-lite parent-topic entries p5-extension-lite
 mqadmin deleteTopic -c RocketMQLocalTest -t $lite_topic -n namesrv:9876
 mqadmin deleteTopic -c RocketMQLocalTest -t $topic -n namesrv:9876
 docker compose --project-name $project_name --file integration-tests/compose-lite-5.5.0.yaml down --volumes --remove-orphans
@@ -199,8 +200,12 @@ fi
 : >"$evidence_dir/group-create.log"
 for language in java rust; do
     for suffix in base lite; do
-        "${compose[@]}" exec --no-TTY broker ./mqadmin updateSubGroup -c RocketMQLocalTest \
-            -g "${group}_${language}_${suffix}" -n namesrv:9876 >>"$evidence_dir/group-create.log" 2>&1 || {
+        subgroup_args=(-c RocketMQLocalTest -g "${group}_${language}_${suffix}" -n namesrv:9876)
+        if [[ "$suffix" == "lite" ]]; then
+            subgroup_args+=(--attributes "+lite.bind.topic=$topic")
+        fi
+        "${compose[@]}" exec --no-TTY broker ./mqadmin updateSubGroup "${subgroup_args[@]}" \
+            >>"$evidence_dir/group-create.log" 2>&1 || {
             cat "$evidence_dir/group-create.log" >&2
             status=1
             exit 1
@@ -208,6 +213,13 @@ for language in java rust; do
     done
 done
 
+mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+    -Dexec.args="send-lite $broker_addr $topic entries p5-extension-lite" \
+    exec:java@live-producer-probe >"$evidence_dir/java-lite-seed.tsv" 2>"$evidence_dir/java-lite-seed.stderr" || {
+        cat "$evidence_dir/java-lite-seed.stderr" >&2
+        status=1
+        exit 1
+    }
 mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
     -Dexec.args="prepare $broker_addr $topic ${group}_java" \
     exec:java@live-p5-extensions-probe >"$evidence_dir/java-prepare.tsv" 2>"$evidence_dir/java-prepare.stderr" || {
@@ -218,13 +230,6 @@ mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
 "$repo_root/target/debug/live_client" p5-extension-prepare "$broker_addr" "$topic" "${group}_rust" \
     >"$evidence_dir/rust-prepare.tsv" 2>"$evidence_dir/rust-prepare.stderr" || {
         cat "$evidence_dir/rust-prepare.stderr" >&2
-        status=1
-        exit 1
-    }
-mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-    -Dexec.args="send-lite $broker_addr $topic entries p5-extension-lite" \
-    exec:java@live-producer-probe >"$evidence_dir/java-lite-seed.tsv" 2>"$evidence_dir/java-lite-seed.stderr" || {
-        cat "$evidence_dir/java-lite-seed.stderr" >&2
         status=1
         exit 1
     }
