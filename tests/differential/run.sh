@@ -995,12 +995,6 @@ cleanup() {
         kill "$tls_proxy_pid" 2>/dev/null
         wait "$tls_proxy_pid" 2>/dev/null
     fi
-    for p7_proxy_pid in "${p7_proxy_pids[@]}"; do
-        if [[ -n "$p7_proxy_pid" ]] && kill -0 "$p7_proxy_pid" 2>/dev/null; then
-            kill "$p7_proxy_pid" 2>/dev/null
-            wait "$p7_proxy_pid" 2>/dev/null
-        fi
-    done
     if [[ -n "$p7_probe_pid" ]] && kill -0 "$p7_probe_pid" 2>/dev/null; then
         kill "$p7_probe_pid" 2>/dev/null
         wait "$p7_probe_pid" 2>/dev/null
@@ -1045,15 +1039,10 @@ cleanup() {
                 for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
                     topic_service="${broker_admin_target%%:*}"
                     topic_broker="${broker_admin_target#*:}"
-                    if [[ "$scenario_id" == "P7-V03" ]]; then
-                        "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin deleteTopic -b "$topic_broker" -t "$topic_to_delete" -n namesrv:9876 \
-                            >>"$evidence_dir/topic-cleanup.log" 2>&1
-                    else
-                        mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-                            -Dexec.args="delete-topic $topic_broker $topic_to_delete" \
-                            exec:java@live-producer-lifecycle-probe \
-                            >>"$evidence_dir/topic-cleanup.log" 2>&1
-                    fi
+                    mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+                        -Dexec.args="delete-topic $topic_broker $topic_to_delete" \
+                        exec:java@live-producer-lifecycle-probe \
+                        >>"$evidence_dir/topic-cleanup.log" 2>&1
                     delete_status=$?
                     if ((delete_status)); then
                         status=1
@@ -1071,6 +1060,12 @@ cleanup() {
             fi
         done
     fi
+    for p7_proxy_pid in "${p7_proxy_pids[@]}"; do
+        if [[ -n "$p7_proxy_pid" ]] && kill -0 "$p7_proxy_pid" 2>/dev/null; then
+            kill "$p7_proxy_pid" 2>/dev/null
+            wait "$p7_proxy_pid" 2>/dev/null
+        fi
+    done
     ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
         COMPOSE_PROJECT_NAME="$project_name" bash "$repo_root/integration-tests/cleanup.sh" \
         >"$evidence_dir/compose-cleanup.log" 2>&1
@@ -1332,18 +1327,8 @@ if ! cargo build --locked -p rocketmq-classic-integration --bin live_client \
 fi
 
 if [[ "$scenario_id" == "P7-V03" ]]; then
-    echo "Setting both disposable Brokers read-only for deterministic retryable permission responses"
+    echo "Starting transparent response proxies for the bounded deadline phase"
     : >"$evidence_dir/broker-permission.log"
-    for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
-        topic_service="${broker_admin_target%%:*}"
-        topic_broker="${broker_admin_target#*:}"
-        if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateBrokerConfig -b "$topic_broker" -k brokerPermission -v 4 -n namesrv:9876 \
-            >>"$evidence_dir/broker-permission.log" 2>&1; then
-            cat "$evidence_dir/broker-permission.log" >&2
-            exit 1
-        fi
-    done
-
     start_p7_proxy() {
         local broker_name="$1"
         local listen_port="$2"
@@ -3256,6 +3241,19 @@ PY
     printf 'PASS P7-V04: Java and Rust each sent 20 messages in three live producer cycles and returned to zero pending requests, connections, and owned task groups after every shutdown\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P7-V03" ]]; then
+    set_p7_broker_permission() {
+        local permission="$1"
+        for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
+            local topic_service="${broker_admin_target%%:*}"
+            local topic_broker="${broker_admin_target#*:}"
+            if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateBrokerConfig -b "$topic_broker" -k brokerPermission -v "$permission" -n namesrv:9876 \
+                >>"$evidence_dir/broker-permission.log" 2>&1; then
+                cat "$evidence_dir/broker-permission.log" >&2
+                return 1
+            fi
+        done
+    }
+
     run_p7_retry_probe() {
         local language="$1"
         local mode="$2"
@@ -3297,40 +3295,42 @@ elif [[ "$scenario_id" == "P7-V03" ]]; then
             cat "$output_file" "$stderr_file" >&2 2>/dev/null || true
             return 1
         fi
+        if [[ "$mode" == "retry" ]] && ! set_p7_broker_permission 4; then
+            kill "$p7_probe_pid" 2>/dev/null || true
+            wait "$p7_probe_pid" 2>/dev/null || true
+            p7_probe_pid=""
+            return 1
+        fi
         if [[ "$mode" == "deadline" ]]; then
             : >"$evidence_dir/broker-a-proxy.delay-flag"
             : >"$evidence_dir/broker-b-proxy.delay-flag"
         fi
         : >"$go_file"
+        local probe_failed=0
         if ! wait "$p7_probe_pid"; then
-            p7_probe_pid=""
+            probe_failed=1
+        fi
+        p7_probe_pid=""
+        if [[ "$mode" == "retry" ]] && ! set_p7_broker_permission 6; then
+            probe_failed=1
+        fi
+        if ((probe_failed)); then
             cat "$output_file" "$stderr_file" >&2 2>/dev/null || true
             return 1
         fi
-        p7_probe_pid=""
         if [[ "$mode" == "deadline" ]]; then
             rm -f "$evidence_dir/broker-a-proxy.delay-flag" "$evidence_dir/broker-b-proxy.delay-flag"
             sleep $(((p7_response_delay_ms + 999) / 1000))
         fi
     }
 
-    echo "Retrying the same message across Broker permission errors and exhausting a bounded send deadline"
+    echo "Retrying cached routes across Broker permission errors and exhausting a bounded send deadline"
     for language in java rust; do
         if ! run_p7_retry_probe "$language" retry "$p7_retry_body" "$p7_retry_timeout_ms"; then
             exit 1
         fi
     done
 
-    echo "Restoring write permission before the delayed-response deadline checks"
-    for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
-        topic_service="${broker_admin_target%%:*}"
-        topic_broker="${broker_admin_target#*:}"
-        if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateBrokerConfig -b "$topic_broker" -k brokerPermission -v 6 -n namesrv:9876 \
-            >>"$evidence_dir/broker-permission.log" 2>&1; then
-            cat "$evidence_dir/broker-permission.log" >&2
-            exit 1
-        fi
-    done
     for language in java rust; do
         if ! run_p7_retry_probe "$language" deadline "$p7_deadline_body" "$p7_deadline_timeout_ms"; then
             exit 1

@@ -428,3 +428,10 @@
 - Added a `two-broker-host` published-port override for this case so local proxies bind the advertised Broker ports while forwarding to the disposable Broker ports. The existing host profile defaults are unchanged.
 - Updated P7-V03 manifest inputs, runner dispatch, evidence commands, and integration-test documentation. The phase plan files remain unchanged. Live Broker verification and clean-source evidence are pending.
 - `cargo fmt --all -- --check`, strict integration-binary Clippy (`-D warnings`), pinned Maven compile, `bash -n`, proxy Python compilation, manifest validation, Docker Compose config validation (including the P7 port override), and `git diff --check` pass. Initial checks caught a Clippy collapsible-replace warning and Java compiler API/package errors; those were corrected before this entry.
+
+## P19-04 P7-V03 first clean replay diagnostic — 2026-10-25
+
+- Clean replay `20261025T145612Z` on revision `a80019e15646769ac8a65ffa60d1e75186b455a0` failed before a send attempt. Setting brokerPermission=4 before the Producer fetched its route caused both Java and Rust clients to see no writable Message Queue. The attempted `mqadmin deleteTopic -b` cleanup also failed because this pinned command supports only cluster deletion.
+- Evidence is retained at `docs/compatibility/evidence/phase-19/P7-V03/20261025T145612Z/` (`source_code_dirty=false`, exit 1, duration 79 seconds). The Compose cleanup removed both Brokers, the NameServer, volumes, and network; filtered Docker queries returned no project resources.
+- Updated the runner so each client fetches both writable routes first, then the runner toggles both disposable Brokers read-only while that client sends and restores write permission before starting the next client. P7 topic cleanup now uses the host-routed proxies and the established Java delete-topic probe; proxies stay alive until topic cleanup is complete.
+- A second clean-source replay is pending after the corrective runner commit.
