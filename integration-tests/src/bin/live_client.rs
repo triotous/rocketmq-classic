@@ -75,6 +75,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("p5-extension-consume") if arguments.len() == 4 => {
             p5_extensions(&arguments[1], &arguments[2], &arguments[3], false).await
         }
+        Some("p5-extension-lite-pop") if arguments.len() == 4 => {
+            p5_extension_lite_pop(&arguments[1], &arguments[2], &arguments[3]).await
+        }
         Some("p13-pop-consume") if arguments.len() == 4 => {
             p13_pop_consume(&arguments[1], &arguments[2], &arguments[3]).await
         }
@@ -217,7 +220,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume|p5-extension-lite-pop <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -1995,6 +1998,34 @@ fn p13_pop_offset_info(
             .collect();
     }
     Err(format!("POP {field_name} omitted retry 0 queue {queue_id}").into())
+}
+
+async fn p5_extension_lite_pop(
+    broker_address: &str,
+    topic: &str,
+    group_prefix: &str,
+) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    if let Err(error) = remoting.start() {
+        remoting.shutdown().await;
+        return Err(error.into());
+    }
+    let api = MQClientApi::new(remoting.clone());
+    let client_id = format!("compat-p5-rust-{group_prefix}");
+    let lite_group = format!("{group_prefix}_lite");
+    let operation = async {
+        let lite =
+            p5_extension_pop(&api, broker_address, topic, &lite_group, &client_id, true).await?;
+        require_pop_body(&lite.0, "p5-extension-lite", "POP-LITE")?;
+        println!(
+            "P5E\tpop-lite\tFOUND\t{}",
+            encode_hex(lite.0[0].body().as_ref())
+        );
+        Ok::<(), Box<dyn Error>>(())
+    }
+    .await;
+    remoting.shutdown().await;
+    operation
 }
 
 async fn p5_extensions(

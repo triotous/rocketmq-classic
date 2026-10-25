@@ -39,7 +39,7 @@ public final class LiveP5ExtensionsProbe {
     public static void main(String[] args) throws Exception {
         if (args.length != 4) {
             throw new IllegalArgumentException(
-                "usage: LiveP5ExtensionsProbe prepare|consume <broker-address> <topic> <group-prefix>");
+                "usage: LiveP5ExtensionsProbe prepare|consume|lite-pop <broker-address> <topic> <group-prefix>");
         }
         String mode = args[0];
         String brokerAddress = args[1];
@@ -54,6 +54,8 @@ public final class LiveP5ExtensionsProbe {
                 prepare(api, brokerAddress, topic, groupPrefix);
             } else if ("consume".equals(mode)) {
                 consume(api, brokerAddress, topic, groupPrefix);
+            } else if ("lite-pop".equals(mode)) {
+                litePop(api, brokerAddress, topic, groupPrefix);
             } else {
                 throw new IllegalArgumentException("unknown mode: " + mode);
             }
@@ -109,6 +111,14 @@ public final class LiveP5ExtensionsProbe {
 
         api.unregisterClient(brokerAddress, clientId, null, baseGroup, 10_000);
         System.out.println("P5E\tunregister\tOK");
+    }
+
+    private static void litePop(MQClientAPIExt api, String brokerAddress, String topic,
+        String groupPrefix) throws Exception {
+        String clientId = "compat-p5-java-" + groupPrefix;
+        MessageExt lite = pop(api, brokerAddress, topic, groupPrefix + "_lite", clientId, true,
+            "p5-extension-lite");
+        System.out.printf("P5E\tpop-lite\tFOUND\t%s%n", hex(lite.getBody()));
     }
 
     private static void consume(MQClientAPIExt api, String brokerAddress, String topic,

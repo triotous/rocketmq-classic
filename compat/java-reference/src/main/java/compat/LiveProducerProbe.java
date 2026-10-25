@@ -37,6 +37,10 @@ public final class LiveProducerProbe {
             send(args[1], args[2], args[3]);
             return;
         }
+        if (args.length == 5 && "send-lite".equals(args[0])) {
+            sendLite(args[1], args[2], args[3], args[4]);
+            return;
+        }
         if (args.length == 7 && "timeout-send".equals(args[0])) {
             timeoutSend(args[1], args[2], args[3], args[4], Integer.parseInt(args[5]), args[6]);
             return;
@@ -62,7 +66,7 @@ public final class LiveProducerProbe {
             return;
         }
         throw new IllegalArgumentException(
-            "usage: LiveProducerProbe send|async-send <broker-address> <topic> <body> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids>");
+            "usage: LiveProducerProbe send|send-lite|async-send <broker-address> <topic> <body> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids>");
     }
 
     private static MQClientAPIImpl newApi() {
@@ -72,10 +76,21 @@ public final class LiveProducerProbe {
     }
 
     private static void send(String brokerAddress, String topic, String body) throws Exception {
+        send(brokerAddress, topic, null, body);
+    }
+
+    private static void sendLite(String brokerAddress, String topic, String liteTopic, String body) throws Exception {
+        send(brokerAddress, topic, liteTopic, body);
+    }
+
+    private static void send(String brokerAddress, String topic, String liteTopic, String body) throws Exception {
         MQClientAPIImpl api = newApi();
         api.start();
         try {
             Message message = new Message(topic, body.getBytes(StandardCharsets.UTF_8));
+            if (liteTopic != null) {
+                MessageAccessor.putProperty(message, MessageConst.PROPERTY_LITE_TOPIC, liteTopic);
+            }
             SendMessageRequestHeader header = new SendMessageRequestHeader();
             header.setProducerGroup("compat_phase0");
             header.setTopic(topic);

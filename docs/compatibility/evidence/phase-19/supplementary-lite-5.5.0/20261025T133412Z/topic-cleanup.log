@@ -1,0 +1,4 @@
+delete topic [%LMQ%compat_p5_lite_supplementary%entries] from cluster [RocketMQLocalTest] success.
+delete topic [%LMQ%compat_p5_lite_supplementary%entries] from NameServer success.
+delete topic [compat_p5_lite_supplementary] from cluster [RocketMQLocalTest] success.
+delete topic [compat_p5_lite_supplementary] from NameServer success.

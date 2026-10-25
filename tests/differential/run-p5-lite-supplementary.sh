@@ -9,7 +9,7 @@ run_slug="$(printf '%s' "$run_id" | tr '[:upper:]' '[:lower:]')"
 project_name="rocketmq-classic-p19-lite-supplementary-$run_slug"
 topic="compat_p5_lite_supplementary"
 group="compat_p5_lite_supplementary"
-lite_topic="%LMQ%${topic}%entries"
+lite_topic="%LMQ%$"${topic}"$entries"
 repo_commit="$(git -C "$repo_root" rev-parse HEAD)"
 evidence_dir="$repo_root/docs/compatibility/evidence/phase-19/supplementary-lite-5.5.0/$run_id"
 namesrv_port="${ROCKETMQ_SUPPLEMENTARY_NAMESRV_PORT:-29876}"
@@ -54,10 +54,10 @@ broker_addr="127.0.0.1:$broker_port"
 cat >"$evidence_dir/commands.txt" <<COMMANDS
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_SUPPLEMENTARY_NAMESRV_PORT=$namesrv_port ROCKETMQ_SUPPLEMENTARY_BROKER_PORT=$broker_port COMPOSE_PROJECT_NAME=$project_name docker compose --project-name $project_name --file integration-tests/compose-lite-5.5.0.yaml up --detach --wait --wait-timeout 180
 mqadmin clusterList -n namesrv:9876
-mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
-mqadmin updateTopic -c RocketMQLocalTest -t $lite_topic -r 1 -w 1 -n namesrv:9876
-Java 5.5.1 live-p5-extensions-probe prepare and consume
-Rust live_client p5-extension-prepare and p5-extension-consume
+mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -a +message.type=LITE -n namesrv:9876
+Java 5.5.1 live-p5-extensions-probe prepare and lite-pop
+Rust live_client p5-extension-prepare and p5-extension-lite-pop
+Java send-lite parent-topic entries p5-extension-lite
 mqadmin deleteTopic -c RocketMQLocalTest -t $lite_topic -n namesrv:9876
 mqadmin deleteTopic -c RocketMQLocalTest -t $topic -n namesrv:9876
 docker compose --project-name $project_name --file integration-tests/compose-lite-5.5.0.yaml down --volumes --remove-orphans
@@ -67,6 +67,7 @@ source_code_dirty=true
 if [[ -z "$(git -C "$repo_root" status --porcelain -- \
     compat/java-reference/pom.xml \
     compat/java-reference/src/main/java/compat/LiveP5ExtensionsProbe.java \
+    compat/java-reference/src/main/java/compat/LiveProducerProbe.java \
     integration-tests/src/bin/live_client.rs \
     integration-tests/compose-lite-5.5.0.yaml \
     tests/differential/run-p5-lite-supplementary.sh)" ]]; then
@@ -76,7 +77,7 @@ fi
     printf 'scenario=P5-V02-extensions-lite-success\nprofile=supplementary-lite-5.5.0\nproject=%s\nrun_id=%s\n' "$project_name" "$run_id"
     printf 'java_client=5.5.1\nserver=5.5.0\nserver_image=%s\nsource_revision=%s\nsource_code_dirty=%s\n' \
         "$image_ref" "$repo_commit" "$source_code_dirty"
-    printf 'topic=%s\nlite_topic=%s\nconsumer_group_prefix=%s\nmethods=lite-subscription,pop-lite\n' \
+    printf 'topic=%s\nlite_topic=%s\nconsumer_group_prefix=%s\nmethods=heartbeat,heartbeat-v2,assignment,request-mode,lite-subscription,pop-lite,unregister\n' \
         "$topic" "$lite_topic" "$group"
 } >"$evidence_dir/metadata.txt"
 if ! cargo build --locked --offline -p rocketmq-classic-integration --bin live_client \
@@ -187,23 +188,17 @@ if [[ "$registered" != true ]] || ! rg -q 'V5_5_0' "$evidence_dir/server-version
     exit 1
 fi
 
-echo "Creating the parent and Lite topics and isolated client groups"
+echo "Creating a LITE parent topic and isolated client groups"
 topic_created=true
 if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateTopic -c RocketMQLocalTest \
-    -t "$topic" -r 1 -w 1 -n namesrv:9876 >"$evidence_dir/topic-create.log" 2>&1; then
-    cat "$evidence_dir/topic-create.log" >&2
-    status=1
-    exit 1
-fi
-if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateTopic -c RocketMQLocalTest \
-    -t "$lite_topic" -r 1 -w 1 -n namesrv:9876 >>"$evidence_dir/topic-create.log" 2>&1; then
+    -t "$topic" -r 1 -w 1 -a '+message.type=LITE' -n namesrv:9876 >"$evidence_dir/topic-create.log" 2>&1; then
     cat "$evidence_dir/topic-create.log" >&2
     status=1
     exit 1
 fi
 : >"$evidence_dir/group-create.log"
 for language in java rust; do
-    for suffix in base lite pop ack batch_ack change; do
+    for suffix in base lite; do
         "${compose[@]}" exec --no-TTY broker ./mqadmin updateSubGroup -c RocketMQLocalTest \
             -g "${group}_${language}_${suffix}" -n namesrv:9876 >>"$evidence_dir/group-create.log" 2>&1 || {
             cat "$evidence_dir/group-create.log" >&2
@@ -227,29 +222,22 @@ mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
         exit 1
     }
 mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-    -Dexec.args="send $broker_addr $topic p5-extension-seed" \
-    exec:java@live-producer-probe >"$evidence_dir/java-parent-seed.tsv" 2>"$evidence_dir/java-parent-seed.stderr" || {
-        cat "$evidence_dir/java-parent-seed.stderr" >&2
-        status=1
-        exit 1
-    }
-mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-    -Dexec.args="send $broker_addr $lite_topic p5-extension-lite" \
+    -Dexec.args="send-lite $broker_addr $topic entries p5-extension-lite" \
     exec:java@live-producer-probe >"$evidence_dir/java-lite-seed.tsv" 2>"$evidence_dir/java-lite-seed.stderr" || {
         cat "$evidence_dir/java-lite-seed.stderr" >&2
         status=1
         exit 1
     }
 mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-    -Dexec.args="consume $broker_addr $topic ${group}_java" \
-    exec:java@live-p5-extensions-probe >"$evidence_dir/java-consume.tsv" 2>"$evidence_dir/java-consume.stderr" || {
-        cat "$evidence_dir/java-consume.stderr" >&2
+    -Dexec.args="lite-pop $broker_addr $topic ${group}_java" \
+    exec:java@live-p5-extensions-probe >"$evidence_dir/java-lite-pop.tsv" 2>"$evidence_dir/java-lite-pop.stderr" || {
+        cat "$evidence_dir/java-lite-pop.stderr" >&2
         status=1
         exit 1
     }
-"$repo_root/target/debug/live_client" p5-extension-consume "$broker_addr" "$topic" "${group}_rust" \
-    >"$evidence_dir/rust-consume.tsv" 2>"$evidence_dir/rust-consume.stderr" || {
-        cat "$evidence_dir/rust-consume.stderr" >&2
+"$repo_root/target/debug/live_client" p5-extension-lite-pop "$broker_addr" "$topic" "${group}_rust" \
+    >"$evidence_dir/rust-lite-pop.tsv" 2>"$evidence_dir/rust-lite-pop.stderr" || {
+        cat "$evidence_dir/rust-lite-pop.stderr" >&2
         status=1
         exit 1
     }
@@ -261,13 +249,13 @@ from pathlib import Path
 root = Path(sys.argv[1])
 methods = {
     "heartbeat", "heartbeat-v2", "unregister", "assignment", "request-mode",
-    "lite-subscription", "pop", "pop-lite", "ack", "batch-ack", "change-invisible-time",
+    "lite-subscription", "pop-lite",
 }
-expected_bodies = {"pop": b"p5-extension-seed".hex(), "pop-lite": b"p5-extension-lite".hex()}
+expected_lite_body = b"p5-extension-lite".hex()
 
 def read(prefix):
     rows = {}
-    for path in (root / f"{prefix}-prepare.tsv", root / f"{prefix}-consume.tsv"):
+    for path in (root / f"{prefix}-prepare.tsv", root / f"{prefix}-lite-pop.tsv"):
         for line in path.read_text().splitlines():
             fields = line.split("\t")
             if len(fields) < 3 or fields[0] != "P5E" or fields[1] not in methods:
@@ -277,17 +265,10 @@ def read(prefix):
             rows[fields[1]] = fields[2:]
     if set(rows) != methods:
         raise SystemExit(f"{prefix}: missing methods {sorted(methods - set(rows))}")
-    if rows["lite-subscription"] != ["OK"] or rows["pop-lite"] != ["FOUND", expected_bodies["pop-lite"]]:
+    if rows["lite-subscription"] != ["OK"] or rows["pop-lite"] != ["FOUND", expected_lite_body]:
         raise SystemExit(f"{prefix}: Lite success path failed: {rows!r}")
     if rows["request-mode"] != ["OK"] or rows["unregister"] != ["OK"]:
         raise SystemExit(f"{prefix}: synchronous operation failed: {rows!r}")
-    for name, body in expected_bodies.items():
-        if rows[name] != ["FOUND", body]:
-            raise SystemExit(f"{prefix}: {name} did not match seeded message: {rows[name]!r}")
-    if rows["ack"] != ["OK"] or rows["batch-ack"] != ["OK"]:
-        raise SystemExit(f"{prefix}: ACK operation failed: {rows!r}")
-    if rows["change-invisible-time"] != ["OK", "METADATA"]:
-        raise SystemExit(f"{prefix}: invisibility change failed: {rows!r}")
     return rows
 
 java = read("java")

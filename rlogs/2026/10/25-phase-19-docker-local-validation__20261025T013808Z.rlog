@@ -296,3 +296,8 @@
 ## P19-05 supplementary Lite body-seed correction — 2026-10-25
 
 - Run `20261025T133109Z` confirmed Broker `V5_5_0`, and both Java and Rust prepare probes matched successful heartbeat, assignment, request-mode, and Lite subscription registration. Parent and Lite seed sends also returned `SEND_OK`. Java's POP guard then rejected the parent seed body because the supplementary script used a new body while the shared probe expects `p5-extension-seed`; Lite POP did not run. The cleanup removed the topics and isolated Compose resources. Updated the supplementary parent seed to the probe's expected value; the next clean run will also verify the Lite POP body.
+
+## P19-05 supplementary Lite request-model correction — 2026-10-25
+
+- Run `20261025T133412Z` matched Java/Rust successful Lite subscription registration and seeded both parent and internal LMQ messages, but Lite POP on the internal `%LMQ%...%entries` name returned Broker code 29. Inspection of the unmodified 5.5.0 source shows Lite POP takes the parent topic and requires that parent topic's message type be `LITE`; Lite publishing supplies `MessageConst.PROPERTY_LITE_TOPIC` on a send to the parent, which the Broker maps to `%LMQ%$<parent>$<lite>`.
+- Added a Java `send-lite` fixture path that follows this Broker contract, set the supplementary parent topic type to LITE, and added Java/Rust focused Lite POP probes that use the parent topic. The 5.3.4 baseline runner and manifest remain unchanged. `cargo fmt --all`, scoped offline `cargo check`, offline Maven compile, shell syntax, and supplementary Compose config validation pass. A new clean-source run is next.
