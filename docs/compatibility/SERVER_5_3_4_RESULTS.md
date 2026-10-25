@@ -53,9 +53,9 @@ stress behavior.
 
 ## Pending local server coverage
 
-The scenario manifest contains 37 live cases. The seven rows above and four
-consumer rows in the committed-revision table below are implemented and passed
-by the current runner; 26 remain pending.
+The scenario manifest contains 37 live cases. The seven rows above, four
+consumer rows, and the P5 route row below are implemented and passed by the
+current runner; 25 remain pending.
 The two-Broker, TLS, ACL, and feature-specific profiles and full local matrix
 are not complete. No server limitation is inferred from an unrun case. Phase 19
 acceptance remains open until each locally reproducible case has Java/Rust
@@ -105,3 +105,13 @@ also exposed that direct pulls need the Java `PullSysFlag` subscription bit;
 the probe now uses the same flag in Java and Rust. Neither diagnostic run is
 used as a passing manifest result. The 26 remaining live cases still prevent
 full Phase 19 acceptance.
+
+## P5 existing and missing topic routes — 2026-10-25
+
+`P5-V02-route` passed on committed revision
+`6300029907b78a03cb1276a434393972330bdf0d` with
+`source_code_dirty=false`. Java and Rust matched four route rows for
+`compat_p5_route` and both returned `NO_ROUTE` for `compat_p5_missing`. The
+scenario-owned topic and Compose project were cleaned after evidence capture:
+[`20261025T081906Z`](evidence/phase-19/P5-V02-route/20261025T081906Z/).
+The remaining 25 cases still prevent full Phase 19 acceptance.

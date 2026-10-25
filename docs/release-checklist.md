@@ -10439,14 +10439,15 @@ the fixture fix commit. Details: `rlogs/2026/10/25-phase-18-timeout-fixture-dete
 
 Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z.rlog`.
 
-## P19 basic consumer coverage addendum — 2026-10-25 (`cb351d8a`)
+## P19 basic Broker coverage addendum — 2026-10-25 (`cb351d8a`)
 
 - [x] Added Java 5.5.1 and Rust direct probes for consumer-offset query/update
   and pull requests. Four fresh basic-profile runs pass with clean committed
   source evidence: reciprocal offsets, a `FOUND` pull with exact response-body
   comparison, and an empty `NO_NEW_MSG` pull. Evidence IDs are recorded in
   `docs/compatibility/SERVER_5_3_4_RESULTS.md`.
-- [ ] P19-03/P19-V02 remains blocked: 26 of 37 live cases still lack runners.
+- At `cb351d8a`, P19-03/P19-V02 remained blocked: 26 of 37 live cases lacked
+  runners.
   The two-Broker, TLS/auth, transaction, request/reply, admin, stress and broad
   P18-V01 audit work remains incomplete. MAN-01 through MAN-05 remain blocked,
   and remote Docker CI has not run.
@@ -10454,3 +10455,9 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   server-free gates passed; the final coverage check returned `BLOCKED` with
   26 missing live scenarios and started no Docker resources. Evidence:
   `docs/compatibility/evidence/phase-19/run-local/20261025T080256Z/`.
+- [x] Added `P5-V02-route` on `63000299`. Java and Rust matched both the
+  existing four-queue route and the missing-topic result on a fresh basic
+  profile; clean evidence is linked in
+  `docs/compatibility/SERVER_5_3_4_RESULTS.md`. Live coverage is now 12/37;
+  25 remain pending. The full local gates have not yet been rerun after this
+  runner addition.

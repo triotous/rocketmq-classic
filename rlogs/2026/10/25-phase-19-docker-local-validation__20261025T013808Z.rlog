@@ -47,3 +47,8 @@
 - The final coverage gate returned `BLOCKED`, enumerated all 26 missing live scenario IDs, and started no Docker resources. Evidence: `docs/compatibility/evidence/phase-19/run-local/20261025T080256Z/`.
 - No Phase 19 Compose resources remain. The current live status is 11/37 passing with 26 still pending; MAN-01 through MAN-05, broad P18-V01, full profile matrix, and remote Docker CI remain open.
 - Follow-up evidence retention: the `*.log` files produced by `run-local.sh` are ignored by the repository-wide `*.log` rule. They were explicitly force-added after the summary commit so the archived record contains all 19 gate logs plus the 26-ID coverage log; the run-local finish hook redacted repository/home paths in those files.
+
+## P5 route case — 2026-10-25 (`63000299`)
+
+- Implemented `P5-V02-route` using the existing Java/Rust route probes. A fresh basic-profile run created only `compat_p5_route`, compared both clients' four broker-a queues, compared both clients' `NO_ROUTE` result for `compat_p5_missing`, and cleaned the owned topic/project. Clean rerun evidence `20261025T081906Z` records revision `6300029907b78a03cb1276a434393972330bdf0d`, `source_code_dirty=false`, exit status 0.
+- Live coverage is now 12/37 passing and 25 pending. Full `run-local.sh --all` gates passed at `70e9a4d8` before this runner addition; they have not yet been rerun on `63000299`.

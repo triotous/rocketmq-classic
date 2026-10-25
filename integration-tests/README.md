@@ -83,8 +83,9 @@ bidirectional cross-language Broker readback.
 It deletes any owned topic and tears down only that project. Toolchain,
 configuration, output, and cleanup evidence is stored under
 `docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
-after comparison and cleanup both succeed. The runner implements 11 of 37
-cases and all 11 have passed: the two route cases, `HEARTBEAT-001`,
+after comparison and cleanup both succeed. The runner implements 12 of 37
+cases and all 12 have passed: the two Phase 0 route cases, `P5-V02-route`,
+`HEARTBEAT-001`,
 `PROD-001-sync-send` through `PROD-004-batch-send`, and
 `CONS-001-query-offset` through `CONS-004-update-offset`.
 `--phase N` and `--all` fail closed when any selected case has no runner.
@@ -103,6 +104,6 @@ It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
 produce a `BLOCKED` result with the missing IDs in the archived log; the full
 matrix cannot report success until all IDs have passing evidence. Currently
-11 of 37 live cases have runners; the other 26, the two-Broker/TLS/ACL/
+12 of 37 live cases have runners; the other 25, the two-Broker/TLS/ACL/
 feature profiles, and the full `run-local.sh --all` pass remain pending.
 Starting the basic profile by itself does not mark a scenario passed.
