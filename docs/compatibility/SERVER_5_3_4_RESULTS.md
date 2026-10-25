@@ -331,3 +331,12 @@ mismatch; the next probe will use the route-aware queue selector. Evidence is
 under [`20261025T122129Z`](evidence/phase-19/P13-V02/20261025T122129Z/).
 All runs removed the topic and isolated Compose resources. The manifest remains
 pending and coverage remains 25/37, with 12 cases pending.
+
+The clean-source retry `20261025T122748Z` on `e2c71402` used a Java
+route-aware producer selector and the host-mapped Broker address. Queue 0
+passed its send and max-offset checks. Queue 1 returned `SEND_OK` with queue ID
+1 and offset 0, but the immediate max-offset query was still 0, so the seed
+guard stopped before POP. No lifecycle assertion passed and Rust consumption
+did not run. The runner removed the topic and Compose resources. Evidence is
+under [`20261025T122748Z`](evidence/phase-19/P13-V02/20261025T122748Z/). The
+next attempt will allow the Broker's max-offset view to catch up after send.

@@ -1,0 +1,14 @@
+Run: 20261025T122748Z
+Source revision: e2c71402dda000d8670ed8d443edb521e8725cb7 (clean source)
+Exit status: 1
+
+The Java route-aware producer selected broker-a queue 0 and received SEND_OK
+at queue offset 0; the immediate max-offset query returned 1. It then selected
+broker-a queue 1 and received SEND_OK at queue offset 0, but the immediate
+max-offset query returned 0. The seed guard stopped on that visibility check
+before starting POP. No P13-V02 lifecycle assertion passed and Rust lifecycle
+consumption did not run.
+
+The runner deleted the scenario topic and removed both isolated Brokers, the
+Compose network, and the project volumes. The next attempt will poll the
+Broker max offset briefly after each successful send before proceeding.

@@ -10702,6 +10702,10 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   lifecycle result passed; the P13 manifest row remains pending while seed
   routing and the live POP exchange are corrected. Diagnostic evidence is under
   `docs/compatibility/evidence/phase-19/P13-V02/`.
+- [ ] Route-aware retry `20261025T122748Z` sent to queues 0 and 1; queue 0's
+  max offset advanced, but queue 1's immediate max-offset read still returned
+  zero after `SEND_OK`. The run stopped before POP and cleaned the isolated
+  resources. The next attempt will wait for Broker offset visibility.
 - [x] The runner deleted the scenario topic and removed its isolated
   two-Broker containers, network, and volumes. Coverage remains 25/37 PASS
   with 12 Phase 19 scenarios pending.
