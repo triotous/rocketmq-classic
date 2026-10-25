@@ -790,122 +790,6 @@ mvn -q -f compat/java-reference/pom.xml -Dexec.args="send $broker_addr %LMQ%${to
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="consume $broker_addr $topic ${consumer_group}_java" exec:java@live-p5-extensions-probe
 target/debug/live_client p5-extension-consume $broker_addr $topic ${consumer_group}_rust
 EOF
-elif [[ "$scenario_id" == "P10-V03" ]]; then
-    p10_ready_file="$evidence_dir/rust-ready"
-    p10_failure_go_file="$evidence_dir/seed-failure"
-    echo "Seeding Java success/partial messages, then exercising the bounded Push retry and DLQ path"
-    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-        -Dexec.args="seed-p10 $namesrv_addr $topic initial" exec:java@live-high-level-producer-probe \
-        >"$evidence_dir/java-p10-initial-seed.tsv" 2>"$evidence_dir/java-p10-initial-seed.stderr"; then
-        cat "$evidence_dir/java-p10-initial-seed.tsv" "$evidence_dir/java-p10-initial-seed.stderr" 2>/dev/null >&2 || true
-        exit 1
-    fi
-    rm -f "$p10_ready_file" "$p10_failure_go_file"
-    "$repo_root/target/debug/live_client" p10-push "$namesrv_addr" "$topic" "$consumer_group" \
-        "$p10_ready_file" "$p10_failure_go_file" \
-        >"$evidence_dir/rust-p10-push.tsv" 2>"$evidence_dir/rust-p10-push.stderr" &
-    p10_probe_pid="$!"
-    for _ in {1..1000}; do
-        if [[ -s "$p10_ready_file" ]]; then
-            break
-        fi
-        if ! kill -0 "$p10_probe_pid" 2>/dev/null; then
-            wait "$p10_probe_pid" 2>/dev/null || true
-            p10_probe_pid=""
-            cat "$evidence_dir/rust-p10-push.tsv" "$evidence_dir/rust-p10-push.stderr" 2>/dev/null >&2 || true
-            exit 1
-        fi
-        sleep 0.1
-    done
-    if [[ ! -s "$p10_ready_file" ]]; then
-        echo "Rust Push listener did not acknowledge the recovered partial batch" >&2
-        kill "$p10_probe_pid" 2>/dev/null || true
-        wait "$p10_probe_pid" 2>/dev/null || true
-        p10_probe_pid=""
-        cat "$evidence_dir/rust-p10-push.tsv" "$evidence_dir/rust-p10-push.stderr" 2>/dev/null >&2 || true
-        exit 1
-    fi
-    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-        -Dexec.args="seed-p10 $namesrv_addr $topic failure" exec:java@live-high-level-producer-probe \
-        >"$evidence_dir/java-p10-failure-seed.tsv" 2>"$evidence_dir/java-p10-failure-seed.stderr"; then
-        cat "$evidence_dir/java-p10-failure-seed.tsv" "$evidence_dir/java-p10-failure-seed.stderr" 2>/dev/null >&2 || true
-        exit 1
-    fi
-    : >"$p10_failure_go_file"
-    if ! wait "$p10_probe_pid"; then
-        p10_probe_pid=""
-        cat "$evidence_dir/rust-p10-push.tsv" "$evidence_dir/rust-p10-push.stderr" 2>/dev/null >&2 || true
-        exit 1
-    fi
-    p10_probe_pid=""
-    if ! python3 - "$evidence_dir" "$topic" "$consumer_group" "$p10_retry_max_times" <<'PY'
-import sys
-from pathlib import Path
-
-root = Path(sys.argv[1])
-topic = sys.argv[2]
-group = sys.argv[3]
-retry_limit = int(sys.argv[4])
-
-def rows(name, prefix):
-    result = []
-    for line in (root / name).read_text().splitlines():
-        fields = line.split("\t")
-        if fields[:len(prefix)] == prefix:
-            result.append(fields)
-    return result
-
-initial = rows("java-p10-initial-seed.tsv", ["P10", "PRODUCED"])
-expected_initial = [
-    ["P10", "PRODUCED", "initial", "p10-success", "p10-success-key", "broker-a", "0"],
-    ["P10", "PRODUCED", "initial", "p10-partial-ack", "p10-partial-ack-key", "broker-a", "0"],
-    ["P10", "PRODUCED", "initial", "p10-partial-retry", "p10-partial-retry-key", "broker-a", "0"],
-]
-if initial != expected_initial:
-    raise SystemExit(f"Java initial P10 seed rows differ: {initial!r}")
-failure_seed = rows("java-p10-failure-seed.tsv", ["P10", "PRODUCED"])
-expected_failure = [["P10", "PRODUCED", "failure", "p10-failure-dlq", "p10-failure-dlq-key", "broker-a", "0"]]
-if failure_seed != expected_failure:
-    raise SystemExit(f"Java P10 failure seed row differs: {failure_seed!r}")
-
-observed = rows("rust-p10-push.tsv", ["P10", "CALLBACK"])
-counts = {}
-for row in observed:
-    if len(row) != 5:
-        raise SystemExit(f"malformed Rust Push callback row: {row!r}")
-    counts.setdefault(row[2], []).append(int(row[3]))
-expected_counts = {
-    "p10-success": [0],
-    "p10-partial-ack": [0],
-    "p10-partial-retry": [0, 1],
-    "p10-failure-dlq": [0, 1],
-}
-if counts != expected_counts:
-    raise SystemExit(f"Push callback/retry counts differ: {counts!r}")
-if rows("rust-p10-push.tsv", ["P10", "READY"]) != [["P10", "READY", "FIXED", "broker-a", "0"]]:
-    raise SystemExit("test-only fixed assignment was not pinned to broker-a queue 0")
-partial = rows("rust-p10-push.tsv", ["P10", "BATCH", "PARTIAL"])
-if partial != [["P10", "BATCH", "PARTIAL", "p10-success,p10-partial-ack,p10-partial-retry", "0,0,0", "1"]]:
-    raise SystemExit(f"partial acknowledgement boundary differs: {partial!r}")
-recovered = rows("rust-p10-push.tsv", ["P10", "BATCH", "SUCCESS"])
-if [row[3:5] for row in recovered] != [["p10-partial-retry", "1"]]:
-    raise SystemExit(f"recovered partial message was not acknowledged: {recovered!r}")
-failures = rows("rust-p10-push.tsv", ["P10", "BATCH", "RECONSUME_LATER"])
-if [row[3:5] for row in failures] != [["p10-failure-dlq", "0"], ["p10-failure-dlq", "1"]]:
-    raise SystemExit(f"failure callbacks did not exhaust exactly one retry: {failures!r}")
-dlq = rows("rust-p10-push.tsv", ["P10", "DLQ"])
-expected_dlq_topic = f"%DLQ%{group}"
-if dlq != [["P10", "DLQ", expected_dlq_topic, "p10-failure-dlq", str(retry_limit), "p10-failure-dlq-key"]]:
-    raise SystemExit(f"configured DLQ result differs: {dlq!r}")
-if rows("rust-p10-push.tsv", ["P10", "PASS"]) != [["P10", "PASS", "LISTENER_SUCCESS_PARTIAL_FAILURE", "RETRIES=1", "DLQ=FOUND"]]:
-    raise SystemExit("Rust Push consumer did not report the complete P10 result")
-PY
-    then
-        echo "P10-V03 listener, retry count, or DLQ assertions failed" >&2
-        exit 1
-    fi
-    printf 'PASS P10-V03: Java messages exercised Rust Push success, partial acknowledgement and failure; one retry reached the configured DLQ with matching body and key\n' \
-        | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P13-V02" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
@@ -2249,6 +2133,122 @@ PY
         exit 1
     fi
     printf 'PASS P5-V02-extensions: Java and Rust matched heartbeat, assignment, request-mode, Lite subscription, POP, ACK, and invisibility-change results\n' \
+        | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "P10-V03" ]]; then
+    p10_ready_file="$evidence_dir/rust-ready"
+    p10_failure_go_file="$evidence_dir/seed-failure"
+    echo "Seeding Java success/partial messages, then exercising the bounded Push retry and DLQ path"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="seed-p10 $namesrv_addr $topic initial" exec:java@live-high-level-producer-probe \
+        >"$evidence_dir/java-p10-initial-seed.tsv" 2>"$evidence_dir/java-p10-initial-seed.stderr"; then
+        cat "$evidence_dir/java-p10-initial-seed.tsv" "$evidence_dir/java-p10-initial-seed.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    rm -f "$p10_ready_file" "$p10_failure_go_file"
+    "$repo_root/target/debug/live_client" p10-push "$namesrv_addr" "$topic" "$consumer_group" \
+        "$p10_ready_file" "$p10_failure_go_file" \
+        >"$evidence_dir/rust-p10-push.tsv" 2>"$evidence_dir/rust-p10-push.stderr" &
+    p10_probe_pid="$!"
+    for _ in {1..1000}; do
+        if [[ -s "$p10_ready_file" ]]; then
+            break
+        fi
+        if ! kill -0 "$p10_probe_pid" 2>/dev/null; then
+            wait "$p10_probe_pid" 2>/dev/null || true
+            p10_probe_pid=""
+            cat "$evidence_dir/rust-p10-push.tsv" "$evidence_dir/rust-p10-push.stderr" 2>/dev/null >&2 || true
+            exit 1
+        fi
+        sleep 0.1
+    done
+    if [[ ! -s "$p10_ready_file" ]]; then
+        echo "Rust Push listener did not acknowledge the recovered partial batch" >&2
+        kill "$p10_probe_pid" 2>/dev/null || true
+        wait "$p10_probe_pid" 2>/dev/null || true
+        p10_probe_pid=""
+        cat "$evidence_dir/rust-p10-push.tsv" "$evidence_dir/rust-p10-push.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="seed-p10 $namesrv_addr $topic failure" exec:java@live-high-level-producer-probe \
+        >"$evidence_dir/java-p10-failure-seed.tsv" 2>"$evidence_dir/java-p10-failure-seed.stderr"; then
+        cat "$evidence_dir/java-p10-failure-seed.tsv" "$evidence_dir/java-p10-failure-seed.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    : >"$p10_failure_go_file"
+    if ! wait "$p10_probe_pid"; then
+        p10_probe_pid=""
+        cat "$evidence_dir/rust-p10-push.tsv" "$evidence_dir/rust-p10-push.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    p10_probe_pid=""
+    if ! python3 - "$evidence_dir" "$topic" "$consumer_group" "$p10_retry_max_times" <<'PY'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+topic = sys.argv[2]
+group = sys.argv[3]
+retry_limit = int(sys.argv[4])
+
+def rows(name, prefix):
+    result = []
+    for line in (root / name).read_text().splitlines():
+        fields = line.split("\t")
+        if fields[:len(prefix)] == prefix:
+            result.append(fields)
+    return result
+
+initial = rows("java-p10-initial-seed.tsv", ["P10", "PRODUCED"])
+expected_initial = [
+    ["P10", "PRODUCED", "initial", "p10-success", "p10-success-key", "broker-a", "0"],
+    ["P10", "PRODUCED", "initial", "p10-partial-ack", "p10-partial-ack-key", "broker-a", "0"],
+    ["P10", "PRODUCED", "initial", "p10-partial-retry", "p10-partial-retry-key", "broker-a", "0"],
+]
+if initial != expected_initial:
+    raise SystemExit(f"Java initial P10 seed rows differ: {initial!r}")
+failure_seed = rows("java-p10-failure-seed.tsv", ["P10", "PRODUCED"])
+expected_failure = [["P10", "PRODUCED", "failure", "p10-failure-dlq", "p10-failure-dlq-key", "broker-a", "0"]]
+if failure_seed != expected_failure:
+    raise SystemExit(f"Java P10 failure seed row differs: {failure_seed!r}")
+
+observed = rows("rust-p10-push.tsv", ["P10", "CALLBACK"])
+counts = {}
+for row in observed:
+    if len(row) != 5:
+        raise SystemExit(f"malformed Rust Push callback row: {row!r}")
+    counts.setdefault(row[2], []).append(int(row[3]))
+expected_counts = {
+    "p10-success": [0],
+    "p10-partial-ack": [0],
+    "p10-partial-retry": [0, 1],
+    "p10-failure-dlq": [0, 1],
+}
+if counts != expected_counts:
+    raise SystemExit(f"Push callback/retry counts differ: {counts!r}")
+if rows("rust-p10-push.tsv", ["P10", "READY"]) != [["P10", "READY", "FIXED", "broker-a", "0"]]:
+    raise SystemExit("test-only fixed assignment was not pinned to broker-a queue 0")
+partial = rows("rust-p10-push.tsv", ["P10", "BATCH", "PARTIAL"])
+if partial != [["P10", "BATCH", "PARTIAL", "p10-success,p10-partial-ack,p10-partial-retry", "0,0,0", "1"]]:
+    raise SystemExit(f"partial acknowledgement boundary differs: {partial!r}")
+recovered = rows("rust-p10-push.tsv", ["P10", "BATCH", "SUCCESS"])
+if [row[3:5] for row in recovered] != [["p10-partial-retry", "1"]]:
+    raise SystemExit(f"recovered partial message was not acknowledged: {recovered!r}")
+failures = rows("rust-p10-push.tsv", ["P10", "BATCH", "RECONSUME_LATER"])
+if [row[3:5] for row in failures] != [["p10-failure-dlq", "0"], ["p10-failure-dlq", "1"]]:
+    raise SystemExit(f"failure callbacks did not exhaust exactly one retry: {failures!r}")
+dlq = rows("rust-p10-push.tsv", ["P10", "DLQ"])
+expected_dlq_topic = f"%DLQ%{group}"
+if dlq != [["P10", "DLQ", expected_dlq_topic, "p10-failure-dlq", str(retry_limit), "p10-failure-dlq-key"]]:
+    raise SystemExit(f"configured DLQ result differs: {dlq!r}")
+if rows("rust-p10-push.tsv", ["P10", "PASS"]) != [["P10", "PASS", "LISTENER_SUCCESS_PARTIAL_FAILURE", "RETRIES=1", "DLQ=FOUND"]]:
+    raise SystemExit("Rust Push consumer did not report the complete P10 result")
+PY
+    then
+        echo "P10-V03 listener, retry count, or DLQ assertions failed" >&2
+        exit 1
+    fi
+    printf 'PASS P10-V03: Java messages exercised Rust Push success, partial acknowledgement and failure; one retry reached the configured DLQ with matching body and key\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P13-V02" ]]; then
     echo "Seeding queue 0/1 and exercising both Java and Rust POP receipt lifecycles"

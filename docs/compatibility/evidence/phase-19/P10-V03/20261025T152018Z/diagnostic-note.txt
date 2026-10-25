@@ -1,0 +1,3 @@
+This clean-source attempt used revision 3760d22c5e273b186b74626d95bafe2f7cc7c4f1 with source_code_dirty=false. The P10 live sequence was mistakenly attached to the evidence-command template branch, which ran before Compose setup. The initial Java seed therefore failed to connect to 127.0.0.1:19876; no Broker or NameServer was provisioned and no scenario assertions passed.
+
+The runner exited with status 1 and the manifest remains PENDING_PHASE_19. Docker checks filtered by the exact Compose project label/name found no containers, volumes, or networks. The captured metadata, Java command output, and stderr are retained alongside this note. The runner branch was moved into the post-provision scenario execution chain; a new clean-source replay is required.

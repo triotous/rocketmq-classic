@@ -456,3 +456,9 @@
 - The runner deleted `compat_p7_retry` from both Brokers and removed the isolated containers, NameServer, volumes, and network. Filtered Docker container/volume/network queries returned no project resources.
 - Updated the manifest and current compatibility/server/release summaries to 30/37 passing, with seven runnerless scenarios remaining. The full local gate, P18-V01/P19-V03/P19-V04 audits, and owner manual checks remain open.
 - The post-pass manifest validator reports 37 scenarios, 30 PASS, and seven PENDING_PHASE_19 (`P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`, `P14-V03`, `P16-V02`, `P17-V02`). `run.sh --check-all` failed closed with those seven IDs before starting Docker; the full local gate remains pending implementation of their runners.
+
+## P19-05 P10-V03 first clean replay diagnostic — 2026-10-25
+
+- Clean-source run `20261025T152018Z` on revision `3760d22c5e273b186b74626d95bafe2f7cc7c4f1` failed before provisioning. The P10 execution sequence was accidentally placed in the command-template branch, so Java attempted its seed before the isolated Compose project started and could not connect to `127.0.0.1:19876`.
+- Evidence is retained under `docs/compatibility/evidence/phase-19/P10-V03/20261025T152018Z/`; `source_code_dirty=false`, exit status 1, and the manifest remains pending. Filtered Docker container, volume, and network queries returned no resources for the exact project name.
+- Moved the execution sequence into the post-provision live-scenario branch. The corrective runner revision must be clean-source replayed before recording P10-V03 as passed.
