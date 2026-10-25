@@ -59,6 +59,10 @@
             <configuration><mainClass>compat.LiveSharedRuntimeProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-pull-consumer-probe</id>
+            <configuration><mainClass>compat.LivePullConsumerProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>live-consumer-probe</id>
             <configuration><mainClass>compat.LiveConsumerProbe</mainClass></configuration>
           </execution>

@@ -3,9 +3,10 @@ use std::{
 };
 
 use rocketmq_classic::{
-    ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, LocalTransactionState, Producer,
-    ProducerConfig, ProducerError, PushConsumer, PushConsumerConfig, PushMessageListener,
-    TransactionCallbackError, TransactionListener, TransactionProducer,
+    ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, LocalTransactionState, MessageSelector,
+    Producer, ProducerConfig, ProducerError, PullConsumer, PullConsumerConfig, PushConsumer,
+    PushConsumerConfig, PushMessageListener, TransactionCallbackError, TransactionListener,
+    TransactionProducer,
 };
 use rocketmq_classic_common::message::{
     Message, MessageExt, MessageQueue, decode_message_id, encode_compact_messages,
@@ -52,6 +53,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 &arguments[5],
             )
             .await
+        }
+        Some("p9-pull") if arguments.len() == 4 => {
+            pull_consumer_probe(&arguments[1], &arguments[2], &arguments[3]).await
         }
         Some("transaction") if arguments.len() == 7 => {
             transaction(
@@ -152,7 +156,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -541,6 +545,132 @@ async fn shared_runtime_probe(
         return Err(cleanup_failures.join("; ").into());
     }
     Ok(())
+}
+
+async fn pull_consumer_probe(
+    namesrv_address: &str,
+    topic: &str,
+    consumer_group: &str,
+) -> Result<(), Box<dyn Error>> {
+    let consumer = new_pull_probe_consumer(namesrv_address, consumer_group).await?;
+    let session: Result<MessageQueue, Box<dyn Error>> = async {
+        let queues = consumer.fetch_message_queues(topic).await?;
+        if queues.len() != 1 {
+            return Err(std::io::Error::other(format!(
+                "expected one pull queue, got {}",
+                queues.len()
+            ))
+            .into());
+        }
+        let queue = queues.into_iter().next().expect("checked one queue exists");
+        if queue.queue_id() != 0 || queue.broker_name() != Some("broker-a") {
+            return Err(std::io::Error::other(format!("unexpected pull queue: {queue:?}")).into());
+        }
+
+        let found = consumer.pull(&queue, Some("MATCH"), 0, 1).await?;
+        assert_pull_status(&found.result, "FOUND")?;
+        print_pull_result(&found.result);
+        let messages = found
+            .messages
+            .as_ref()
+            .ok_or_else(|| std::io::Error::other("FOUND pull omitted decoded messages"))?;
+        let body = messages
+            .first()
+            .map(|message| String::from_utf8_lossy(message.body().as_ref()).into_owned())
+            .ok_or_else(|| std::io::Error::other("FOUND pull returned no decoded message"))?;
+        if body != "p9-seed-match" {
+            return Err(std::io::Error::other(format!(
+                "manual pull returned unexpected body: {body}"
+            ))
+            .into());
+        }
+        println!("P9\tBODY\t{body}");
+
+        let unmatched = consumer
+            .pull_with_selector(&queue, &MessageSelector::by_tag("MISSING"), 0, 1)
+            .await?;
+        assert_pull_status(&unmatched.result, "NO_MATCHED_MSG")?;
+        print_pull_result(&unmatched.result);
+        let empty = consumer.pull(&queue, Some("*"), 2, 1).await?;
+        assert_pull_status(&empty.result, "NO_NEW_MSG")?;
+        print_pull_result(&empty.result);
+        let invalid = consumer.pull(&queue, Some("*"), 3, 1).await?;
+        assert_pull_status(&invalid.result, "OFFSET_ILLEGAL")?;
+        print_pull_result(&invalid.result);
+
+        let min_offset = consumer.get_min_offset(&queue).await?;
+        let max_offset = consumer.get_max_offset(&queue).await?;
+        let timestamp_search = consumer.search_offset(&queue, 0).await?;
+        println!("P9\tBOUNDARY\t{min_offset}\t{max_offset}\t{timestamp_search}");
+        if min_offset != 0 || max_offset != 2 || timestamp_search != 0 {
+            return Err(std::io::Error::other(
+                "pull offset boundary RPCs returned unexpected values",
+            )
+            .into());
+        }
+
+        consumer.update_consume_offset(&queue, 1).await?;
+        consumer
+            .update_consume_offset_to_broker(&queue, 1, false)
+            .await?;
+        Ok(queue)
+    }
+    .await;
+    let shutdown = consumer.shutdown().await;
+    let queue = session?;
+    shutdown?;
+
+    let restarted = new_pull_probe_consumer(namesrv_address, consumer_group).await?;
+    let resume = restarted.fetch_consume_offset(&queue, true).await;
+    let shutdown = restarted.shutdown().await;
+    let resume = resume?;
+    shutdown?;
+    if resume != 1 {
+        return Err(
+            std::io::Error::other(format!("pull restart expected offset 1, got {resume}")).into(),
+        );
+    }
+    println!("P9\tRESUME\t{resume}");
+    Ok(())
+}
+
+async fn new_pull_probe_consumer(
+    namesrv_address: &str,
+    consumer_group: &str,
+) -> Result<Arc<PullConsumer>, Box<dyn Error>> {
+    let mut config = PullConsumerConfig::new(consumer_group)?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    config.set_enable_rebalance(false);
+    let consumer = Arc::new(PullConsumer::new(config));
+    consumer.start().await?;
+    Ok(consumer)
+}
+
+fn assert_pull_status(
+    result: &rocketmq_classic_core::api::consumer::PullResultExt,
+    expected: &str,
+) -> Result<(), Box<dyn Error>> {
+    if result.status.name() != expected {
+        return Err(std::io::Error::other(format!(
+            "expected pull status {expected} but got {}",
+            result.status.name()
+        ))
+        .into());
+    }
+    Ok(())
+}
+
+fn print_pull_result(result: &rocketmq_classic_core::api::consumer::PullResultExt) {
+    println!(
+        "P9\tPULL\t{}\t{}\t{}\t{}\t{}",
+        result.status.name(),
+        result.next_begin_offset,
+        result.min_offset,
+        result.max_offset,
+        result.suggest_which_broker_id
+    );
 }
 
 async fn send_tagged(
