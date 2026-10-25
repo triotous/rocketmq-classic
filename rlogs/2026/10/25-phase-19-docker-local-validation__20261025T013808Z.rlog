@@ -398,3 +398,25 @@
 - Diagnostic `20261025T143206Z` passed P15-V03 against the pinned unmodified 5.3.4 image. Both requester/responder directions delivered correlated replies; Java and Rust no-responder requests timed out and removed their correlations; each opposite-language delayed responder sent a reply after timeout while the requester retained exactly one timeout callback and no pending correlation. Evidence is archived under `docs/compatibility/evidence/phase-19/P15-V03/20261025T143206Z/` (`source_code_dirty=true`, exit 0, duration 271 seconds), so it is diagnostic only.
 - The runner deleted all six scenario-owned topics from both Brokers and removed the containers, NameServer, volumes and network. Filtered Docker queries found no remaining resources for the project.
 - Maven Java compile, Cargo live-client build, Cargo formatting, Bash syntax, manifest validation, and `git diff --check` pass. `run.sh --check-all` now rejects only the eight cases still lacking runners. A clean-source P15 replay remains required after the implementation commit.
+
+## P19-04 P15-V03 clean-source pass — 2026-10-25 (`4eeac3a3`)
+
+- Clean-source run `20261025T143716Z` on committed revision
+  `4eeac3a32a417bd3f2dc5c4d031db9eb0f5f9c02` passed against the pinned
+  unmodified RocketMQ 5.3.4 image. Java 5.5.1 and Rust matched bidirectional
+  request/reply, both no-responder timeout paths, and both late replies sent
+  after the 4.5-second request deadline. Each late timeout retained exactly
+  one timeout callback and no pending correlation. Evidence:
+  `docs/compatibility/evidence/phase-19/P15-V03/20261025T143716Z/`.
+- `source_code_dirty=false`, exit status 0, duration 280 seconds. The runner
+  removed six scenario topics from both Brokers, then removed the isolated
+  NameServer, Brokers, volumes and network. Filtered Docker queries found no
+  project resources.
+- Updated manifest row to PASS and current compatibility/server/runner
+  summaries to 29/37, with eight cases still lacking runners. The complete
+  local gate, broad P18-V01/P19-V03/P19-V04 audit and owner manual checks
+  remain open.
+- `cargo fmt --all -- --check`, integration binary build, strict integration
+  binary Clippy (`-D warnings`), pinned Maven compile, Bash syntax, differential
+  manifest validation and `git diff --check` pass. The fail-closed inventory
+  remains expected to stop at the eight runnerless cases.

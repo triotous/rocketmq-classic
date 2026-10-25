@@ -107,6 +107,9 @@ resuming from a broker-persisted offset after a consumer restart.
 `REQ-001-request-reply-success` checks Java request/Rust reply and Rust
 request/Java reply on separate scenario-owned topics, including the correlated
 reply fields and each responder's observed request.
+`P15-V03` repeats both successful directions on the host-routed two-Broker
+profile, then checks no-responder timeouts in both clients and late replies
+after timeout without a second callback or retained correlation.
 `P3-V04` invokes a raw route on the local NameServer, then sends Java and Rust
 RocketMQ requests through a locally generated TLS terminator that forwards to
 the disposable plain Broker. Java 5.5.1 verifies the CA chain but accepts a
@@ -139,14 +142,15 @@ matrix or by itself establish production support. It removes its isolated
 topics, containers, network, and volume after the run. Toolchain,
 configuration, output, and cleanup evidence is stored under
 `docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
-after comparison and cleanup both succeed. The runner implements 28 of 37
-cases, and all 28 have passed: the two Phase 0 route cases, `P0-V03`, `P3-V04`,
+after comparison and cleanup both succeed. The runner implements 29 of 37
+cases, and all 29 have passed: the two Phase 0 route cases, `P0-V03`, `P3-V04`,
 `P5-V02-route`, `P5-V02-producer`, `P5-V02-consumer`, `P5-V02-extensions`,
 `P6-V04`, `P7-V02`, `P7-V04`, `P9-V03`, `P13-V02`,
 `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, `HEARTBEAT-001`,
 `PROD-001-sync-send` through `PROD-004-batch-send`, `PROD-005-send-timeout`, and
 `CONS-001-query-offset` through `CONS-004-update-offset`, plus
-`TX-001-commit`, `TX-002-rollback`, and `REQ-001-request-reply-success`.
+`TX-001-commit`, `TX-002-rollback`, `REQ-001-request-reply-success`, and
+`P15-V03`.
 `--phase N` and `--all` fail closed when any selected case has no runner.
 
 The two-Broker lock case can be replayed with:
@@ -211,6 +215,18 @@ tests/differential/run.sh --scenario P9-V03
 They compare all four pull statuses, suggested broker ID, min/max/search
 offsets, and the next offset after a new consumer instance starts.
 
+The Phase 15 request/reply case uses the host-routed two-Broker profile:
+
+```bash
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable \
+ROCKETMQ_PROFILE=two-broker-host \
+tests/differential/run.sh --scenario P15-V03
+```
+
+It checks both successful directions, no-responder timeouts, and delayed
+opposite-language replies after timeout, then deletes its six scenario topics
+from both Brokers.
+
 Live runs require the pinned runner toolchains: Maven on JDK 27 and Rust 1.85.0,
 matching the repository CI configuration.
 
@@ -225,9 +241,9 @@ It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
 produce a `BLOCKED` result with the missing IDs in the archived log; the full
 matrix cannot report success until all IDs have passing evidence. Currently
-28 of 37 live cases have passing evidence; nine remain without runners:
+29 of 37 live cases have passing evidence; eight remain without runners:
 `P7-V03`, `P10-V03`, `P11-V03`, `P11-V04`, `P12-V03`,
-`P14-V03`, `P15-V03`, `P16-V02`, and `P17-V02`. `P5-V02-extensions`
+`P14-V03`, `P16-V02`, and `P17-V02`. `P5-V02-extensions`
 passed the 5.3.4 parity case with matching unsupported responses for Lite
 subscription and Lite POP; positive Lite success-path coverage passed
 separately on the official 5.5.0 image and is not part of the 5.3.4 manifest
