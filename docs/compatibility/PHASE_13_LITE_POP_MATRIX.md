@@ -99,3 +99,9 @@ afterward; the following expiry redelivery request returned
 `POLLING_NOT_FOUND`. Earlier failure diagnostics identify the failing request,
 not necessarily the initial delivery. The current blocker is redelivery timing
 or revive processing, not initial seed consumption.
+
+Run `20261025T125713Z` passed all seven Java lifecycle assertions, including
+expiry redelivery after a 6-second wait. Rust received a POP message but the
+live low-level probe omitted Java's response-header-to-`POP_CK` decoration and
+stopped before Rust lifecycle assertions. The probe now applies this mapping;
+a clean Java/Rust run remains required.

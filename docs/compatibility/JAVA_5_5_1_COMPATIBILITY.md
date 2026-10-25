@@ -1077,3 +1077,10 @@ that delivery. The failing `POLLING_NOT_FOUND` was the next POP for expiry
 redelivery. Earlier diagnostic rows were emitted only for a failing POP, so
 their label did not prove that initial delivery failed. Initial Java POP delivery
 now works with the post-seed offset reset; redelivery is still pending.
+
+P13 follow-up: run `20261025T125713Z` passed all seven Java POP lifecycle
+outcomes after the 6-second expiry wait. Rust received the seed but its direct
+POP probe did not decorate `POP_CK` from response-header offsets and stopped
+before the Rust lifecycle. The Rust probe now mirrors Java's client-side
+receipt mapping; P13-V02 remains pending until a clean Java/Rust comparison
+passes.

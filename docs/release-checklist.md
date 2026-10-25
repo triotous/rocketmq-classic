@@ -10746,3 +10746,14 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [x] The runner deleted the topic and removed its isolated two-Broker
   containers, network, and volumes. P13 remains pending; live coverage remains
   25/37 with 12 Phase 19 scenarios pending.
+
+## P19 P13-V02 Java lifecycle and Rust receipt mapping — 2026-10-25 (`89f481e7`)
+
+- [ ] Clean-source run `20261025T125713Z` passed all Java lifecycle assertions
+  after a 6-second expiry wait. Rust POP returned the seeded message, but its
+  low-level probe lacked Java's `POP_CK` decoration derived from response-header
+  offsets; it stopped before Rust lifecycle assertions. The probe now mirrors
+  that mapping, and a clean Java/Rust comparison remains pending. Evidence is
+  under `docs/compatibility/evidence/phase-19/P13-V02/20261025T125713Z/`.
+- [x] The runner deleted the scenario topic and removed its isolated two-Broker
+  containers, network, and volumes. P13 remains pending at 25/37 live PASS.

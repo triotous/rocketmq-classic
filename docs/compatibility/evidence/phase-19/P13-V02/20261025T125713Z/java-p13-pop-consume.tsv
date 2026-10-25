@@ -1,0 +1,33 @@
+P13	pop-offset-state	phase=after-api-start	group=compat_p13_pop_java_expiry	queue=0	offset=0
+P13	pop-offset-state	phase=before-min-query	group=compat_p13_pop_java_expiry	queue=0	offset=0
+P13	pop-offset-state	phase=after-min-query	group=compat_p13_pop_java_expiry	queue=0	offset=0
+P13	pop-offset-state	phase=after-max-query	group=compat_p13_pop_java_expiry	queue=0	offset=0
+P13	pop-offset-state	phase=before-pop-request	group=compat_p13_pop_java_expiry	queue=0	offset=0
+P13	pop-found	group=compat_p13_pop_java_expiry	queue=0	messageOffset=0
+P13	pop-offset-state	phase=before-min-query	group=compat_p13_pop_java_expiry	queue=0	offset=1
+P13	pop-offset-state	phase=after-min-query	group=compat_p13_pop_java_expiry	queue=0	offset=1
+P13	pop-offset-state	phase=after-max-query	group=compat_p13_pop_java_expiry	queue=0	offset=1
+P13	pop-offset-state	phase=before-pop-request	group=compat_p13_pop_java_expiry	queue=0	offset=1
+P13	pop-found	group=compat_p13_pop_java_expiry	queue=0	messageOffset=0
+P13	expiry-redelivery	OK	0
+P13	pop-offset-state	phase=before-min-query	group=compat_p13_pop_java_change	queue=0	offset=0
+P13	pop-offset-state	phase=after-min-query	group=compat_p13_pop_java_change	queue=0	offset=0
+P13	pop-offset-state	phase=after-max-query	group=compat_p13_pop_java_change	queue=0	offset=0
+P13	pop-offset-state	phase=before-pop-request	group=compat_p13_pop_java_change	queue=0	offset=0
+P13	pop-found	group=compat_p13_pop_java_change	queue=0	messageOffset=0
+P13	change-invisibility	OK
+P13	replacement-receipt	OK	ACKED
+P13	pop-offset-state	phase=before-min-query	group=compat_p13_pop_java_mixed	queue=0	offset=0
+P13	pop-offset-state	phase=after-min-query	group=compat_p13_pop_java_mixed	queue=0	offset=0
+P13	pop-offset-state	phase=after-max-query	group=compat_p13_pop_java_mixed	queue=0	offset=0
+P13	pop-offset-state	phase=before-pop-request	group=compat_p13_pop_java_mixed	queue=0	offset=0
+P13	pop-found	group=compat_p13_pop_java_mixed	queue=0	messageOffset=0
+P13	pop-offset-state	phase=before-min-query	group=compat_p13_pop_java_mixed	queue=1	offset=0
+P13	pop-offset-state	phase=after-min-query	group=compat_p13_pop_java_mixed	queue=1	offset=0
+P13	pop-offset-state	phase=after-max-query	group=compat_p13_pop_java_mixed	queue=1	offset=0
+P13	pop-offset-state	phase=before-pop-request	group=compat_p13_pop_java_mixed	queue=1	offset=0
+P13	pop-found	group=compat_p13_pop_java_mixed	queue=1	messageOffset=0
+P13	mixed-queue-mapping	OK	0,1
+P13	malformed-extra-info-rejected	OK
+P13	pop-delivery	OK	5
+P13	ack	OK	4

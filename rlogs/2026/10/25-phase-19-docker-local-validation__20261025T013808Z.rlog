@@ -229,3 +229,9 @@
 - Added offset snapshots at API startup, before/after the queue min/max queries, and before each POP; the runner now captures Broker stdout logs before teardown.
 - Clean-source run `20261025T125153Z` showed Java's first POP request began at offset 0 and returned the seeded message. Offset 1 appeared before the following expiry-redelivery request, which returned `POLLING_NOT_FOUND`. The earlier offset diagnostics were emitted by a failing POP only; they did not identify whether it was the first or second lifecycle request. This corrects the prior interpretation that the initial delivery began at offset 1. Evidence: `docs/compatibility/evidence/phase-19/P13-V02/20261025T125153Z/`.
 - The runner removed the scenario topic and isolated two-Broker containers, network, and volumes. No lifecycle assertion passed, Rust consumption did not run, and P13 remains pending at 25/37 PASS with 12 Phase 19 cases pending.
+
+## P19 P13-V02 Java lifecycle and Rust receipt mapping — 2026-10-25 (`89f481e7`)
+
+- Increased Java/Rust expiry wait to 6 seconds. Clean-source run `20261025T125713Z` passed all Java lifecycle checks: expiry redelivery, ACK, visibility change, replacement receipt, mixed queues, malformed receipt rejection, and the expected aggregate outcome rows.
+- Rust received the seeded message, but the live probe called raw `MQClientApi.pop_message` and expected a message property `POP_CK` that Java's `MQClientAPIExt` synthesizes from response-header offset metadata. It stopped before Rust lifecycle assertions. The Rust live probe now maps the same response header into a receipt and message property.
+- The run removed the scenario topic and isolated containers, network, and volumes. P13 remains pending; coverage remains 25/37 with 12 scenarios pending.

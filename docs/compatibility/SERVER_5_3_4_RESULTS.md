@@ -398,3 +398,13 @@ per-request stage rows do not distinguish those cases. The post-seed offset
 reset works for initial delivery; expiry redelivery remains unresolved. The
 runner removed the topic and Compose resources; evidence is under
 [`20261025T125153Z`](evidence/phase-19/P13-V02/20261025T125153Z/).
+
+Run `20261025T125713Z` on `89f481e7` passed every Java P13 lifecycle step:
+initial delivery, expiry redelivery after the 6-second wait, ACK, visibility
+change, replacement receipt, mixed queue mapping, and malformed receipt
+rejection. Rust then received the message but its direct low-level POP reply did
+not contain a `POP_CK` message property; the runner stopped before any Rust
+lifecycle assertion. Java's API decorates that receipt from response-header
+offsets, so the Rust live probe will apply the same mapping. The isolated topic
+and Compose resources were removed; evidence is under
+[`20261025T125713Z`](evidence/phase-19/P13-V02/20261025T125713Z/).
