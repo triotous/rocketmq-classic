@@ -15,6 +15,7 @@ path = "src/bin/live_client.rs"
 [dependencies]
 rocketmq-classic.workspace = true
 rocketmq-classic-common.workspace = true
+rocketmq-classic-consumer.workspace = true
 rocketmq-classic-core.workspace = true
 rocketmq-classic-protocol.workspace = true
 rocketmq-classic-remoting.workspace = true

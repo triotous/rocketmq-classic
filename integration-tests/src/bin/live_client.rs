@@ -5,6 +5,9 @@ use rocketmq_classic_common::message::{
     Message, MessageQueue, decode_message_id, encode_compact_messages, encode_properties,
 };
 use rocketmq_classic_common::sysflag::pull::build_pull_sys_flag;
+use rocketmq_classic_consumer::rebalance::{
+    AllocateMessageQueueAveragely, AllocateMessageQueueStrategy,
+};
 use rocketmq_classic_core::api::{
     MQClientApi,
     producer::{SendKind, SendMode},
@@ -27,6 +30,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     match arguments.first().map(String::as_str) {
         Some("route") if arguments.len() == 3 => route(&arguments[1], &arguments[2]).await,
+        Some("rebalance") if arguments.len() == 4 => {
+            rebalance(&arguments[1], &arguments[2], &arguments[3]).await
+        }
         Some("heartbeat") if arguments.len() == 3 => {
             heartbeat(&arguments[1], &arguments[2]).await
         }
@@ -112,7 +118,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -148,6 +154,64 @@ async fn route(namesrv_address: &str, topic: &str) -> Result<(), Box<dyn Error>>
         }
         Err(ProducerError::NoRoute(_)) => println!("NO_ROUTE\t{topic}"),
         Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
+async fn rebalance(
+    namesrv_address: &str,
+    topic: &str,
+    comma_separated_consumer_ids: &str,
+) -> Result<(), Box<dyn Error>> {
+    let mut config = ProducerConfig::new("p19RebalanceRust")?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    config.client_config_mut().set_mq_client_api_timeout(5_000);
+
+    let producer = Arc::new(Producer::new(config));
+    producer.start().await?;
+    let result = producer.fetch_publish_message_queues(topic).await;
+    let shutdown = producer.shutdown().await;
+    shutdown?;
+    let mut queues = result?;
+    queues.sort_by_key(|queue| {
+        (
+            queue.topic().unwrap_or_default().to_owned(),
+            queue.broker_name().unwrap_or_default().to_owned(),
+            queue.queue_id(),
+        )
+    });
+
+    let mut consumer_ids = comma_separated_consumer_ids
+        .split(',')
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if consumer_ids.iter().any(String::is_empty) {
+        return Err("consumer ID list contains an empty value".into());
+    }
+    consumer_ids.sort();
+    let strategy = AllocateMessageQueueAveragely;
+    for consumer_id in &consumer_ids {
+        let assigned = strategy.allocate(
+            "compat_phase0_rebalance_group",
+            consumer_id,
+            &queues,
+            &consumer_ids,
+        )?;
+        let queue_keys = assigned
+            .iter()
+            .map(|queue| {
+                format!(
+                    "{}|{}|{}",
+                    queue.topic().unwrap_or_default(),
+                    queue.broker_name().unwrap_or_default(),
+                    queue.queue_id()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        println!("ASSIGN\t{consumer_id}\t{queue_keys}");
     }
     Ok(())
 }

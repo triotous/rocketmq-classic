@@ -55,6 +55,10 @@
             <configuration><mainClass>compat.LiveConsumerProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-rebalance-probe</id>
+            <configuration><mainClass>compat.LiveRebalanceProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-inbound-routing-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>
