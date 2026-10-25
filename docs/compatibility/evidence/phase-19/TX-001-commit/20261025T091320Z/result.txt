@@ -1,0 +1,1 @@
+PASS TX-001-commit: Java/Rust decisions matched and Broker queue max offset was 2

@@ -9,14 +9,17 @@ remains in progress.
 
 ## Phase 19 live status — 2026-10-25
 
-Fourteen of 37 registered Broker scenarios have passing Java 5.5.1/Rust
+Sixteen of 37 registered Broker scenarios have passing Java 5.5.1/Rust
 evidence on the pinned 5.3.4 image. Four consumer cases cover reciprocal
 offset updates and queries, a found pull with message-body comparison, and an
 empty pull; `P5-V02-route` covers matching results for an existing and missing
 topic; `ORDER-001-lock-unlock` compares queue acquisition, cross-client
 contention, and unlock release; `REBAL-001-average-10q-3c` compares Java/Rust
 average allocation of ten live queues across three consumers on the two-Broker
-profile. The other 23 scenarios remain unimplemented and pending. This does
+profile. `TX-001-commit` and `TX-002-rollback` compare Java/Rust transaction
+callbacks, Broker queue offsets, and consumer pulls; committed message bodies
+are visible and rolled-back messages remain absent. The other 21 scenarios
+remain unimplemented and pending. This does
 not close the broader P18-V01 public API/settings/flow reverse audit or establish
 full client parity. See
 [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server

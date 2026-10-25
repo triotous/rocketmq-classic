@@ -80,15 +80,17 @@ oneway/batch send results, async completion counts, Broker queue offsets,
 consumer-offset writes and cross-client queries, pull status/offsets/message
 bodies, batch message bodies read by every returned physical offset ID,
 bidirectional cross-language Broker readback, queue-lock acquisition,
-contention and unlock release, and live average queue assignment.
+contention and unlock release, live average queue assignment, and transaction
+commit/rollback visibility through Java and Rust consumer pulls.
 It deletes any owned topic and tears down only that project. Toolchain,
 configuration, output, and cleanup evidence is stored under
 `docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
-after comparison and cleanup both succeed. The runner implements 14 of 37
-cases and all 14 have passed: the two Phase 0 route cases, `P5-V02-route`,
+after comparison and cleanup both succeed. The runner implements 16 of 37
+cases and all 16 have passed: the two Phase 0 route cases, `P5-V02-route`,
 `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, `HEARTBEAT-001`,
 `PROD-001-sync-send` through `PROD-004-batch-send`, and
-`CONS-001-query-offset` through `CONS-004-update-offset`.
+`CONS-001-query-offset` through `CONS-004-update-offset`, plus
+`TX-001-commit` and `TX-002-rollback`.
 `--phase N` and `--all` fail closed when any selected case has no runner.
 
 The two-Broker lock case can be replayed with:
@@ -107,6 +109,19 @@ ROCKETMQ_PROFILE=two-broker \
 tests/differential/run.sh --scenario REBAL-001-average-10q-3c
 ```
 
+The local transaction visibility cases use the host-routed `transaction`
+profile:
+
+```bash
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable \
+ROCKETMQ_PROFILE=transaction \
+tests/differential/run.sh --scenario TX-001-commit
+```
+
+Run the rollback case by replacing the scenario ID with `TX-002-rollback`.
+The checks compare Java/Rust transaction results and pulls; commit requires two
+visible messages and rollback requires an empty queue.
+
 Live runs require the pinned runner toolchains: Maven on JDK 27 and Rust 1.85.0,
 matching the repository CI configuration.
 
@@ -121,7 +136,7 @@ It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
 produce a `BLOCKED` result with the missing IDs in the archived log; the full
 matrix cannot report success until all IDs have passing evidence. Currently
-14 of 37 live cases have runners; the other 23, additional two-Broker cases,
-TLS/ACL/feature profiles, and a fresh `run-local.sh --all` pass remain pending.
-The last full local run predates the rebalance probe. Starting a profile by
-itself does not mark a scenario passed.
+16 of 37 live cases have runners; the other 21, the remaining two-Broker
+cases, TLS/ACL/feature profiles, and a fresh `run-local.sh --all` pass remain
+pending. The last full local run predates the rebalance and transaction probes.
+Starting a profile by itself does not mark a scenario passed.

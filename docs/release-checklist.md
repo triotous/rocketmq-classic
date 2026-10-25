@@ -10515,3 +10515,23 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - Live coverage is now 14/37; 23 cases remain without runners. The last full
   `run-local.sh --all` gate was at `a96aad3d` before this probe and must be
   rerun. Broad P18-V01, MAN-01 through MAN-05, and remote Docker CI remain open.
+
+## P19 transactional commit and rollback visibility — 2026-10-25 (`1cc67ce3`)
+
+- [x] Added transaction-group input validation, isolated consumer-group setup,
+  and Java/Rust pull assertions to `TX-001-commit` and `TX-002-rollback`.
+  Implementation commits: `c6084967` (transaction probes), `ab7539ca`
+  (host-routed transaction profile), and `1cc67ce3` (visibility assertions).
+- [x] Clean-source TX-001 run `20261025T091920Z` passed on
+  `1cc67ce358d4f191b20dc33e71b59a175a57eb59` with
+  `source_code_dirty=false`. Both producers committed; Java/Rust pulls matched
+  byte-for-byte, returned both message bodies, and the queue max offset was 2.
+- [x] Clean-source TX-002 run `20261025T092046Z` passed on the same revision.
+  Both producers rolled back; Java/Rust pulls matched with `NO_NEW_MSG`, empty
+  bodies, and queue max offset 0. Both isolated topics, projects, networks,
+  and volumes were removed after evidence capture.
+- Earlier callback/offset-only runs are retained as historical evidence; the
+  manifest points to the stronger consumer-visibility runs.
+- Live coverage is 16/37, with 21 scenarios still pending. The full local gate
+  last ran before the rebalance and transaction additions and must be rerun.
+  Broad P18-V01, MAN-01 through MAN-05, and remote Docker CI remain open.

@@ -1,0 +1,14 @@
+scenario=TX-001-commit
+profile=basic
+project=rocketmq-classic-p19-tx-001-commit-20261025t090935z
+run_id=20261025T090935Z
+java_client=5.5.1
+server=5.3.4
+server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+source_revision=c60849679571e01cbb5d38072b1c3d1ffacbc0ef
+source_code_dirty=false
+producer_group=compat_phase0_tx_group
+body=transaction-body
+seed=not-applicable
+exit_status=1
+duration_seconds=73

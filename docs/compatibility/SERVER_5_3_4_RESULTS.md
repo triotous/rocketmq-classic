@@ -48,19 +48,19 @@ commands, duration, client outputs, and cleanup results. Local home/repository
 paths and the host name are redacted from archived tool output. Current
 results cover route lookup, heartbeat, synchronous/asynchronous/oneway/batch
 sends with cross-language readback, consumer offsets and pulls, queue lock
-contention, and average assignment over two live Brokers. They do
-not complete transaction, request/reply, retry, TLS, ACL, failover, or stress
-coverage.
+contention, average assignment over two live Brokers, and the listed
+transaction commit/rollback visibility cases. They do not complete
+request/reply, retry, TLS, ACL, failover, or stress coverage.
 
 ## Pending local server coverage
 
 The scenario manifest contains 37 live cases. The seven rows above, four
-consumer rows, the P5 route row, `ORDER-001-lock-unlock`, and
-`REBAL-001-average-10q-3c` are implemented and passed by the current runner;
-23 remain pending. The two-Broker profile covers lock/unlock and average queue
-assignment; retry, query, and broader interoperability coverage, TLS, ACL, and
-feature-specific profiles remain incomplete. No server limitation is inferred
-from an unrun case. Phase 19
+consumer rows, the P5 route row, `ORDER-001-lock-unlock`,
+`REBAL-001-average-10q-3c`, and the two transaction rows are implemented and
+passed by the current runner; 21 remain pending. The two-Broker profile covers
+lock/unlock and average queue assignment; retry, query, and broader
+interoperability coverage, TLS, ACL, and feature-specific profiles remain
+incomplete. No server limitation is inferred from an unrun case. Phase 19
 acceptance remains open until each locally reproducible case has Java/Rust
 evidence or a source-backed matched server limitation plus the required
 success-path evidence.
@@ -151,4 +151,27 @@ provisioned and cleaned up but did not execute either probe. Its manifest PASS
 pointer was removed and the directory is retained with a diagnostic note. A
 corrected dirty-source replay at `20261025T085935Z` passed the assertions but
 is diagnostic-only; the clean run above is authoritative. Live coverage is
-now 14/37, with 23 cases pending.
+At that checkpoint, live coverage was 14/37, with 23 cases pending.
+
+## Transaction commit and rollback visibility — 2026-10-25
+
+`TX-001-commit` and `TX-002-rollback` passed on committed revision
+`1cc67ce358d4f191b20dc33e71b59a175a57eb59`; both runs record
+`source_code_dirty=false`. A dedicated transaction profile advertises its
+Broker at `127.0.0.1:30911` so Java 5.5.1 and Rust can reach the same isolated
+Broker from the host. Each run creates an owned topic and consumer group.
+
+For TX-001, both transactional producers returned `COMMIT_MESSAGE`; Java and
+Rust pulls matched byte-for-byte, returned `FOUND` with offsets 0–2, and
+contained both `transaction-body` messages. The Broker queue max offset was
+2. For TX-002, both producers returned `ROLLBACK_MESSAGE`; matching pulls
+returned `NO_NEW_MSG` with empty bodies and all queue offsets at 0. Both topics
+and Compose projects, networks, and volumes were removed after evidence capture:
+[`TX-001`](evidence/phase-19/TX-001-commit/20261025T091920Z/) and
+[`TX-002`](evidence/phase-19/TX-002-rollback/20261025T092046Z/).
+
+An earlier transaction replay at `20261025T091320Z` and `20261025T091433Z`
+checked callbacks and queue offsets but not consumer visibility; the later
+clean-source runs above include the stronger pull assertions and are the
+manifest evidence. Live coverage is now 16/37, with 21 cases pending. The last
+full local gate predates the transaction probes.

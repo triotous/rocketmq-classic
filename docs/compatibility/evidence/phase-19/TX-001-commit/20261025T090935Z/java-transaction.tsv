@@ -1,0 +1,10 @@
+[ERROR] Failed to execute goal org.codehaus.mojo:exec-maven-plugin:3.5.0:java (live-transaction-probe) on project rocketmq-java-reference: An exception occurred while executing the Java class. send message Exception
+[ERROR] For more information, please visit the url, https://rocketmq.apache.org/docs/faq/: Send [3] times, still failed, cost [1097]ms, Topic: compat_phase0_tx, BrokersSent: [broker-a, broker-a, broker-a]
+[ERROR] See https://rocketmq.apache.org/docs/faq/ for further details. connect to  failed
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException
