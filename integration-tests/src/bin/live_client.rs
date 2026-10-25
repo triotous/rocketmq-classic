@@ -723,11 +723,22 @@ async fn request_reply_respond(
                         if replied.swap(true, Ordering::AcqRel) {
                             continue;
                         }
+                        let request_body = encode_hex(request.body().as_ref());
+                        let request_correlation =
+                            request.get_property("CORRELATION_ID").unwrap_or_default();
+                        let request_reply_to =
+                            request.get_property("REPLY_TO_CLIENT").unwrap_or_default();
                         let outcome = match create_reply_message(Some(&request), reply_body.clone())
                         {
                             Ok(mut reply) => match producer.send(&mut reply).await {
                                 Ok(sent) if sent.status.name() == "SEND_OK" => {
-                                    format!("SEND_OK\t{}", reply.topic())
+                                    format!(
+                                        "SEND_OK\t{}\t{}\t{}\t{}",
+                                        reply.topic(),
+                                        request_body,
+                                        request_correlation,
+                                        request_reply_to
+                                    )
                                 }
                                 Ok(sent) => {
                                     status = ConsumeConcurrentlyStatus::ReconsumeLater;

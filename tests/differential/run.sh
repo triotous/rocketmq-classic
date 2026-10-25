@@ -557,6 +557,8 @@ elif [[ "$scenario_id" == "P6-V04" ]]; then
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=host-routed COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g $consumer_group -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g ${consumer_group}_java -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g ${consumer_group}_rust -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic compat_p6_producer_a compat_p6_producer_b $consumer_group" exec:java@live-shared-runtime-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p6-shared-runtime $namesrv_addr $topic compat_p6_producer_a compat_p6_producer_b $consumer_group
 EOF
@@ -817,11 +819,13 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
         fi
     elif [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P6-V04" ]]; then
         echo "Creating scenario-owned consumer group $consumer_group"
-        if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$consumer_group" -n namesrv:9876 \
-            >"$evidence_dir/group-create.log" 2>&1; then
-            cat "$evidence_dir/group-create.log" >&2
-            exit 1
-        fi
+        for responder_group in "$consumer_group" "${consumer_group}_java" "${consumer_group}_rust"; do
+            if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$responder_group" -n namesrv:9876 \
+                >>"$evidence_dir/group-create.log" 2>&1; then
+                cat "$evidence_dir/group-create.log" >&2
+                exit 1
+            fi
+        done
     elif [[ "$scenario_id" == "P9-V03" ]]; then
         for group_suffix in java rust; do
             pull_group="${consumer_group}_${group_suffix}"
@@ -865,11 +869,11 @@ start_reply_responder() {
     local output_file="$3"
     if [[ "$language" == "java" ]]; then
         mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-            -Dexec.args="respond $namesrv_addr $topic $consumer_group compat_req_java_responder $reply_body" \
+            -Dexec.args="respond $namesrv_addr $topic ${consumer_group}_java compat_req_java_responder $reply_body" \
             exec:java@live-request-reply-probe >"$output_file" 2>"${output_file%.tsv}.stderr" &
     else
         "$repo_root/target/debug/live_client" p19-respond "$namesrv_addr" "$topic" \
-            "$consumer_group" compat_req_rust_responder "$reply_body" \
+            "${consumer_group}_rust" compat_req_rust_responder "$reply_body" \
             >"$output_file" 2>"${output_file%.tsv}.stderr" &
     fi
     responder_pid=$!
@@ -897,7 +901,7 @@ wait_reply_responder() {
         return 1
     fi
     responder_pid=""
-    if ! awk -F '\t' 'NF >= 4 && $1 == "REQ" && $2 == "RESPONDER" && $3 == "SEND_OK" { count++ }
+    if ! awk -F '\t' 'NF == 7 && $1 == "REQ" && $2 == "RESPONDER" && $3 == "SEND_OK" { count++ }
         END { if (count != 1) exit 1 }' "$output_file"; then
         echo "responder did not send exactly one successful reply" >&2
         cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
@@ -1761,24 +1765,31 @@ def parse_request(path, request_body, reply_body):
         raise SystemExit(f"{path}: reply body or correlation does not match its request: {reply!r}")
     if reply[5] != request[5] or reply[6] != request[6] or reply[8] != "reply":
         raise SystemExit(f"{path}: reply-to, TTL, or type metadata differs: {reply!r}")
-    return (request[2], request[3], request[6], request[7], reply[2], reply[3], reply[8])
+    return (
+        request[2], request[3], request[4], request[5], request[6], request[7],
+        reply[2], reply[3], reply[8]
+    )
 
 def parse_responder(path):
     lines = Path(path).read_text().splitlines()
     sent = [line.split("\t") for line in lines if line.startswith("REQ\tRESPONDER\t")]
-    if len(sent) != 1 or len(sent[0]) < 4 or sent[0][2] != "SEND_OK":
+    if len(sent) != 1 or len(sent[0]) != 7 or sent[0][2] != "SEND_OK":
         raise SystemExit(f"{path}: expected exactly one successful reply send")
     if not sent[0][3].endswith("_REPLY_TOPIC"):
         raise SystemExit(f"{path}: responder sent to an unexpected topic: {sent[0]!r}")
-    return sent[0][3]
+    return sent[0][3:]
 
 java_rust = parse_request(java_request_path, "request-java-to-rust", "reply-java-to-rust")
 rust_java = parse_request(rust_request_path, "request-rust-to-java", "reply-rust-to-java")
-java_rust_topic = parse_responder(rust_responder_path)
-rust_java_topic = parse_responder(java_responder_path)
-if java_rust[4] != java_rust_topic or rust_java[4] != rust_java_topic:
+java_rust_sent = parse_responder(rust_responder_path)
+rust_java_sent = parse_responder(java_responder_path)
+if java_rust[0] != topic or java_rust[1] != java_rust_sent[1] or java_rust[2] != java_rust_sent[2] or java_rust[3] != java_rust_sent[3]:
+    raise SystemExit("Rust responder did not receive the expected Java request")
+if rust_java[0] != topic or rust_java[1] != rust_java_sent[1] or rust_java[2] != rust_java_sent[2] or rust_java[3] != rust_java_sent[3]:
+    raise SystemExit("Java responder did not receive the expected Rust request")
+if java_rust[6] != java_rust_sent[0] or rust_java[6] != rust_java_sent[0]:
     raise SystemExit("responder send topic differs from the topic returned to the requester")
-if java_rust[4] != rust_java[4] or java_rust[6] != rust_java[6]:
+if java_rust[6] != rust_java[6] or java_rust[8] != rust_java[8]:
     raise SystemExit("Java/Rust request-reply topic or message type semantics differ")
 PY
     then

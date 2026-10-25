@@ -67,7 +67,9 @@ public final class LiveRequestReplyProbe {
                         request, replyBody.getBytes(StandardCharsets.UTF_8));
                     SendResult sent = producer.send(reply);
                     result.offer("SEND_OK\t" + reply.getTopic() + "\t"
-                        + request.getProperty("CORRELATION_ID"));
+                        + toHex(request.getBody()) + "\t"
+                        + request.getProperty("CORRELATION_ID") + "\t"
+                        + request.getProperty("REPLY_TO_CLIENT"));
                 } catch (Exception error) {
                     error.printStackTrace(System.err);
                     result.offer("ERROR\t" + error.getClass().getName() + "\t" + error.getMessage());
