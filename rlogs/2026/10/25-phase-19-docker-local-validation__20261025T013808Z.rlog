@@ -306,3 +306,8 @@
 
 - Run `20261025T134033Z` reached Lite POP on the LITE parent after Java and Rust each matched successful subscription registration, but Broker response code 29 reported `subscription bind topic not match` for the Lite group. Apache 5.5.0 `PopLiteMessageProcessor` requires `SubscriptionGroupConfig.liteBindTopic` to equal the request parent topic; the first supplementary setup created ordinary groups without that attribute.
 - Updated the disposable `updateSubGroup` commands to set `+lite.bind.topic=<parent>` on each language's Lite group. The supplementary message now seeds before Java/Rust subscription registration so registration sees the active derived Lite queue. The runner again preserves the 5.3.4 row and cleans only its isolated resources.
+
+## P19-05 supplementary LMQ store configuration — 2026-10-25
+
+- Run `20261025T134349Z` passed the group bind check, and both languages again matched Lite subscription registration. Lite POP returned `POLLING_NOT_FOUND` because the stored Lite message had no active LMQ dispatch queue. Apache 5.5.0 `MessageStoreConfig.enableLmq` defaults to false, so the supplementary Broker was not writing Lite LMQ consume queues.
+- Added a separate `broker-lite-5.5.0.conf` with `enableLmq=true` and mounted it only in the supplementary Compose profile. The mandatory 5.3.4 Broker configuration remains unchanged. Shell syntax, Compose configuration, and whitespace checks pass before the next run.

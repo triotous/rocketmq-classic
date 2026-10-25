@@ -71,6 +71,7 @@ if [[ -z "$(git -C "$repo_root" status --porcelain -- \
     compat/java-reference/src/main/java/compat/LiveProducerProbe.java \
     integration-tests/src/bin/live_client.rs \
     integration-tests/compose-lite-5.5.0.yaml \
+    integration-tests/config/broker-lite-5.5.0.conf \
     tests/differential/run-p5-lite-supplementary.sh)" ]]; then
     source_code_dirty=false
 fi
@@ -78,6 +79,7 @@ fi
     printf 'scenario=P5-V02-extensions-lite-success\nprofile=supplementary-lite-5.5.0\nproject=%s\nrun_id=%s\n' "$project_name" "$run_id"
     printf 'java_client=5.5.1\nserver=5.5.0\nserver_image=%s\nsource_revision=%s\nsource_code_dirty=%s\n' \
         "$image_ref" "$repo_commit" "$source_code_dirty"
+    printf 'broker_config=integration-tests/config/broker-lite-5.5.0.conf\nbroker_config_enableLmq=true\n' >>"$evidence_dir/metadata.txt"
     printf 'topic=%s\nlite_topic=%s\nconsumer_group_prefix=%s\nmethods=heartbeat,heartbeat-v2,assignment,request-mode,lite-subscription,pop-lite,unregister\n' \
         "$topic" "$lite_topic" "$group"
 } >"$evidence_dir/metadata.txt"
@@ -101,6 +103,13 @@ fi
     docker compose version
     docker info --format 'Docker platform {{.OSType}}/{{.Architecture}}'
     docker image inspect "$image_ref" --format '{{.Id}} {{json .RepoDigests}} {{.Os}}/{{.Architecture}}'
+    python3 - "$compose_file" "$repo_root/integration-tests/config/broker-lite-5.5.0.conf" <<'PYHASH'
+import hashlib, sys
+from pathlib import Path
+for name in sys.argv[1:]:
+    path = Path(name)
+    print(f"sha256 {hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
+PYHASH
 } >"$evidence_dir/toolchain.txt" 2>&1
 
 cleanup() {

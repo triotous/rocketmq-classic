@@ -30,7 +30,7 @@ services:
       store-init:
         condition: service_completed_successfully
     volumes:
-      - ./config/broker.conf:/etc/rocketmq/broker.conf:ro
+      - ./config/broker-lite-5.5.0.conf:/etc/rocketmq/broker.conf:ro
       - broker-store:/home/rocketmq/store
     ports:
       - "127.0.0.1:${ROCKETMQ_SUPPLEMENTARY_BROKER_PORT:-29911}:10911"
