@@ -1,0 +1,18 @@
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host ROCKETMQ_BROKER_A_HOST_CONFIG=./config/broker-a-transaction-host.conf ROCKETMQ_BROKER_B_HOST_CONFIG=./config/broker-b-transaction-host.conf COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p14-v03-replay02 bash integration-tests/setup.sh
+docker compose --project-name rocketmq-classic-p19-p14-v03-replay02 --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateTopic -b 127.0.0.1:50911 -t compat_p14_transaction -r 1 -w 1 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p14-v03-replay02 --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateTopic -b 127.0.0.1:50921 -t compat_p14_transaction -r 1 -w 1 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p14-v03-replay02 --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateSubGroup -b 127.0.0.1:50911 -g compat_p14_transaction -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p14-v03-replay02 --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateSubGroup -b 127.0.0.1:50921 -g compat_p14_transaction -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="p14 127.0.0.1:19876 compat_p14_transaction compat_p14_transaction commit p14-java-commit-key p14-java-commit" exec:java@live-transaction-probe
+target/debug/live_client p14-pull <java-result-broker-address> <java-result-broker-name> compat_p14_transaction compat_p14_transaction 0 0
+target/debug/live_client p14-transaction 127.0.0.1:19876 compat_p14_transaction compat_p14_transaction commit p14-rust-commit-key p14-rust-commit
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="pull <rust-result-broker-address> compat_p14_transaction compat_p14_transaction 0 0" exec:java@live-consumer-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="p14 127.0.0.1:19876 compat_p14_transaction compat_p14_transaction rollback p14-java-rollback-key p14-java-rollback" exec:java@live-transaction-probe
+target/debug/live_client p14-pull <java-rollback-broker-address> <java-rollback-broker-name> compat_p14_transaction compat_p14_transaction 0 0
+target/debug/live_client p14-transaction 127.0.0.1:19876 compat_p14_transaction compat_p14_transaction rollback p14-rust-rollback-key p14-rust-rollback
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="pull <rust-rollback-broker-address> compat_p14_transaction compat_p14_transaction 0 0" exec:java@live-consumer-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="p14 127.0.0.1:19876 compat_p14_transaction compat_p14_transaction unknown p14-java-unknown-key p14-java-unknown" exec:java@live-transaction-probe
+target/debug/live_client p14-pull <java-unknown-broker-address> <java-unknown-broker-name> compat_p14_transaction compat_p14_transaction 0 0
+target/debug/live_client p14-transaction 127.0.0.1:19876 compat_p14_transaction compat_p14_transaction unknown p14-rust-unknown-key p14-rust-unknown
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="pull <rust-unknown-broker-address> compat_p14_transaction compat_p14_transaction 0 0" exec:java@live-consumer-probe
+The isolated Brokers use transactionCheckInterval=2000 ms. Unknown callbacks must receive an actual Broker check and commit within the 25-second probe timeout; each message is read directly from the Broker and queue named in its transaction send result.

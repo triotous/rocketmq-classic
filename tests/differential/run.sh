@@ -2849,13 +2849,37 @@ if decision == "unknown":
         raise SystemExit(f"Unknown check exceeded the configured bound: {checks[0]!r}")
 if language == "rust":
     hooks = [row for row in rows if row[:2] == ["P14", "END_HOOK"]]
+    expected_hook_address = {
+        "broker-a": "127.0.0.1:50911",
+        "broker-b": "127.0.0.1:50921",
+    }[row[5]]
     if decision in ("commit", "rollback"):
-        if len(hooks) != 1 or len(hooks[0]) != 7 or hooks[0][5] != expected_state or hooks[0][6] != "false":
+        if (
+            len(hooks) != 1
+            or len(hooks[0]) != 7
+            or hooks[0][2] != expected_hook_address
+            or hooks[0][5] != expected_state
+            or hooks[0][6] != "false"
+        ):
             raise SystemExit(f"Rust local end-transaction hook differs from {decision}: {hooks!r}")
     else:
-        local = [row for row in hooks if len(row) == 7 and row[5] == "UNKNOW" and row[6] == "false"]
-        checked = [row for row in hooks if len(row) == 7 and row[5] == "COMMIT" and row[6] == "true"]
-        if len(local) != 1 or len(checked) != 1:
+        local = [
+            hook
+            for hook in hooks
+            if len(hook) == 7
+            and hook[2] == expected_hook_address
+            and hook[5] == "UNKNOW"
+            and hook[6] == "false"
+        ]
+        checked = [
+            hook
+            for hook in hooks
+            if len(hook) == 7
+            and hook[2] == expected_hook_address
+            and hook[5] == "COMMIT_MESSAGE"
+            and hook[6] == "true"
+        ]
+        if len(hooks) != 2 or len(local) != 1 or len(checked) != 1:
             raise SystemExit(f"Rust Unknown did not reach both local and Broker-check end hooks: {hooks!r}")
 PY
     }

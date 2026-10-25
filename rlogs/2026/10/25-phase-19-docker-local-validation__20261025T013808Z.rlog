@@ -562,3 +562,9 @@
 - Kept Java and Rust commit/rollback/Unknown producer output in separate TSV/stderr files, preserved each before/after Broker max-offset query separately, and captured each Broker container's internal `transaction.log` before teardown.
 - Static checks pass: Maven Java compile; Rust live-client build, format check, and strict Clippy; Bash syntax and `git diff --check`; and P14 two-Broker Compose interpolation. `run.sh --check-all` still fails closed before Docker with only P16-V02 and P17-V02 unimplemented.
 - Next action: commit the diagnostic instrumentation and rerun P14-V03 against a fresh disposable Compose project. P14 remains pending until the cross-language Unknown commit is visible and cleanup completes.
+
+## P19-05 P14-V03 second replay validator diagnostic — 2026-10-25
+
+- Clean-source replay `20261025T164647Z` used committed revision `d281923d233eb9d8d40950bf72270ccc3e48fa00` (`source_code_dirty=false`) and completed Java/Rust commit visibility, both rollback checks, and Java Unknown visibility. The Rust Unknown producer reached both end-transaction hooks on Broker A. Its callback marker was `COMMIT`, while the hook correctly emitted the enum name `COMMIT_MESSAGE`; the runner asserted the wrong spelling and exited before the final Java pull.
+- Broker A's archived transaction log confirms a `fromTransactionCheck=true`, commit operation for Rust Unknown. The run lasted 136 seconds; group and topic cleanup succeeded on both Brokers, and exact-project containers, volumes, and network were removed.
+- Evidence is retained at `docs/compatibility/evidence/phase-19/P14-V03/20261025T164647Z/`. Updated the hook validator to expect `COMMIT_MESSAGE`, require exactly the local Unknown and check-commit hooks, and verify both hook addresses match the selected Broker. P14 remains pending until a clean replay completes the opposite-language pull and cleanup.
