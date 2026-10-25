@@ -1470,7 +1470,7 @@ methods = ["send-v1", "send-v2", "batch", "reply-v1", "reply-v2"]
 def parse(path):
     rows = [line.split("\t") for line in Path(path).read_text().splitlines()]
     if len(rows) != 8:
-        raise SystemExit(f"{path}: expected base, five send, end-transaction, and final-offset rows")
+        raise SystemExit(f"{path}: expected base, three send, two one-way reply, end-transaction, and max-offset rows")
     if rows[0][:2] != ["P5", "BASE"] or len(rows[0]) != 3:
         raise SystemExit(f"{path}: missing initial queue offset")
     base = int(rows[0][2])

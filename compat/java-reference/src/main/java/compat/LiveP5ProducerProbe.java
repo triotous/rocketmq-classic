@@ -65,9 +65,7 @@ public final class LiveP5ProducerProbe {
             consumer.setMessageModel(MessageModel.CLUSTERING);
             consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
             heartbeat.getConsumerDataSet().add(consumer);
-            System.err.println("P5 heartbeat start");
             api.sendHeartbeat(brokerAddress, heartbeat, 10_000);
-            System.err.println("P5 heartbeat complete");
             emit(api, smartSend, false, false, true, brokerAddress, topic, "reply-v1");
             emit(api, smartSend, true, false, true, brokerAddress, topic, "reply-v2");
 
