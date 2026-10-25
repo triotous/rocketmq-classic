@@ -31,6 +31,7 @@ scenario and profile.
 | `PROD-002-async-send` | PASS — Java's async callback fired once and Rust's Future resolved once; both returned `SEND_OK`. Each client read the other client's message and matched topic `compat_phase0_send`, queue 0, the returned queue offset, and body `fixed`. The owned topic and isolated Compose project were removed after the run. | [`20261017T055737Z`](evidence/phase-19/PROD-002-async-send/20261017T055737Z/) |
 | `PROD-003-oneway-send` | PASS — Java and Rust oneway calls returned without a Broker response. Broker queue max offsets advanced from 0 to 1 and then 2; Rust read the Java message at queue offset 0, and Java read the Rust message at offset 1. The owned topic and isolated Compose project, network, and volume were removed after the run. | [`20261017T063258Z`](evidence/phase-19/PROD-003-oneway-send/20261017T063258Z/) |
 | `PROD-004-batch-send` | PASS — Java and Rust both returned `SEND_OK` for two messages. Rust read both Java messages by their physical offset IDs at queue offsets 0 and 1; Java read both Rust messages at offsets 2 and 3. Bodies matched `batch-0` and `batch-1`. The owned topic and isolated Compose project, network, and volume were removed after the run. | [`20261017T065458Z`](evidence/phase-19/PROD-004-batch-send/20261017T065458Z/) |
+| `PROD-005-send-timeout` | PASS — a local TCP proxy delayed each direct Broker response by 600 ms beyond the 100 ms client deadline. Java and Rust both reported timeout; Broker max offset reached 2, and both clients pulled the same two distinct messages. The topic and isolated two-Broker Compose project, network, and volumes were removed. | [`20261025T104539Z`](evidence/phase-19/PROD-005-send-timeout/20261025T104539Z/) |
 
 The first batch attempt at source revision `2f9396e3` sent successfully from
 Java but failed in the Rust probe because it read only the first returned
@@ -60,7 +61,9 @@ consumer rows, the P5 route row, `P6-V04`, `ORDER-001-lock-unlock`,
 passed by the current runner; `P0-V03` also passes as an aggregate over eleven
 clean constituent runs, `P7-V02` covers high-level producer send modes, and
 `P9-V03` covers manual pull and offset resume. `REQ-001-request-reply-success`
-checks both cross-language request/reply directions. 16 remain pending. The
+checks both cross-language request/reply directions, and
+`PROD-005-send-timeout` checks commit visibility after a timed-out send. 15
+remain pending. The
 two-Broker profile covers
 lock/unlock and average queue assignment; retry, query, and broader
 interoperability coverage, TLS, ACL, and feature-specific profiles remain
@@ -245,3 +248,17 @@ Both topics and the isolated host-routed Compose project were removed after
 capture. Evidence is under
 [`20261025T103216Z`](evidence/phase-19/REQ-001-request-reply-success/20261025T103216Z/).
 Live coverage is now 21/37, with 16 cases pending.
+
+## Producer timeout — 2026-10-25
+
+`PROD-005-send-timeout` passed on clean revision
+`77afd66edd59a2257d1c5772d68e86262bbd148e` with
+`source_code_dirty=false`. A local TCP proxy delayed each direct Broker
+response by 600 ms while both probes used the manifest's 100 ms send timeout.
+Java reported `RemotingTimeoutException` at 104 ms and Rust reported its RPC
+timeout at 102 ms. The sends began at queue offsets 0 and 1; Broker max offset
+and both cross-language pull results confirmed exactly two committed messages,
+with each expected body present once. Topic deletion and two-Broker Compose
+teardown passed. No matching containers remained after cleanup. Evidence is
+under [`20261025T104539Z`](evidence/phase-19/PROD-005-send-timeout/20261025T104539Z/).
+Live coverage is now 22/37, with 15 cases pending.

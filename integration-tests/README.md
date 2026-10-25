@@ -89,14 +89,17 @@ resuming from a broker-persisted offset after a consumer restart.
 `REQ-001-request-reply-success` checks Java request/Rust reply and Rust
 request/Java reply on separate scenario-owned topics, including the correlated
 reply fields and each responder's observed request.
+`PROD-005-send-timeout` delays each direct Broker response beyond the reviewed
+100 ms deadline and verifies the timed-out sends were each committed once by
+cross-language pull readback.
 It deletes any owned topic and tears down only that project. Toolchain,
 configuration, output, and cleanup evidence is stored under
 `docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
-after comparison and cleanup both succeed. The runner implements 21 of 37
-cases and all 21 have passed: the two Phase 0 route cases, `P0-V03`,
+after comparison and cleanup both succeed. The runner implements 22 of 37
+cases and all 22 have passed: the two Phase 0 route cases, `P0-V03`,
 `P5-V02-route`, `P6-V04`, `P7-V02`, `P9-V03`,
 `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, `HEARTBEAT-001`,
-`PROD-001-sync-send` through `PROD-004-batch-send`, and
+`PROD-001-sync-send` through `PROD-004-batch-send`, `PROD-005-send-timeout`, and
 `CONS-001-query-offset` through `CONS-004-update-offset`, plus
 `TX-001-commit`, `TX-002-rollback`, and `REQ-001-request-reply-success`.
 `--phase N` and `--all` fail closed when any selected case has no runner.
@@ -177,7 +180,7 @@ It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
 produce a `BLOCKED` result with the missing IDs in the archived log; the full
 matrix cannot report success until all IDs have passing evidence. Currently
-21 of 37 live cases have runners; the other 16, the remaining two-Broker
+22 of 37 live cases have runners; the other 15, the remaining two-Broker
 cases, TLS/ACL/feature profiles, and a fresh `run-local.sh --all` pass remain
 pending. The last full local run predates several later runner additions and
 must be rerun against the current revision.

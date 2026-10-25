@@ -10610,3 +10610,17 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - Live coverage is 21/37, with 16 scenarios pending. Full local gates must be
   rerun after the remaining runner additions; broad P18-V01, MAN-01..05, and
   remote Docker CI remain open.
+
+## P19 PROD-005 producer timeout — 2026-10-25 (`77afd66e`)
+
+- [x] Added a local delayed-response proxy and direct Java/Rust send probes.
+  Each Broker response was delayed by 600 ms against the reviewed 100 ms send
+  deadline; both clients reported timeout.
+- [x] `PROD-005-send-timeout` passed at `20261025T104539Z` on
+  `77afd66edd59a2257d1c5772d68e86262bbd148e` with `source_code_dirty=false`.
+  The sequential sends began at queue offsets 0 and 1, and both Java and Rust
+  pull results matched on exactly two committed messages, each body present
+  once. Topic deletion and two-Broker Compose teardown passed.
+- Live coverage is 22/37, with 15 scenarios pending. Full local gates must be
+  rerun after the remaining runner additions; broad P18-V01, MAN-01..05, and
+  remote Docker CI remain open.
