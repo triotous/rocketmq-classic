@@ -60,6 +60,8 @@ public final class LiveP13PopProbe {
                 String group = "compat_p13_pop_" + language + "_" + suffix;
                 api.setMessageRequestMode(brokerAddress, topic, group, MessageRequestMode.POP, 1, 10_000);
                 System.out.printf("P13\tprepare\t%s\tPOP%n", group);
+                System.err.printf("P13\tpop-offset-state\tphase=after-prepare\tgroup=%s\tqueue=0\toffset=%s%n",
+                    group, consumerOffset(api, brokerAddress, topic, group, 0));
             }
         } finally {
             api.shutdown();
@@ -99,6 +101,13 @@ public final class LiveP13PopProbe {
                 }
                 System.out.printf("P13\tseed\t%s\t%d\t%d\t%d%n",
                     body, sent.getMessageQueue().getQueueId(), sent.getQueueOffset(), maxOffset);
+                for (String consumerLanguage : Arrays.asList("java", "rust")) {
+                    for (String suffix : Arrays.asList("expiry", "change", "mixed")) {
+                        String group = "compat_p13_pop_" + consumerLanguage + "_" + suffix;
+                        System.err.printf("P13\tpop-offset-state\tphase=after-seed-q%d\tgroup=%s\tqueue=0\toffset=%s%n",
+                            queueId, group, consumerOffset(api, brokerAddress, topic, group, 0));
+                    }
+                }
             }
         } finally {
             producer.shutdown();
@@ -255,13 +264,14 @@ public final class LiveP13PopProbe {
         return message;
     }
 
-    private static String consumerOffset(MQClientAPIExt api, String brokerAddress, String topic,
+    private static String consumerOffset(MQClientAPIImpl api, String brokerAddress, String topic,
         String group, int queueId) throws Exception {
         QueryConsumerOffsetRequestHeader header = new QueryConsumerOffsetRequestHeader();
         header.setConsumerGroup(group);
         header.setTopic(topic);
         header.setQueueId(queueId);
         header.setBrokerName(BROKER_NAME);
+        header.setSetZeroIfNotFound(false);
         try {
             return Long.toString(api.queryConsumerOffset(brokerAddress, header, 10_000));
         } catch (OffsetNotFoundException notFound) {
