@@ -892,6 +892,13 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
             cat "$evidence_dir/group-create.log" >&2
             exit 1
         fi
+    elif [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
+        echo "Creating scenario-owned readback consumer group compat_timeout_readback"
+        if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_timeout_readback -n namesrv:9876 \
+            >"$evidence_dir/group-create.log" 2>&1; then
+            cat "$evidence_dir/group-create.log" >&2
+            exit 1
+        fi
     elif [[ "$scenario_id" == "P9-V03" ]]; then
         for group_suffix in java rust; do
             pull_group="${consumer_group}_${group_suffix}"
