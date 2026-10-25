@@ -30,13 +30,31 @@ public final class LiveP13PopProbe {
     private LiveP13PopProbe() {}
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 4 || !("seed".equals(args[0]) || "consume".equals(args[0]))) {
-            throw new IllegalArgumentException("usage: LiveP13PopProbe seed|consume <broker-address> <topic> <language>");
+        if (args.length != 4 || !("prepare".equals(args[0]) || "seed".equals(args[0]) || "consume".equals(args[0]))) {
+            throw new IllegalArgumentException("usage: LiveP13PopProbe prepare|seed|consume <broker-address> <topic> <language>");
         }
-        if ("seed".equals(args[0])) {
+        if ("prepare".equals(args[0])) {
+            prepare(args[1], args[2], args[3]);
+        } else if ("seed".equals(args[0])) {
             seed(args[1], args[2], args[3]);
         } else {
             consume(args[1], args[2], args[3]);
+        }
+    }
+
+    private static void prepare(String brokerAddress, String topic, String language) throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setVipChannelEnabled(false);
+        MQClientAPIExt api = new MQClientAPIExt(config, new NettyClientConfig(), null, null);
+        api.start();
+        try {
+            for (String suffix : Arrays.asList("expiry", "change", "mixed")) {
+                String group = "compat_p13_pop_" + language + "_" + suffix;
+                api.setMessageRequestMode(brokerAddress, topic, group, MessageRequestMode.POP, 1, 10_000);
+                System.out.printf("P13\tprepare\t%s\tPOP%n", group);
+            }
+        } finally {
+            api.shutdown();
         }
     }
 

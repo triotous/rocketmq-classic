@@ -673,6 +673,8 @@ elif [[ "$scenario_id" == "P13-V02" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="prepare $broker_addr $topic java" exec:java@live-p13-pop-probe
+target/debug/live_client p13-pop-prepare $broker_addr $topic rust
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed $broker_addr $topic java" exec:java@live-p13-pop-probe
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="consume $broker_addr $topic java" exec:java@live-p13-pop-probe
 target/debug/live_client p13-pop-consume $broker_addr $topic rust
@@ -1803,6 +1805,17 @@ PY
 elif [[ "$scenario_id" == "P13-V02" ]]; then
     echo "Seeding queue 0/1 and exercising both Java and Rust POP receipt lifecycles"
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="prepare $broker_addr $topic java" exec:java@live-p13-pop-probe \
+        >"$evidence_dir/java-p13-pop-prepare.tsv" 2>"$evidence_dir/java-p13-pop-prepare.stderr"; then
+        cat "$evidence_dir/java-p13-pop-prepare.tsv" "$evidence_dir/java-p13-pop-prepare.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! "$repo_root/target/debug/live_client" p13-pop-prepare "$broker_addr" "$topic" rust \
+        >"$evidence_dir/rust-p13-pop-prepare.tsv" 2>"$evidence_dir/rust-p13-pop-prepare.stderr"; then
+        cat "$evidence_dir/rust-p13-pop-prepare.tsv" "$evidence_dir/rust-p13-pop-prepare.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
         -Dexec.args="seed $broker_addr $topic java" exec:java@live-p13-pop-probe \
         >"$evidence_dir/java-p13-pop-seed.tsv" 2>"$evidence_dir/java-p13-pop-seed.stderr"; then
         cat "$evidence_dir/java-p13-pop-seed.tsv" "$evidence_dir/java-p13-pop-seed.stderr" 2>/dev/null >&2 || true
@@ -1828,6 +1841,11 @@ expected_seed = [["P13", "seed", "p13-java-q0", "0"], ["P13", "seed", "p13-java-
 seed = [line.split("\t") for line in (root / "java-p13-pop-seed.tsv").read_text().splitlines()]
 if seed != expected_seed:
     raise SystemExit(f"Java seed rows differ: {seed!r}")
+for language in ("java", "rust"):
+    prepare = [line.split("\t") for line in (root / f"{language}-p13-pop-prepare.tsv").read_text().splitlines()]
+    expected_prepare = [["P13", "prepare", f"compat_p13_pop_{language}_{suffix}", "POP"] for suffix in ("expiry", "change", "mixed")]
+    if prepare != expected_prepare:
+        raise SystemExit(f"{language} POP mode setup rows differ: {prepare!r}")
 expected = {
     "expiry-redelivery": ["P13", "expiry-redelivery", "OK", "0"],
     "change-invisibility": ["P13", "change-invisibility", "OK"],

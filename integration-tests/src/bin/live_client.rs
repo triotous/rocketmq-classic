@@ -76,6 +76,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("p13-pop-consume") if arguments.len() == 4 => {
             p13_pop_consume(&arguments[1], &arguments[2], &arguments[3]).await
         }
+        Some("p13-pop-prepare") if arguments.len() == 4 => {
+            p13_pop_prepare(&arguments[1], &arguments[2], &arguments[3]).await
+        }
         Some("p6-shared-runtime") if arguments.len() == 6 => {
             shared_runtime_probe(
                 &arguments[1],
@@ -1694,6 +1697,37 @@ async fn p5_consumer(
         )
         .await?;
         println!("P5C\tUNLOCK\tOK");
+        Ok::<(), Box<dyn Error>>(())
+    }
+    .await;
+    remoting.shutdown().await;
+    operation
+}
+
+async fn p13_pop_prepare(
+    broker_address: &str,
+    topic: &str,
+    language: &str,
+) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    remoting.start()?;
+    let api = MQClientApi::new(remoting.clone());
+    let operation = async {
+        for suffix in ["expiry", "change", "mixed"] {
+            let group = format!("compat_p13_pop_{language}_{suffix}");
+            let mut mode = SetMessageRequestModeRequestBody::default();
+            mode.set_topic(Some(topic.to_owned()));
+            mode.set_consumer_group(Some(group.clone()));
+            mode.set_mode(Some(MessageRequestMode::Pop));
+            mode.set_pop_share_queue_num(1);
+            api.set_message_request_mode(
+                broker_address,
+                &mode,
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await?;
+            println!("P13\tprepare\t{group}\tPOP");
+        }
         Ok::<(), Box<dyn Error>>(())
     }
     .await;
