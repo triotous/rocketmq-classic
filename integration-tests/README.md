@@ -7,6 +7,16 @@ The Broker advertises the Compose service name `broker`, so clients must run on
 the same Compose network. Host port mappings bind only to `127.0.0.1` and are
 for diagnostics; they do not make the advertised Broker address host-routable.
 
+The `two-broker-host` profile is for host-run Java and Rust clients that need
+NameServer routes to both Brokers. It advertises `127.0.0.1:50911` and
+`127.0.0.1:50921`, with the NameServer mapped to host port `19876` by default.
+Set `ROCKETMQ_NAMESRV_HOST_PORT` before setup to select another unused loopback
+port. It uses separate volumes from the Compose-network `two-broker` profile.
+Since each Broker advertises a host loopback address, run topic and group admin
+commands against each Broker's own loopback address from its matching service
+container (`broker-a-host` or `broker-b-host`). The profile is still an
+unmodified RocketMQ 5.3.4 topology; the host route mapping is test-only.
+
 Provisioning requires an explicit disposable-test marker and profile:
 
 ```bash

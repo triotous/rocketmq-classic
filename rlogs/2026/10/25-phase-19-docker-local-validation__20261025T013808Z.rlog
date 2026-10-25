@@ -332,3 +332,16 @@
   filtered Docker queries found no remaining project resources. The required
   5.3.4 manifest row remains unchanged, with 10 runnerless Phase 19 cases
   pending. Supplementary success does not establish production support.
+
+## P19-04 host-routed two-Broker profile setup — 2026-10-25
+
+- Added the separately named `two-broker-host` profile using the pinned
+  unmodified 5.3.4 image, distinct host loopback listeners at 50911 and 50921,
+  separate Broker volumes, and the existing host NameServer port mapping.
+  Setup health checks passed for both Broker containers and NameServer
+  registration showed both Broker names.
+- Compose config validation and Bash syntax checks passed. A disposable setup
+  smoke test used NameServer port 49876 and project
+  `rocketmq-classic-p19-two-broker-host-check`; `cleanup.sh` removed its
+  containers, network, and both volumes, and filtered Docker queries returned
+  no remaining project resources. Host-client scenario execution is pending.

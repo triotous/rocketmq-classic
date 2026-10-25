@@ -9,8 +9,8 @@ if [[ "${ROCKETMQ_CLASSIC_TEST_ENV:-}" != "local-disposable" ]]; then
     exit 2
 fi
 
-if [[ "${ROCKETMQ_PROFILE:-}" != "basic" && "${ROCKETMQ_PROFILE:-}" != "two-broker" && "${ROCKETMQ_PROFILE:-}" != "transaction" && "${ROCKETMQ_PROFILE:-}" != "host-routed" && "${ROCKETMQ_PROFILE:-}" != "tls" ]]; then
-    echo "ROCKETMQ_PROFILE must name an implemented profile (currently: basic, two-broker, transaction, host-routed, or tls)" >&2
+if [[ "${ROCKETMQ_PROFILE:-}" != "basic" && "${ROCKETMQ_PROFILE:-}" != "two-broker" && "${ROCKETMQ_PROFILE:-}" != "two-broker-host" && "${ROCKETMQ_PROFILE:-}" != "transaction" && "${ROCKETMQ_PROFILE:-}" != "host-routed" && "${ROCKETMQ_PROFILE:-}" != "tls" ]]; then
+    echo "ROCKETMQ_PROFILE must name an implemented profile (currently: basic, two-broker, two-broker-host, transaction, host-routed, or tls)" >&2
     exit 2
 fi
 
@@ -27,6 +27,8 @@ if [[ "$ROCKETMQ_PROFILE" == "transaction" ]]; then
     broker_service=broker-tx
 elif [[ "$ROCKETMQ_PROFILE" == "host-routed" ]]; then
     broker_service=broker-host
+elif [[ "$ROCKETMQ_PROFILE" == "two-broker-host" ]]; then
+    broker_service=broker-a-host
 fi
 
 "${compose[@]}" config --quiet
@@ -35,7 +37,7 @@ fi
 for attempt in {1..90}; do
     if output="$("${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin clusterList -n namesrv:9876 2>&1)" \
         && [[ "$output" == *"broker-a"* ]]; then
-        if [[ "$ROCKETMQ_PROFILE" == "basic" || "$ROCKETMQ_PROFILE" == "transaction" || "$ROCKETMQ_PROFILE" == "host-routed" || "$ROCKETMQ_PROFILE" == "tls" || "$output" == *"broker-b"* ]]; then
+        if [[ "$ROCKETMQ_PROFILE" == "basic" || "$ROCKETMQ_PROFILE" == "transaction" || "$ROCKETMQ_PROFILE" == "host-routed" || "$ROCKETMQ_PROFILE" == "tls" || ( "$ROCKETMQ_PROFILE" == "two-broker-host" && "$output" == *"broker-b"* ) || ( "$ROCKETMQ_PROFILE" == "two-broker" && "$output" == *"broker-b"* ) ]]; then
             printf '%s\n' "$output"
             printf 'RocketMQ 5.3.4 %s profile is ready in Compose project %s\n' "$ROCKETMQ_PROFILE" "$project_name"
             exit 0
