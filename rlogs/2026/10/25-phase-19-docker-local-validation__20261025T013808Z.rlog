@@ -536,3 +536,9 @@
 ## P19-05 P12-V03 Java probe invocation correction — 2026-10-25
 
 - The first replay's evidence is committed in `7cbff856`; the `deleteSubGroup` cleanup command succeeded on both Brokers and the Compose cleanup removed all project resources. The runner now passes the Java probe's required `consumer` operation before the nameserver and file-gate arguments. A new clean-source replay is required; the manifest remains pending.
+
+## P19-05 P12-V03 second clean replay shutdown diagnostic — 2026-10-25
+
+- Clean-source run `20261025T162123Z` on committed revision `3d49930c5501599879e1de5774152ca885af6cf2` provisioned both pinned 5.3.4 Brokers and completed the mixed orderly handoff. Java initially owned both queues with callbacks held; Rust received `p12-slow-a` at offset 0 and `p12-next-a` at offset 1 while Java's callback was still in flight, and Broker A persisted offset 2. Rust exited, then the released Java callbacks completed and the probe wrote its `STOPPED` marker.
+- The Java Maven process remained alive for more than four minutes after that marker. Its thread dump shows Maven `ExecJavaMojo.joinNonDaemonThreads` waiting for `ConsumeMessageScheduledThread_1`, parked on the orderly consumer's scheduled executor delayed-work queue after public `consumer.shutdown()` returned. The runner-owned Java probe was terminated to unblock its trap; the runner deleted the scenario group from both Brokers, deleted the topic, and removed the exact disposable Compose project's containers, volumes and network. Filtered exact-project Docker queries were empty.
+- Evidence is retained at `docs/compatibility/evidence/phase-19/P12-V03/20261025T162123Z/`, with `source_code_dirty=false`, exit status 1, duration 382 seconds, output markers, the Java thread dump, and teardown logs. Handoff and offset checks completed, but Java process shutdown did not converge, so `P12-V03` remains pending and is not counted as a pass.
