@@ -3274,12 +3274,35 @@ impl PushConsumer {
             __phase18_header_1
         };
         let pull_started = Instant::now();
-        let pull_result = context
+        let pull_result = match context
             .runtime
             .api()
             .pull_message(&broker_address, &header, deadline)
             .await
-            .map_err(|error| self.pull_retry_error_from_rpc(error))?;
+        {
+            Ok(result) => result,
+            Err(error) => {
+                if matches!(
+                    &error,
+                    rocketmq_classic_core::error::RpcError::Response { code, .. }
+                        if *code == response::SUBSCRIPTION_NOT_LATEST
+                ) {
+                    // A Broker may reject a pull issued with a newer
+                    // subscription version when the update heartbeat lost
+                    // the shared try-lock race. Retry the heartbeat so the
+                    // pull loop can converge without waiting for its timer.
+                    if let Err(heartbeat_error) =
+                        context.runtime.send_heartbeat_to_all_brokers().await
+                    {
+                        tracing::debug!(
+                            error = %heartbeat_error,
+                            "push subscription refresh heartbeat failed after stale-subscription response"
+                        );
+                    }
+                }
+                return Err(self.pull_retry_error_from_rpc(error));
+            }
+        };
         // A long-poll can finish after `subscribe` has replaced this topic's
         // expression. Filter its response with the current local subscription
         // so an in-flight request cannot deliver messages from the old one.
