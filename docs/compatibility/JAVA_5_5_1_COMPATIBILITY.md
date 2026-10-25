@@ -42,9 +42,11 @@ receive a peer hostname; Rust rejects it. The 12 pending cases include
 `P5-V02-extensions`; its first attempt completed heartbeat, heartbeat V2,
 assignment, and request-mode calls, then Broker 5.3.4 rejected Lite
 subscription request 200071 as unsupported. A first `P13-V02` attempt seeded
-two queues but Java POP returned `POLLING_NOT_FOUND`; inspection showed its
-per-group POP request mode had not been set. That diagnostic run was cleaned
-up and remains pending while the probe is corrected. This does
+two queues but Java POP returned `POLLING_NOT_FOUND`; the next attempt set
+each group to POP mode immediately before POP but still returned
+`POLLING_NOT_FOUND`, after seeding had already initialized the group offsets.
+Both diagnostic runs were cleaned up; P13 remains pending while setup ordering
+is corrected. This does
 not close the broader P18-V01 public API/settings/flow reverse audit or establish
 full client parity. See
 [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server

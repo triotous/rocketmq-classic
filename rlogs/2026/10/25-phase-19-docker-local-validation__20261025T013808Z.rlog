@@ -176,4 +176,9 @@
 
 - Added a Java 5.5.1 / Rust probe for queue 0/1 POP, expiry redelivery, changed visibility, replacement-receipt ACK, and malformed extra-info rejection. Implementation commit: `61d46867`.
 - The clean-source run `20261025T121016Z` seeded queue 0 and queue 1, but Java's first immediate POP returned `POLLING_NOT_FOUND`. The probe had not set POP request mode on each POP group; no lifecycle assertion passed and Rust consumption did not run. Evidence remains diagnostic at `docs/compatibility/evidence/phase-19/P13-V02/20261025T121016Z/`; manifest status remains pending.
-- The runner deleted `compat_p13_pop` and removed the isolated two-Broker project, network, and volumes. Live coverage remains 25/37 PASS with 12 pending; the probe will set POP request mode per group before retry. No production, remote checkout, or owner environment was accessed.
+- The runner deleted `compat_p13_pop` and removed the isolated two-Broker project, network, and volumes. Live coverage remains 25/37 PASS with 12 pending; the first correction still set POP mode too late, so both diagnostic runs are retained and setup ordering will be moved before seeding. No production, remote checkout, or owner environment was accessed.
+
+## P19 P13-V02 POP mode-order retry — 2026-10-25
+
+- The clean-source run `20261025T121249Z` on `23a3131e` set POP request mode for each group immediately before the POP request, but Java still returned `POLLING_NOT_FOUND`. The groups were first switched to POP after the Java seed messages, so the Broker initialized their offsets after the seeded records. No lifecycle assertion passed and Rust consumption did not run. Evidence: `docs/compatibility/evidence/phase-19/P13-V02/20261025T121249Z/`.
+- The runner deleted the topic and removed the two-Broker Compose containers, network, and volumes. The manifest remains pending; coverage is still 25/37 PASS with 12 pending. Next attempt will set both languages' POP modes before Java seeds the messages.

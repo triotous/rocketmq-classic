@@ -1,0 +1,3 @@
+This clean-source retry compiled the Java 5.5.1 and Rust live probes, created the isolated two-Broker 5.3.4 project, provisioned the scenario topic and six lifecycle groups, and seeded Java messages on broker-a queues 0 and 1.
+
+The Java probe set each POP group's request mode immediately before its POP request. The first POP still returned POLLING_NOT_FOUND. Because the mode setup occurred after seeding, Broker group offsets had already been initialized beyond the seeded messages. No lifecycle assertion passed and Rust consumption did not run. The runner removed the topic, containers, network, and volumes. The manifest remains pending; the next attempt will set both clients' POP modes before seeding.
