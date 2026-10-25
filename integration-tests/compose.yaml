@@ -150,7 +150,7 @@ services:
       store-init-a-host:
         condition: service_completed_successfully
     volumes:
-      - ./config/broker-a-host.conf:/etc/rocketmq/broker.conf:ro
+      - ${ROCKETMQ_BROKER_A_HOST_CONFIG:-./config/broker-a-host.conf}:/etc/rocketmq/broker.conf:ro
       - broker-a-host-store:/home/rocketmq/store
     ports:
       - "127.0.0.1:${ROCKETMQ_BROKER_A_PUBLISHED_HOST_PORT:-50911}:50911"
@@ -171,7 +171,7 @@ services:
       store-init-b-host:
         condition: service_completed_successfully
     volumes:
-      - ./config/broker-b-host.conf:/etc/rocketmq/broker.conf:ro
+      - ${ROCKETMQ_BROKER_B_HOST_CONFIG:-./config/broker-b-host.conf}:/etc/rocketmq/broker.conf:ro
       - broker-b-host-store:/home/rocketmq/store
     ports:
       - "127.0.0.1:${ROCKETMQ_BROKER_B_PUBLISHED_HOST_PORT:-50921}:50921"

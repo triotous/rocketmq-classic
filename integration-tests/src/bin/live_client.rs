@@ -1,5 +1,12 @@
 use std::{
-    any::Any, collections::HashSet, env, error::Error, fmt::Write as _, path::Path, sync::Arc,
+    any::Any,
+    collections::HashSet,
+    env,
+    error::Error,
+    fmt::Write as _,
+    path::Path,
+    sync::Arc,
+    sync::atomic::{AtomicUsize, Ordering},
     time::Duration,
 };
 
@@ -210,6 +217,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
+        Some("p14-transaction") if arguments.len() == 7 => {
+            p14_transaction(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                &arguments[5],
+                &arguments[6],
+            )
+            .await
+        }
         Some("max-offset") if arguments.len() == 4 => {
             max_offset(&arguments[1], &arguments[2], arguments[3].parse()?).await
         }
@@ -297,6 +315,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
+        Some("p14-pull") if arguments.len() == 7 => {
+            pull_named(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                arguments[5].parse()?,
+                arguments[6].parse()?,
+            )
+            .await
+        }
         Some("lock") if arguments.len() == 7 => {
             lock_batch(
                 &arguments[1],
@@ -319,7 +348,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p10-push <namesrv-address> <topic> <group> <ready-file> <failure-go-file> | p11-mixed-group <namesrv-address> <topic> <group> <ownership-file> <stop-file> <exited-file> | p12-orderly <namesrv-address> <topic> <group> <ownership-file> <ready-file> <stop-file> <exited-file> <marker-dir> | p11-push <namesrv-address> <topic> <group> <body> <ready-file> | p11-producer <namesrv-address> <topic> <producer-group> <body> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume|p5-extension-lite-pop <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-timeout|p19-late-timeout <namesrv-address> <topic> <producer-group> <body> <timeout-ms> <hold-ms> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> [delay-ms] | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-query-named <broker-address> <broker-name> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p10-push <namesrv-address> <topic> <group> <ready-file> <failure-go-file> | p11-mixed-group <namesrv-address> <topic> <group> <ownership-file> <stop-file> <exited-file> | p12-orderly <namesrv-address> <topic> <group> <ownership-file> <ready-file> <stop-file> <exited-file> <marker-dir> | p11-push <namesrv-address> <topic> <group> <body> <ready-file> | p11-producer <namesrv-address> <topic> <producer-group> <body> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume|p5-extension-lite-pop <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-timeout|p19-late-timeout <namesrv-address> <topic> <producer-group> <body> <timeout-ms> <hold-ms> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> [delay-ms] | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | p14-transaction <namesrv-address> <topic> <producer-group> <commit|rollback|unknown> <key> <body> | p14-pull <broker-address> <broker-name> <group> <topic> <queue-id> <offset> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-query-named <broker-address> <broker-name> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -1162,6 +1191,8 @@ async fn rebalance(
 
 struct FixedTransactionListener {
     state: LocalTransactionState,
+    check_state: LocalTransactionState,
+    check_count: Arc<AtomicUsize>,
 }
 
 impl TransactionListener for FixedTransactionListener {
@@ -1177,7 +1208,8 @@ impl TransactionListener for FixedTransactionListener {
         &self,
         _message: &mut MessageExt,
     ) -> Result<Option<LocalTransactionState>, TransactionCallbackError> {
-        Ok(Some(LocalTransactionState::Unknown))
+        self.check_count.fetch_add(1, Ordering::AcqRel);
+        Ok(Some(self.check_state))
     }
 }
 
@@ -1199,7 +1231,11 @@ async fn transaction(
         .client_config_mut()
         .set_namesrv_addr(Some(namesrv_address.to_owned()));
     let producer = TransactionProducer::new(config);
-    producer.set_transaction_listener(Some(Arc::new(FixedTransactionListener { state })));
+    producer.set_transaction_listener(Some(Arc::new(FixedTransactionListener {
+        state,
+        check_state: LocalTransactionState::Unknown,
+        check_count: Arc::new(AtomicUsize::new(0)),
+    })));
     producer.start().await?;
 
     let mut message = Message::new(topic, body.as_bytes().to_vec());
@@ -1217,6 +1253,92 @@ async fn transaction(
         key,
         result.send_result.msg_id
     );
+    Ok(())
+}
+
+async fn p14_transaction(
+    namesrv_address: &str,
+    topic: &str,
+    producer_group: &str,
+    decision: &str,
+    key: &str,
+    body: &str,
+) -> Result<(), Box<dyn Error>> {
+    let (state, check_state) = match decision {
+        "commit" => (
+            LocalTransactionState::Commit,
+            LocalTransactionState::Unknown,
+        ),
+        "rollback" => (
+            LocalTransactionState::Rollback,
+            LocalTransactionState::Unknown,
+        ),
+        "unknown" => (
+            LocalTransactionState::Unknown,
+            LocalTransactionState::Commit,
+        ),
+        _ => return Err("P14 transaction decision must be commit, rollback, or unknown".into()),
+    };
+    let check_count = Arc::new(AtomicUsize::new(0));
+    let mut config = ProducerConfig::new(producer_group)?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    let producer = TransactionProducer::new(config);
+    producer.set_transaction_listener(Some(Arc::new(FixedTransactionListener {
+        state,
+        check_state,
+        check_count: check_count.clone(),
+    })));
+    producer.start().await?;
+
+    let mut message = Message::new(topic, body.as_bytes().to_vec());
+    message.set_keys(key.to_owned())?;
+    let sent_at = Instant::now();
+    let sent = producer
+        .send_message_in_transaction(&mut message, None)
+        .await;
+    let result = match sent {
+        Ok(result) => result,
+        Err(error) => {
+            producer.shutdown().await?;
+            return Err(error.into());
+        }
+    };
+
+    let check_elapsed_ms = if decision == "unknown" {
+        let checked = tokio::time::timeout(Duration::from_secs(25), async {
+            while check_count.load(Ordering::Acquire) == 0 {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .is_ok();
+        let elapsed_ms = sent_at.elapsed().as_millis();
+        if !checked {
+            producer.shutdown().await?;
+            return Err("Broker transaction check did not arrive within 25 seconds".into());
+        }
+        Some(elapsed_ms)
+    } else {
+        None
+    };
+    producer.shutdown().await?;
+    println!(
+        "P14\tTX\t{}\t{}\t{}\t{}\t{}\t{}",
+        result.send_result.status.name(),
+        result.local_transaction_state.java_name(),
+        key,
+        result.send_result.broker_name,
+        result.send_result.queue_id,
+        result.send_result.queue_offset
+    );
+    if let Some(elapsed_ms) = check_elapsed_ms {
+        println!(
+            "P14\tCHECK\tCOMMIT\t{}\t{elapsed_ms}",
+            check_count.load(Ordering::Acquire)
+        );
+    }
     Ok(())
 }
 
@@ -3807,6 +3929,25 @@ async fn pull(
     queue_id: i32,
     queue_offset: i64,
 ) -> Result<(), Box<dyn Error>> {
+    pull_named(
+        broker_address,
+        "broker-a",
+        group,
+        topic,
+        queue_id,
+        queue_offset,
+    )
+    .await
+}
+
+async fn pull_named(
+    broker_address: &str,
+    broker_name: &str,
+    group: &str,
+    topic: &str,
+    queue_id: i32,
+    queue_offset: i64,
+) -> Result<(), Box<dyn Error>> {
     let remoting = RemotingClient::new(TransportMode::Plain);
     if let Err(error) = remoting.start() {
         remoting.shutdown().await;
@@ -3825,7 +3966,7 @@ async fn pull(
     header.set_subscription(Some("*".to_owned()));
     header.set_sub_version(Some(0));
     header.set_expression_type(Some("TAG".to_owned()));
-    header.set_broker_name(Some("broker-a".to_owned()));
+    header.set_broker_name(Some(broker_name.to_owned()));
     let result = api
         .pull_message(
             broker_address,
