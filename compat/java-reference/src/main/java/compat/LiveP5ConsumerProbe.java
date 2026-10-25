@@ -1,5 +1,6 @@
 package compat;
 
+import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 
@@ -9,6 +10,7 @@ import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.impl.consumer.PullResultExt;
 import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
+import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
@@ -59,7 +61,7 @@ public final class LiveP5ConsumerProbe {
             if (!(ordinary instanceof PullResultExt)) {
                 throw new IllegalStateException("ordinary pull omitted message bytes");
             }
-            List<MessageExt> ordinaryMessages = ordinary.getMsgFoundList();
+            List<MessageExt> ordinaryMessages = decodeMessages(ordinary);
             if (ordinaryMessages != null) {
                 for (MessageExt message : ordinaryMessages) {
                     if (seedBody.equals(new String(message.getBody(), java.nio.charset.StandardCharsets.UTF_8))) {
@@ -74,12 +76,12 @@ public final class LiveP5ConsumerProbe {
                 ordinaryMessages.size(), ordinary.getMinOffset(), ordinary.getMaxOffset());
 
             PullResult lite = pull(api, brokerAddress, group, topic, true);
-            if (!"FOUND".equals(lite.getPullStatus().name()) || lite.getMsgFoundList() == null
-                || lite.getMsgFoundList().isEmpty()) {
+            List<MessageExt> liteMessages = decodeMessages(lite);
+            if (!"FOUND".equals(lite.getPullStatus().name()) || liteMessages.isEmpty()) {
                 throw new IllegalStateException("lite pull did not return the seeded queue messages");
             }
             System.out.printf("P5C\tLITE_PULL\t%s\t%d\t%d\t%d%n", lite.getPullStatus().name(),
-                lite.getMsgFoundList().size(), lite.getMinOffset(), lite.getMaxOffset());
+                liteMessages.size(), lite.getMinOffset(), lite.getMaxOffset());
 
             UpdateConsumerOffsetRequestHeader update = new UpdateConsumerOffsetRequestHeader();
             update.setConsumerGroup(group);
@@ -148,5 +150,14 @@ public final class LiveP5ConsumerProbe {
         header.setExpressionType("TAG");
         header.setBrokerName("broker-a");
         return api.pullMessage(brokerAddress, header, 10_000, CommunicationMode.SYNC, null);
+    }
+
+    private static List<MessageExt> decodeMessages(PullResult result) {
+        if (!(result instanceof PullResultExt)) {
+            throw new IllegalStateException("pull result did not include the Broker message body");
+        }
+        byte[] binary = ((PullResultExt) result).getMessageBinary();
+        return binary == null ? Collections.emptyList()
+            : MessageDecoder.decodesBatch(ByteBuffer.wrap(binary), true, true, true);
     }
 }
