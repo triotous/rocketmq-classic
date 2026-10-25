@@ -1,7 +1,7 @@
 # Owner validation handoff
 
 Status date: 2026-10-25. The Phase 19 local candidate is
-`698172cd9882e87e610edb19bcee40798f23ecc6`; this document is a handoff, not
+`553564a21e4d2a40148c60637f4817c7d6f26b74`; this document is a handoff, not
 owner approval or release evidence. The owner is the RocketMQ service owner
 plus the relevant network/security/operations owner; names and authorized
 resources have not been supplied.

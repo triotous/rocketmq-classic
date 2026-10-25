@@ -64,19 +64,19 @@ success-path evidence.
 ## Current-candidate rerun — 2026-10-25
 
 The seven implemented cases were rerun against the pinned image on candidate
-revision `698172cd9882e87e610edb19bcee40798f23ecc6`, using fresh isolated
+revision `553564a21e4d2a40148c60637f4817c7d6f26b74`, using fresh isolated
 Compose projects, recreated topics, Java 5.5.1 Maven probes, and Rust 1.85.0
 probes. All seven passed and their new evidence replaced the manifest pointers:
 
 | Scenario | Result | Evidence |
 | --- | --- | --- |
-| `ROUTE-001-get-existing-topic` | PASS — four matching route rows | [`20261025T013825Z`](evidence/phase-19/ROUTE-001-get-existing-topic/20261025T013825Z/) |
-| `ROUTE-002-topic-not-exist` | PASS — both clients returned no route | [`20261025T014009Z`](evidence/phase-19/ROUTE-002-topic-not-exist/20261025T014009Z/) |
-| `HEARTBEAT-001` | PASS — encoded heartbeat and response version match | [`20261025T014103Z`](evidence/phase-19/HEARTBEAT-001/20261025T014103Z/) |
-| `PROD-001-sync-send` | PASS — send results and bidirectional readback match | [`20261025T014214Z`](evidence/phase-19/PROD-001-sync-send/20261025T014214Z/) |
-| `PROD-002-async-send` | PASS — single completion and bidirectional readback match | [`20261025T014347Z`](evidence/phase-19/PROD-002-async-send/20261025T014347Z/) |
-| `PROD-003-oneway-send` | PASS — no-response sends reached queues and cross-readback matched | [`20261025T014507Z`](evidence/phase-19/PROD-003-oneway-send/20261025T014507Z/) |
-| `PROD-004-batch-send` | PASS — both messages from each client were readable by the other | [`20261025T014652Z`](evidence/phase-19/PROD-004-batch-send/20261025T014652Z/) |
+| `ROUTE-001-get-existing-topic` | PASS — four matching route rows | [`20261025T021228Z`](evidence/phase-19/ROUTE-001-get-existing-topic/20261025T021228Z/) |
+| `ROUTE-002-topic-not-exist` | PASS — both clients returned no route | [`20261025T021336Z`](evidence/phase-19/ROUTE-002-topic-not-exist/20261025T021336Z/) |
+| `HEARTBEAT-001` | PASS — encoded heartbeat and response version match | [`20261025T021430Z`](evidence/phase-19/HEARTBEAT-001/20261025T021430Z/) |
+| `PROD-001-sync-send` | PASS — send results and bidirectional readback match | [`20261025T021526Z`](evidence/phase-19/PROD-001-sync-send/20261025T021526Z/) |
+| `PROD-002-async-send` | PASS — single completion and bidirectional readback match | [`20261025T021643Z`](evidence/phase-19/PROD-002-async-send/20261025T021643Z/) |
+| `PROD-003-oneway-send` | PASS — no-response sends reached queues and cross-readback matched | [`20261025T021802Z`](evidence/phase-19/PROD-003-oneway-send/20261025T021802Z/) |
+| `PROD-004-batch-send` | PASS — both messages from each client were readable by the other | [`20261025T021932Z`](evidence/phase-19/PROD-004-batch-send/20261025T021932Z/) |
 
 The evidence records the image digest, runtime platform, server startup version,
 toolchains, commands, and project cleanup. The remaining 30 scenario IDs have

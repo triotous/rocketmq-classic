@@ -10406,3 +10406,35 @@ The producer fixture was regenerated. Maven verification passes both while
 regenerating the fixture and in default verification mode, and the focused
 Rust pagination test passes. Current-head remote validation is triggered by
 the fixture fix commit. Details: `rlogs/2026/10/25-phase-18-timeout-fixture-determinism__20261025T002216Z.rlog`.
+
+## P19 Docker validation checkpoint — 2026-10-25 (`553564a2`)
+
+- [x] P19-01 pinned the official ASF `apache/rocketmq:5.3.4` image index at
+  `sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8`.
+  The arm64 image reports Ubuntu 24.04/OpenJDK 8u472, and Broker startup
+  reported `V5_3_4`; the Java client probe used 5.5.1 on Maven JDK 27 and the
+  Rust runner used 1.85.0.
+- [x] P19-02 basic single-Broker profile readiness, route lookup, scenario-owned
+  resource cleanup, and host-to-advertised-Broker interoperability passed in
+  seven fresh isolated runs. Current evidence is linked from
+  `docs/compatibility/SERVER_5_3_4_RESULTS.md`.
+- [x] P19-03 ran 19 server-free gates on the committed runner. Default and
+  all-feature workspace suites, check, strict Clippy, Maven verify, comparator
+  self-test/manifest, race/leak and fuzz smoke, examples, benchmark build/run,
+  metadata/package checks, formatting, and UTC/Taipei ID checks passed.
+  Evidence: `docs/compatibility/evidence/phase-19/run-local/20261025T022131Z/`.
+- [ ] P19-03/P19-V02 full live inventory remains BLOCKED: 30 of 37 scenario
+  IDs have no runner. The fail-closed coverage gate ran after the offline
+  gates, listed every missing ID, and started no Docker resources.
+- [ ] P19-04/P19-V03/P19-V04 remain open. Only the seven listed live cases have
+  Java/Rust comparisons; the broad P18-V01 source/API/settings/flow reverse
+  audit and consumer, retry, rebalance, transaction, request/reply, TLS/auth,
+  admin, and stress matrices are incomplete.
+- [ ] P19-05/P19-V05 remain blocked. No matched Java/Rust outcomes or success
+  path for the 30 missing cases is claimed. MAN-01 through MAN-05 remain
+  BLOCKED in `docs/owner-validation.md`; no owner environment was accessed.
+- [ ] P19-07 Docker CI job is present but has not been run remotely. Current
+  local matrix correctly returns BLOCKED, so final compatibility/release
+  approval is not supported.
+
+Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z.rlog`.

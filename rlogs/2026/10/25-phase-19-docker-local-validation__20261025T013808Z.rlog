@@ -24,3 +24,11 @@
 - `docs/owner-validation.md` records MAN-01 through MAN-05 as BLOCKED because owner topology/identity/workload inputs are absent and the security/failover/stress probes are incomplete. No owner environment was accessed; no production mutation was made.
 - The new Docker CI job is defined but has not been run remotely. It will fail closed at the current live coverage gate until the 30 missing runners and evidence exist.
 - No final compatibility or release approval is supported by the present evidence.
+
+## Committed-revision refresh
+
+- Phase 19 implementation/reporting commit: `553564a21e4d2a40148c60637f4817c7d6f26b74` on `phase/19-docker-local-validation`.
+- Reran the seven supported scenarios after that commit. All passed with `source_code_dirty=false`, each recording source revision `553564a21e4d2a40148c60637f4817c7d6f26b74`. Current evidence pointers are in `tests/differential/scenarios.yaml` and the current-candidate table in `docs/compatibility/SERVER_5_3_4_RESULTS.md`.
+- Reran the committed `integration-tests/run-local.sh --all` at the same source revision. All 19 server-free steps passed again. The full live coverage gate reported the same 30 missing IDs and returned BLOCKED before provisioning. Evidence: `docs/compatibility/evidence/phase-19/run-local/20261025T022131Z/` (`result.txt` begins `BLOCKED`).
+- `bash -n` passed for both shell runners; comparator self-test and validation of all 37 manifest rows passed after the live evidence pointers were refreshed. `git diff --check` passed before the Phase 19 commit; final documentation updates are being checked before amending the local Phase 19 commit.
+- Docker projects from all seven runs were removed by scenario cleanup. No production/owner environment was contacted.
