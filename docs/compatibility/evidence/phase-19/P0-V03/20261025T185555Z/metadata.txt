@@ -1,0 +1,14 @@
+scenario=P0-V03
+profile=basic
+project=rocketmq-classic-p19-p0-v03-20261025t185555z
+run_id=20261025T185555Z
+java_client=5.5.1
+server=5.3.4
+server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+source_revision=5c4e612425e3a10ad2f485ee9f4016cf65cfd3b6
+source_code_dirty=false
+producer_group=-
+body=-
+seed=not-applicable
+exit_status=0
+duration_seconds=846

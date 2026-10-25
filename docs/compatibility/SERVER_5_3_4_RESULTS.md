@@ -486,3 +486,21 @@ lifecycle assertion. Java's API decorates that receipt from response-header
 offsets, so the Rust live probe will apply the same mapping. The isolated topic
 and Compose resources were removed; evidence is under
 [`20261025T125713Z`](evidence/phase-19/P13-V02/20261025T125713Z/).
+
+
+## Final Phase 19 local aggregate — 2026-10-25
+
+At source revision 1e909440b39720e814a1db9d79d92bbc6d733713,
+<code>ROCKETMQ_CLASSIC_TEST_ENV=local-disposable bash
+integration-tests/run-local.sh --all</code> passed all 23 recorded gates. The
+run replayed and reconciled all 37 manifest scenarios with PASS evidence:
+[aggregate evidence](evidence/phase-19/run-local/20261025T203947Z/). The
+manifest at <code>tests/differential/scenarios.yaml</code> points to the latest
+successful per-scenario evidence; earlier failed and diagnostic runs remain
+archived and are not selected as PASS evidence.
+
+Docker queries after completion found no Phase 19 project containers, volumes,
+or networks. Synthetic private-key copies left inside three TLS evidence
+directories were removed; public certificates and command/result records
+remain. This local aggregate does not provide the owner-specific evidence
+listed in MAN-01 through MAN-04.

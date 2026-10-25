@@ -1,0 +1,2 @@
+create topic to 127.0.0.1:40911 success.
+TopicConfig [topicName=compat_p6_shared, readQueueNums=1, writeQueueNums=1, perm=RW-, topicFilterType=SINGLE_TAG, topicSysFlag=0, order=false, attributes={}]

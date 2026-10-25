@@ -1,0 +1,2 @@
+delete topic [compat_phase0_rebalance] from cluster [RocketMQLocalTest] success.
+delete topic [compat_phase0_rebalance] from NameServer success.

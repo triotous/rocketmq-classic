@@ -1,0 +1,17 @@
+scenario=REQ-001-request-reply-success
+profile=host-routed
+project=rocketmq-classic-p19-req-001-request-reply-success-20261025t200553z
+run_id=20261025T200553Z
+java_client=5.5.1
+server=5.3.4
+server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+source_revision=7f208f12ea50d6eb344c60d05143cc87d7bc36ec
+source_code_dirty=false
+producer_group=compat_req_responder
+body=-
+seed=not-applicable
+consumer_group=compat_req_responder
+request_topics=compat_phase0_request_java,compat_phase0_request_rust
+request_timeout_ms=15000
+exit_status=0
+duration_seconds=89

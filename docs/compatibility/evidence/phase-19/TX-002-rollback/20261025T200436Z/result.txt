@@ -1,0 +1,1 @@
+PASS TX-002-rollback: Java/Rust rollbacks matched; no message was visible and max offset was 0

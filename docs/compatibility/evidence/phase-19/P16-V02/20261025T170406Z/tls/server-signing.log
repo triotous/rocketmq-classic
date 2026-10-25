@@ -1,0 +1,8 @@
+Signature ok
+subject=/CN=localhost
+Getting CA Private Key
+/Users/bruce.srl: Permission denied
+8353472896:error:02FFF002:system library:func(4095):No such file or directory:/AppleInternal/Library/BuildRoots/4~CTzXugBFCxhZ492Edy-igjnepdP69SzlG80V1IQ/Library/Caches/com.apple.xbs/TemporaryDirectory.yQ55nz/Sources/libressl/libressl-3.3/crypto/bio/bss_file.c:255:fopen('/Users/bruce.srl', 'r')
+8353472896:error:20FFF002:BIO routines:CRYPTO_internal:system lib:/AppleInternal/Library/BuildRoots/4~CTzXugBFCxhZ492Edy-igjnepdP69SzlG80V1IQ/Library/Caches/com.apple.xbs/TemporaryDirectory.yQ55nz/Sources/libressl/libressl-3.3/crypto/bio/bss_file.c:257:
+8353472896:error:02FFF00D:system library:func(4095):Permission denied:/AppleInternal/Library/BuildRoots/4~CTzXugBFCxhZ492Edy-igjnepdP69SzlG80V1IQ/Library/Caches/com.apple.xbs/TemporaryDirectory.yQ55nz/Sources/libressl/libressl-3.3/crypto/bio/bss_file.c:255:fopen('/Users/bruce.srl', 'w')
+8353472896:error:20FFF002:BIO routines:CRYPTO_internal:system lib:/AppleInternal/Library/BuildRoots/4~CTzXugBFCxhZ492Edy-igjnepdP69SzlG80V1IQ/Library/Caches/com.apple.xbs/TemporaryDirectory.yQ55nz/Sources/libressl/libressl-3.3/crypto/bio/bss_file.c:257:

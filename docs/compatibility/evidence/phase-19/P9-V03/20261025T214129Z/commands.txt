@@ -1,0 +1,7 @@
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=host-routed COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p9-v03-20261025t214129z bash integration-tests/setup.sh
+docker compose --project-name rocketmq-classic-p19-p9-v03-20261025t214129z --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateTopic -c RocketMQLocalTest -t compat_p9_pull -r 1 -w 1 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p9-v03-20261025t214129z --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_p9_pull_java -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p9-v03-20261025t214129z --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_p9_pull_rust -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed 127.0.0.1:19876 compat_p9_pull" exec:java@live-pull-consumer-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="probe 127.0.0.1:19876 compat_p9_pull compat_p9_pull_java" exec:java@live-pull-consumer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p9-pull 127.0.0.1:19876 compat_p9_pull compat_p9_pull_rust

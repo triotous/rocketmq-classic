@@ -153,15 +153,14 @@ matrix or by itself establish production support. It removes its isolated
 topics, containers, network, and volume after the run. Toolchain,
 configuration, output, and cleanup evidence is stored under
 `docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
-after comparison and cleanup both succeed. The runner implements 33 of 37
-cases, and all 33 have passed: the two Phase 0 route cases, `P0-V03`, `P3-V04`,
-`P5-V02-route`, `P5-V02-producer`, `P5-V02-consumer`, `P5-V02-extensions`,
-`P6-V04`, `P7-V02` through `P7-V04`, `P9-V03`, `P10-V03`, `P11-V03`,
-`P11-V04`, `P13-V02`, `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`,
-`HEARTBEAT-001`, `PROD-001-sync-send` through `PROD-004-batch-send`,
-`PROD-005-send-timeout`, `CONS-001-query-offset` through
-`CONS-004-update-offset`, `TX-001-commit`, `TX-002-rollback`,
-`REQ-001-request-reply-success`, and `P15-V03`.
+after comparison and cleanup both succeed.
+
+The runner now implements all 37 manifest scenarios. The full local aggregate
+run reconciled every row to PASS evidence after comparison and cleanup:
+[20261025T203947Z](../docs/compatibility/evidence/phase-19/run-local/20261025T203947Z/).
+The manifest points to each latest successful scenario run. This establishes
+the registered local compatibility matrix only; owner-specific deployment
+validation remains in [docs/owner-validation.md](../docs/owner-validation.md).
 `--phase N` and `--all` fail closed when any selected case has no runner.
 
 The two-Broker lock case can be replayed with:

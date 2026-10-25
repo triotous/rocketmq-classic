@@ -1,0 +1,2 @@
+delete topic [compat_p13_pop] from cluster [RocketMQLocalTest] success.
+delete topic [compat_p13_pop] from NameServer success.

@@ -1,0 +1,3 @@
+create topic to broker:10911 success.
+create topic to broker-b:10921 success.
+TopicConfig [topicName=compat_p5_consumer, readQueueNums=1, writeQueueNums=1, perm=RW-, topicFilterType=SINGLE_TAG, topicSysFlag=0, order=false, attributes={}]

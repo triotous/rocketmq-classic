@@ -1,0 +1,1 @@
+Aggregate parent starts no Broker; each constituent run owns and removes its Compose project.

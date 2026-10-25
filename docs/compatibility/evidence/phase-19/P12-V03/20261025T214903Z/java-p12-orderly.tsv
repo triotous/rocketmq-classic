@@ -1,0 +1,26 @@
+P12	SNAPSHOT	java	0	-
+P12	SNAPSHOT	java	0	-
+P12	SNAPSHOT	java	0	-
+P12	SNAPSHOT	java	0	-
+P12	SNAPSHOT	java	2	compat_p12_orderly|broker-a|0|true,compat_p12_orderly|broker-b|0|true
+P12	SNAPSHOT	java	2	compat_p12_orderly|broker-a|0|true,compat_p12_orderly|broker-b|0|true
+P12	CALLBACK	java	p12-slow-b	broker-b	0	0	BEGIN
+P12	CALLBACK	java	p12-slow-a	broker-a	0	0	BEGIN
+P12	SNAPSHOT	java	2	compat_p12_orderly|broker-a|0|true,compat_p12_orderly|broker-b|0|true
+P12	SNAPSHOT	java	2	compat_p12_orderly|broker-a|0|true,compat_p12_orderly|broker-b|0|true
+P12	SNAPSHOT	java	2	compat_p12_orderly|broker-a|0|true,compat_p12_orderly|broker-b|0|true
+P12	SNAPSHOT	java	2	compat_p12_orderly|broker-a|0|true,compat_p12_orderly|broker-b|0|true
+P12	SNAPSHOT	java	2	compat_p12_orderly|broker-a|0|true,compat_p12_orderly|broker-b|0|true
+P12	SNAPSHOT	java	2	compat_p12_orderly|broker-a|0|true,compat_p12_orderly|broker-b|0|true
+P12	SNAPSHOT	java	2	compat_p12_orderly|broker-a|0|true,compat_p12_orderly|broker-b|0|true
+P12	SNAPSHOT	java	2	compat_p12_orderly|broker-a|0|true,compat_p12_orderly|broker-b|0|true
+P12	SNAPSHOT	java	1	compat_p12_orderly|broker-b|0|true
+P12	SNAPSHOT	java	1	compat_p12_orderly|broker-b|0|true
+P12	SNAPSHOT	java	1	compat_p12_orderly|broker-b|0|true
+P12	SNAPSHOT	java	1	compat_p12_orderly|broker-b|0|true
+P12	SNAPSHOT	java	1	compat_p12_orderly|broker-b|0|true
+P12	CALLBACK	java	p12-slow-b	broker-b	0	0	END
+P12	CALLBACK	java	p12-next-b	broker-b	0	1	BEGIN
+P12	CALLBACK	java	p12-next-b	broker-b	0	1	END
+P12	CALLBACK	java	p12-slow-a	broker-a	0	0	END
+P12	STOPPED	java

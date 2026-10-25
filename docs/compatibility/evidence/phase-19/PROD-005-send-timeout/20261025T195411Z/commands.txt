@@ -1,0 +1,8 @@
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker COMPOSE_PROJECT_NAME=rocketmq-classic-p19-prod-005-send-timeout-20261025t195411z bash integration-tests/setup.sh
+docker compose --project-name rocketmq-classic-p19-prod-005-send-timeout-20261025t195411z --file integration-tests/compose.yaml --profile two-broker exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t compat_phase0_timeout -r 1 -w 1 -n namesrv:9876
+python3 tests/differential/delayed_response_proxy.py --upstream 127.0.0.1:20911 --delay-ms 600 --delay-flag <evidence>/delay-next-response --ready-file <evidence>/proxy-ready.txt --log-file <evidence>/proxy.tsv
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="timeout-send <proxy-address> compat_phase0_timeout compat_timeout_java timeout-java-body 100 <java-go-file>" exec:java@live-producer-probe
+target/debug/live_client timeout-send <proxy-address> compat_phase0_timeout compat_timeout_rust timeout-rust-body 100 <rust-go-file>
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="pull 127.0.0.1:20911 compat_timeout_readback compat_phase0_timeout 0 0" exec:java@live-consumer-probe
+target/debug/live_client pull 127.0.0.1:20911 compat_timeout_readback compat_phase0_timeout 0 0
+target/debug/live_client max-offset 127.0.0.1:20911 compat_phase0_timeout 0

@@ -1,0 +1,6 @@
+P6	RECEIVED	p6-before-change
+P6	SUBSCRIPTION	*->KEEP
+P6	RECEIVED	p6-keep-after-change
+P6	UNREGISTER	compat_p6_producer_a
+P6	SURVIVOR	SEND_OK
+P6	RECEIVED	p6-survivor-after-unregister

@@ -1,0 +1,6 @@
+P11	DELIVERY	rust	p11-java-to-rust-retry	0	compat_p11_push	broker-a	0	0
+P11	DELIVERY	rust	p11-java-to-rust-retry	1	compat_p11_push	broker-a	0	0
+P11	CYCLE	rust	0	0	0	0	true
+P11	CYCLE	rust	1	0	0	0	true
+P11	CYCLE	rust	2	0	0	0	true
+P11	PASS	RUST_PUSH_RETRY	CYCLES=3	RETRIES=1

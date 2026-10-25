@@ -632,3 +632,34 @@
 - Corrected-revision aggregate attempt `docs/compatibility/evidence/phase-19/run-local/20261025T180649Z/` passed every server-free gate and reported the live runner as successful, then failed final evidence reconciliation for all 37 rows. The checker searched only nested `*/result.txt`, but manifest evidence paths name the specific run directory and store `result.txt` directly; a targeted check using direct paths reconciled all 37 existing PASS records.
 - Reviewing `live-scenarios.log` revealed that `tests/differential/run.sh --all` actually invoked only the first scenario. Its child runner inherited the outer loop's manifest input on stdin, so the child command consumed the remaining rows. Only `ROUTE-001-get-existing-topic` ran in this aggregate attempt; do not claim the other 36 were replayed by it.
 - Updated final reconciliation to accept direct run evidence and nested evidence directories. Redirected each child runner's stdin from `/dev/null` so the parent iterates over every selected manifest row. Shell syntax, diff hygiene, and a targeted 37-row evidence reconciliation pass. Rerun the full gate and inspect the live log for all 37 scenario IDs before acceptance.
+
+
+## Final aggregate, current-tree API delta, and MAN-05 disposition — 2026-10-25
+
+- Full command: ROCKETMQ_CLASSIC_TEST_ENV=local-disposable bash
+  integration-tests/run-local.sh --all. Result PASS at source code revision
+  1e909440b39720e814a1db9d79d92bbc6d733713. The archived steps.tsv contains
+  23 PASS rows; all 37 manifest scenarios ran and final scenario-evidence
+  reconciliation passed. Aggregate evidence:
+  docs/compatibility/evidence/phase-19/run-local/20261025T203947Z/. P17-V02
+  metadata independently records source_code_dirty=false at the same revision.
+- The scenario manifest now contains 37 PASS rows. The latest P6-V04 run is
+  20261025T213618Z; P17-V02 is 20261025T220154Z. Earlier failed/diagnostic
+  evidence remains archived and is not selected by the manifest.
+- Post-P18-closure current-tree review found only two production crate deltas:
+  PushConsumer in-flight subscription filtering / response-code-25 heartbeat
+  retry, and RemotingLifecycleCounts / lifecycle_counts diagnostics. The retry
+  timing difference from Java 5.5.1 is documented in KNOWN_DIFFERENCES.md; the
+  diagnostic extension is classified in the Remoting public API inventory.
+  The source-backed MAN-05 audit concludes N/A for extra feature-specific
+  owner validation. MAN-01 through MAN-04 remain blocked on owner-only network,
+  security, HA, and workload inputs. No owner environment was accessed.
+- Docker container, volume, and network queries returned no names with the
+  rocketmq-classic-p19- prefix. Removed nine generated private-key copies
+  accidentally retained in P3-V04 evidence directories; the public test
+  certificates and execution records remain.
+- Updated integration-tests/README.md, owner-validation.md,
+  KNOWN_DIFFERENCES.md, PHASE_3_REMOTING_INVENTORY.md,
+  PHASE_6_REQUIREMENT_AUDIT.md, SERVER_5_3_4_RESULTS.md, and the release
+  checklist. Added docs/compatibility/evidence/owner/MAN-05/
+  current-tree-audit-20261025.md. No plan files changed.

@@ -1,0 +1,1 @@
+PASS P11-V04: Java producer to Rust Push and Rust producer to Java Push each retried once, committed matching Broker offsets, and completed three shutdown cycles without retained scheduler tasks

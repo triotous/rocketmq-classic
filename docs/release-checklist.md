@@ -11008,5 +11008,17 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [x] The `--all` child invocation now reads from `/dev/null`, preserving the
   parent's selected-row input. Shell syntax, direct evidence reconciliation,
   and diff hygiene pass with both fixes.
-- [ ] Rerun the full aggregate gate and verify the log names all 37 live
-  scenarios before accepting Phase 19.
+- [x] Full aggregate replay at code revision
+  1e909440b39720e814a1db9d79d92bbc6d733713 passed. The run log names all
+  37 live scenario IDs and final evidence reconciliation passed.
+- [x] All 23 recorded local gates passed, including default/all-feature
+  workspace tests, check, strict Clippy, Java verification, race/leak and fuzz
+  smoke, examples, benchmark build/run, metadata/package checks, UTC/Taipei ID
+  checks, Docker toolchain, live scenarios, and evidence reconciliation.
+  Evidence: <code>docs/compatibility/evidence/phase-19/run-local/20261025T203947Z/</code>.
+- [x] Post-closure P18 current-tree public-surface delta reviewed and indexed;
+  MAN-05 is N/A with source-backed evidence. MAN-01 through MAN-04 remain
+  owner-input blocked.
+- [x] Post-run Docker queries found no Phase 19 containers, volumes, or
+  networks. The nine generated private-key copies in archived P3-V04 run
+  directories were removed.

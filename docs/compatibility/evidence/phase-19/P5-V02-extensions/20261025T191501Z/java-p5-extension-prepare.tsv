@@ -1,0 +1,6 @@
+P5E	heartbeat	OK	481
+P5E	heartbeat-v2	OK	481	true	true
+P5E	assignment	OK	1
+P5E	request-mode	OK
+P5E	lite-subscription	UNSUPPORTED	200071	3
+P5E	unregister	OK

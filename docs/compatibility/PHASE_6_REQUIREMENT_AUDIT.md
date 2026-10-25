@@ -5649,3 +5649,24 @@ and JVM-process-local enum identity hashes for deliberately engineered raw
 capabilities or unexplained setting differences. No live Broker/Docker result
 is inferred from offline fixtures; those execution obligations remain in
 Phase 19.
+
+
+## Current-tree post-closure source/API review — 2026-10-25
+
+The final P18-V01 closure above remains the baseline for the complete Java
+5.5.1 client-surface audit. The production crate delta from that closure to
+code revision 1e909440b39720e814a1db9d79d92bbc6d733713 was reviewed: it is
+limited to PushConsumer subscription-response handling and the Remoting
+lifecycle diagnostic extension. The subscription retry timing is recorded as
+a narrow documented difference; the added read-only lifecycle counts are
+listed in the Remoting Rust-only public API inventory. No other public client
+API or setting was added in this range.
+
+The source-backed MAN-05 disposition is N/A for any additional
+feature-specific owner validation because every registered feature scenario
+is locally runnable and all 37 have passing evidence. Owner-network,
+organization security, HA fault-injection, and workload/SLO evidence remain
+separate MAN-01 through MAN-04 requirements. See
+[MAN-05 current-tree audit](evidence/owner/MAN-05/current-tree-audit-20261025.md)
+and the Phase 19 aggregate run at
+[evidence/phase-19/run-local/20261025T203947Z](evidence/phase-19/run-local/20261025T203947Z/).

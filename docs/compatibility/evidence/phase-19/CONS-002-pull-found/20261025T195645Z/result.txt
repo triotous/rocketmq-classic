@@ -1,0 +1,1 @@
+PASS CONS-002-pull-found: matching FOUND status, offsets, and seeded message body

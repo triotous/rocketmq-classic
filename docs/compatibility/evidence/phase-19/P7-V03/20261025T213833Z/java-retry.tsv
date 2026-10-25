@@ -1,0 +1,8 @@
+ROUTE	java	broker-a,broker-b
+ATTEMPT	java	1	broker-a	ERROR	70372d72657472792d6f726967696e616c2d626f6479	FD07B51ACC660000A617DB5E0AB7E9F19D106E041285803E12680000
+ATTEMPT_ERROR	java	1	org.apache.rocketmq.client.exception.MQBrokerException: CODE: 16  DESC: P7-V03 injected retryable NO_PERMISSION response BROKER: 127.0.0.1:50911 For more information, please visit the url, https://rocketmq.apache.org/docs/faq/
+ATTEMPT	java	2	broker-b	ERROR	70372d72657472792d6f726967696e616c2d626f6479	FD07B51ACC660000A617DB5E0AB7E9F19D106E041285803E12680000
+ATTEMPT_ERROR	java	2	org.apache.rocketmq.client.exception.MQBrokerException: CODE: 16  DESC: P7-V03 injected retryable NO_PERMISSION response BROKER: 127.0.0.1:50921 For more information, please visit the url, https://rocketmq.apache.org/docs/faq/
+ATTEMPT	java	3	broker-a	SEND_OK	70372d72657472792d6f726967696e616c2d626f6479	FD07B51ACC660000A617DB5E0AB7E9F19D106E041285803E12680000
+ATTEMPT_ERROR	java	3	
+RESULT	java	retry	SUCCESS	SEND_OK	broker-a	36

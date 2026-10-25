@@ -1,0 +1,2 @@
+delete topic [compat_phase0_order_topic] from cluster [RocketMQLocalTest] success.
+delete topic [compat_phase0_order_topic] from NameServer success.

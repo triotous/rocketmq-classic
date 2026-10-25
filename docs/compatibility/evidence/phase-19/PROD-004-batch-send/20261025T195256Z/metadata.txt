@@ -1,0 +1,16 @@
+scenario=PROD-004-batch-send
+profile=basic
+project=rocketmq-classic-p19-prod-004-batch-send-20261025t195256z
+run_id=20261025T195256Z
+java_client=5.5.1
+server=5.3.4
+server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+source_revision=7f208f12ea50d6eb344c60d05143cc87d7bc36ec
+source_code_dirty=false
+producer_group=-
+body=batch
+seed=not-applicable
+message_count=2
+body_prefix=batch
+exit_status=0
+duration_seconds=74

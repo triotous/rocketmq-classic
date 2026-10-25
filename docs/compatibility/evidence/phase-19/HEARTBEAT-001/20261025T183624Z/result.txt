@@ -1,0 +1,1 @@
+PASS HEARTBEAT-001: matching response version and encoded request body

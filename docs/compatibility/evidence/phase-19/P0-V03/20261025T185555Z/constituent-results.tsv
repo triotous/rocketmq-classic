@@ -1,0 +1,12 @@
+scenario	status	evidence
+ROUTE-001-get-existing-topic	PASS	docs/compatibility/evidence/phase-19/ROUTE-001-get-existing-topic/20261025T185600Z
+HEARTBEAT-001	PASS	docs/compatibility/evidence/phase-19/HEARTBEAT-001/20261025T185659Z
+PROD-001-sync-send	PASS	docs/compatibility/evidence/phase-19/PROD-001-sync-send/20261025T185756Z
+PROD-002-async-send	PASS	docs/compatibility/evidence/phase-19/PROD-002-async-send/20261025T185909Z
+PROD-003-oneway-send	PASS	docs/compatibility/evidence/phase-19/PROD-003-oneway-send/20261025T190025Z
+PROD-004-batch-send	PASS	docs/compatibility/evidence/phase-19/PROD-004-batch-send/20261025T190153Z
+CONS-001-query-offset	PASS	docs/compatibility/evidence/phase-19/CONS-001-query-offset/20261025T190307Z
+CONS-002-pull-found	PASS	docs/compatibility/evidence/phase-19/CONS-002-pull-found/20261025T190423Z
+CONS-003-pull-no-new-msg	PASS	docs/compatibility/evidence/phase-19/CONS-003-pull-no-new-msg/20261025T190539Z
+CONS-004-update-offset	PASS	docs/compatibility/evidence/phase-19/CONS-004-update-offset/20261025T190647Z
+ORDER-001-lock-unlock	PASS	docs/compatibility/evidence/phase-19/ORDER-001-lock-unlock/20261025T190806Z
