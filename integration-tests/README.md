@@ -110,7 +110,19 @@ cross-language pull readback.
 end-transaction calls on the pinned Broker.
 `P5-V02-consumer` compares raw pull and Lite pull, offset query/update,
 consumer-list, send-back, and queue lock/unlock calls on the two-Broker profile.
-It deletes any owned topic and tears down only that project. Toolchain,
+The 5.3.4 extension case records matching unsupported Lite subscription and
+POP responses. To exercise the successful Lite subscription and POP paths, run
+the separate unmodified official RocketMQ 5.5.0 profile:
+
+```bash
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable \
+bash tests/differential/run-p5-lite-supplementary.sh
+```
+
+That runner pins the multi-platform 5.5.0 image digest and archives its own
+results; it does not change the mandatory 5.3.4 matrix or by itself establish
+production support. It removes its isolated topics, containers, network, and
+volume after the run. Toolchain,
 configuration, output, and cleanup evidence is stored under
 `docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
 after comparison and cleanup both succeed. The runner implements 27 of 37
