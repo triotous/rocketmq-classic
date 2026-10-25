@@ -696,7 +696,7 @@ if [[ "$scenario_id" == "P10-V03" ]]; then
         >>"$evidence_dir/metadata.txt"
 fi
 if [[ "$scenario_id" == "P11-V03" ]]; then
-    printf 'consumer_group=%s\nqueues_per_broker=4\nexpected_queue_count=8\nconvergence_timeout_seconds=90\ntransient_redelivery=allowed\n' \
+    printf 'consumer_group=%s\nqueues_per_broker=4\nexpected_queue_count=8\nconvergence_timeout_seconds=90\ninternal_retry_topics=excluded-from-scenario-topic-ownership\ntransient_redelivery=allowed\n' \
         "$consumer_group" >>"$evidence_dir/metadata.txt"
 fi
 if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
@@ -2224,7 +2224,7 @@ elif [[ "$scenario_id" == "P11-V03" ]]; then
     p11_java_pid="$!"
     if ! python3 "$repo_root/tests/differential/check_mixed_ownership.py" \
         java-only "$topic" "$java_ownership_file" "$rust_ownership_file" \
-        "$java_exited_file" 90 | tee "$evidence_dir/java-only-convergence.tsv"; then
+        "$java_exited_file" 90 2>&1 | tee "$evidence_dir/java-only-convergence.tsv"; then
         cat "$evidence_dir/java-p11-mixed.tsv" "$evidence_dir/java-p11-mixed.stderr" 2>/dev/null >&2 || true
         exit 1
     fi
@@ -2236,7 +2236,7 @@ elif [[ "$scenario_id" == "P11-V03" ]]; then
     p11_rust_pid="$!"
     if ! python3 "$repo_root/tests/differential/check_mixed_ownership.py" \
         joined "$topic" "$java_ownership_file" "$rust_ownership_file" \
-        "$java_exited_file" 90 | tee "$evidence_dir/join-convergence.tsv"; then
+        "$java_exited_file" 90 2>&1 | tee "$evidence_dir/join-convergence.tsv"; then
         cat "$evidence_dir/java-p11-mixed.tsv" "$evidence_dir/rust-p11-mixed.tsv" \
             "$evidence_dir/java-p11-mixed.stderr" "$evidence_dir/rust-p11-mixed.stderr" 2>/dev/null >&2 || true
         exit 1
@@ -2252,7 +2252,7 @@ elif [[ "$scenario_id" == "P11-V03" ]]; then
     : >"$java_exited_file"
     if ! python3 "$repo_root/tests/differential/check_mixed_ownership.py" \
         rust-only "$topic" "$java_ownership_file" "$rust_ownership_file" \
-        "$java_exited_file" 90 | tee "$evidence_dir/leave-convergence.tsv"; then
+        "$java_exited_file" 90 2>&1 | tee "$evidence_dir/leave-convergence.tsv"; then
         cat "$evidence_dir/rust-p11-mixed.tsv" "$evidence_dir/rust-p11-mixed.stderr" 2>/dev/null >&2 || true
         exit 1
     fi

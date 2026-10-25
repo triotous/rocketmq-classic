@@ -586,6 +586,7 @@ async fn p11_mixed_group_probe(
                 .map(|table| {
                     table.with(|rows| {
                         rows.iter()
+                            .filter(|(queue, _)| queue.topic() == Some(topic))
                             .map(|(queue, _)| {
                                 format!(
                                     "{}|{}|{}",

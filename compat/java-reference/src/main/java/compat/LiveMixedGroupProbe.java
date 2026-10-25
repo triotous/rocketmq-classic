@@ -53,7 +53,7 @@ public final class LiveMixedGroupProbe {
         long deadline = System.nanoTime() + TIMEOUT_NANOS;
         try {
             while (!Files.exists(stopFile)) {
-                List<String> queues = ownedQueues(consumer);
+                List<String> queues = ownedQueues(consumer, topic);
                 writeOwnership(ownershipFile, queues);
                 System.out.printf("P11\tSNAPSHOT\tjava\t%d\t%s%n", queues.size(),
                     queues.isEmpty() ? "-" : String.join(",", queues));
@@ -69,7 +69,8 @@ public final class LiveMixedGroupProbe {
         }
     }
 
-    private static List<String> ownedQueues(DefaultMQPushConsumer consumer) throws Exception {
+    private static List<String> ownedQueues(DefaultMQPushConsumer consumer, String topic)
+        throws Exception {
         Object implementation = consumer.getDefaultMQPushConsumerImpl();
         Object rebalance = invokeNoArgument(implementation, "getRebalanceImpl");
         Object rawTable = invokeNoArgument(rebalance, "getProcessQueueTable");
@@ -82,7 +83,9 @@ public final class LiveMixedGroupProbe {
                 throw new IllegalStateException("Java Push rebalance table contains a non-queue key");
             }
             MessageQueue queue = (MessageQueue) rawQueue;
-            queues.add(queueKey(queue));
+            if (topic.equals(queue.getTopic())) {
+                queues.add(queueKey(queue));
+            }
         }
         Collections.sort(queues);
         return queues;
