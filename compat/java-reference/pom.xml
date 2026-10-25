@@ -99,6 +99,10 @@
             <configuration><mainClass>compat.LiveRebalanceProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-mixed-group-probe</id>
+            <configuration><mainClass>compat.LiveMixedGroupProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>live-transaction-probe</id>
             <configuration><mainClass>compat.LiveTransactionProbe</mainClass></configuration>
           </execution>
