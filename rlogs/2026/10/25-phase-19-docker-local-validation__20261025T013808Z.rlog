@@ -60,3 +60,10 @@
 - Dirty-source rehearsal `20261025T082648Z` passed all lock assertions and cleanup (`exit_status=0`, 135 seconds), but records `source_code_dirty=true`; it is retained as diagnostic evidence and is not the manifest PASS pointer. A fresh clean-source run is required after committing the implementation.
 - Focused validation before the rehearsal: Rust integration binary build, pinned offline Maven compile, shell syntax, Cargo formatting, diff whitespace, Compose config validation, and all 37 scenario manifest rows passed. Fail-closed `--check-all` now lists 24 unimplemented IDs and starts no Docker resources.
 - Source implementation, pending manifest input, and diagnostic evidence are being committed separately from the clean-run status/docs. The complete P19 local gate rerun and remaining 24 live cases are still outstanding.
+
+## P19 ORDER-001 clean-source evidence and documentation — 2026-10-25
+
+- Committed the two-Broker profile and probes as `6684ff8c22c92fdb0fc3af8f97574fd3e34c9a82` (`Phase 19: add two-broker lock probes`). A fresh run `20261025T083111Z` then passed `ORDER-001-lock-unlock` with `source_code_dirty=false`: Java and Rust each acquired/released the open queue; the second client was denied during ownership, then acquired after unlock. Topic/group cleanup and project teardown passed. The manifest now points at this clean evidence; the dirty rehearsal remains diagnostic-only.
+- Updated the runner README, Java compatibility status, server results, and release checklist to 13/37 passing and 24 unimplemented. The report distinguishes this two-Broker lock evidence from replicated HA/failover.
+- Validation before the clean run: Rust `live_client` build, pinned offline Maven compile, `bash -n` for run/setup/cleanup, Cargo fmt, diff check, Compose two-Broker config, and 37-row manifest validation passed. `--check-all` now fails closed with 24 missing IDs and starts no Docker resources.
+- Full `ROCKETMQ_CLASSIC_TEST_ENV=local-disposable bash integration-tests/run-local.sh --all` has not yet been rerun on the new source revision; MAN-01..05, broad P18-V01, remaining local scenarios, and remote Docker CI remain open.

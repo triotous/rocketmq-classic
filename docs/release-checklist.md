@@ -10461,3 +10461,21 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   `docs/compatibility/SERVER_5_3_4_RESULTS.md`. Live coverage is now 12/37;
   25 remain pending. The full local gates have not yet been rerun after this
   runner addition.
+
+## P19 two-Broker lock coverage — 2026-10-25 (`6684ff8c`)
+
+- [x] Added the isolated `two-broker` profile and readiness check. A fresh
+  profile validation reported `broker-a` and `broker-b` at server version
+  `V5_3_4`; the disposable project, volumes, and network were removed.
+- [x] Added Java/Rust `ORDER-001-lock-unlock` probes. Both clients acquired
+  and released an open `broker-a` queue; the Rust client was denied while
+  Java held the lock and acquired after Java's synchronous unlock. Java then
+  acquired the queue after Rust released it. Clean evidence at revision
+  `6684ff8c22c92fdb0fc3af8f97574fd3e34c9a82` is
+  `docs/compatibility/evidence/phase-19/ORDER-001-lock-unlock/20261025T083111Z/`.
+  The earlier dirty-source rehearsal is retained separately and is not the
+  manifest evidence pointer.
+- Live coverage is now 13/37; 24 cases remain without runners. This does not
+  verify replicated HA/failover, remaining two-Broker cases, TLS/ACL/features,
+  or close P18-V01. The full `run-local.sh --all` rerun on `6684ff8c` is
+  outstanding; MAN-01 through MAN-05 and remote Docker CI remain open.

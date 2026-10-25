@@ -54,10 +54,11 @@ stress behavior.
 ## Pending local server coverage
 
 The scenario manifest contains 37 live cases. The seven rows above, four
-consumer rows, and the P5 route row below are implemented and passed by the
-current runner; 25 remain pending.
-The two-Broker, TLS, ACL, and feature-specific profiles and full local matrix
-are not complete. No server limitation is inferred from an unrun case. Phase 19
+consumer rows, the P5 route row, and `ORDER-001-lock-unlock` are implemented
+and passed by the current runner; 24 remain pending. The two-Broker profile
+now covers the lock/unlock case, while its retry, query, rebalance, and
+interoperability coverage, TLS, ACL, and feature-specific profiles remain
+incomplete. No server limitation is inferred from an unrun case. Phase 19
 acceptance remains open until each locally reproducible case has Java/Rust
 evidence or a source-backed matched server limitation plus the required
 success-path evidence.
@@ -114,4 +115,20 @@ full Phase 19 acceptance.
 `compat_p5_route` and both returned `NO_ROUTE` for `compat_p5_missing`. The
 scenario-owned topic and Compose project were cleaned after evidence capture:
 [`20261025T081906Z`](evidence/phase-19/P5-V02-route/20261025T081906Z/).
-The remaining 25 cases still prevent full Phase 19 acceptance.
+At that checkpoint, 25 cases remained and prevented full Phase 19 acceptance.
+
+## Two-Broker lock and unlock — 2026-10-25
+
+The `two-broker` profile starts separate `broker-a` and `broker-b` instances
+from the pinned 5.3.4 image and waits for both to register with the NameServer.
+`ORDER-001-lock-unlock` passed on committed revision
+`6684ff8c22c92fdb0fc3af8f97574fd3e34c9a82` with
+`source_code_dirty=false`. Java and Rust both acquired the same unlocked
+`broker-a` queue; Rust was denied while Java held it, then acquired it after
+Java's synchronous unlock. Rust's unlock allowed Java to acquire the queue
+again. The scenario topic, group, project, network, and volumes were cleaned:
+[`20261025T083111Z`](evidence/phase-19/ORDER-001-lock-unlock/20261025T083111Z/).
+
+This validates two-Broker profile startup and the listed lock behavior; it is
+not replicated HA or failover evidence. Live coverage is now 13/37, with 24
+cases pending.
