@@ -10450,5 +10450,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   The two-Broker, TLS/auth, transaction, request/reply, admin, stress and broad
   P18-V01 audit work remains incomplete. MAN-01 through MAN-05 remain blocked,
   and remote Docker CI has not run.
-- The committed `integration-tests/run-local.sh --all` server-free gates have
-  not yet been rerun after `cb351d8a`; a current-revision run is pending.
+- [x] Reran `integration-tests/run-local.sh --all` on `70e9a4d8`. All 19
+  server-free gates passed; the final coverage check returned `BLOCKED` with
+  26 missing live scenarios and started no Docker resources. Evidence:
+  `docs/compatibility/evidence/phase-19/run-local/20261025T080256Z/`.
