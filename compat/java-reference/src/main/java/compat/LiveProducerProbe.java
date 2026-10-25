@@ -1,6 +1,8 @@
 package compat;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -35,6 +37,10 @@ public final class LiveProducerProbe {
             send(args[1], args[2], args[3]);
             return;
         }
+        if (args.length == 7 && "timeout-send".equals(args[0])) {
+            timeoutSend(args[1], args[2], args[3], args[4], Integer.parseInt(args[5]), args[6]);
+            return;
+        }
         if (args.length == 4 && "async-send".equals(args[0])) {
             asyncSend(args[1], args[2], args[3]);
             return;
@@ -56,7 +62,7 @@ public final class LiveProducerProbe {
             return;
         }
         throw new IllegalArgumentException(
-            "usage: LiveProducerProbe send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids>");
+            "usage: LiveProducerProbe send|async-send <broker-address> <topic> <body> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids>");
     }
 
     private static MQClientAPIImpl newApi() {
@@ -94,6 +100,81 @@ public final class LiveProducerProbe {
         } finally {
             api.shutdown();
         }
+    }
+
+    private static void timeoutSend(
+        String brokerAddress, String topic, String producerGroup, String body,
+        int timeoutMillis, String goFile
+    ) throws Exception {
+        MQClientAPIImpl api = newApi();
+        api.start();
+        try {
+            MessageQueue queue = new MessageQueue(topic, "broker-a", 0);
+            long initialOffset = api.getMaxOffset(brokerAddress, queue, 5_000);
+            System.out.printf("TIMEOUT\tREADY\tjava\t%d%n", initialOffset);
+            awaitGoFile(goFile);
+
+            Message message = new Message(topic, body.getBytes(StandardCharsets.UTF_8));
+            message.setKeys("compat_timeout_java");
+            MessageClientIDSetter.setUniqID(message);
+            SendMessageRequestHeader header = new SendMessageRequestHeader();
+            header.setProducerGroup(producerGroup);
+            header.setTopic(topic);
+            header.setDefaultTopic("TBW102");
+            header.setDefaultTopicQueueNums(4);
+            header.setQueueId(0);
+            header.setSysFlag(0);
+            header.setBornTimestamp(System.currentTimeMillis());
+            header.setFlag(message.getFlag());
+            header.setProperties(MessageDecoder.messageProperties2String(message.getProperties()));
+            header.setReconsumeTimes(0);
+            header.setUnitMode(false);
+            header.setBatch(false);
+            header.setBrokerName("broker-a");
+
+            long started = System.nanoTime();
+            Exception sendError = null;
+            try {
+                api.sendMessage(brokerAddress, "broker-a", message, header, timeoutMillis,
+                    CommunicationMode.SYNC, null, null);
+            } catch (Exception error) {
+                sendError = error;
+            }
+            if (sendError == null) {
+                throw new IllegalStateException("Broker response did not exceed the send deadline");
+            }
+            long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            if (!isTimeout(sendError)) {
+                throw sendError;
+            }
+            System.out.printf("TIMEOUT\tRESULT\tjava\tTIMEOUT\t%s\t%d\t%d%n",
+                sendError.getClass().getSimpleName(), elapsedMillis, initialOffset);
+        } finally {
+            api.shutdown();
+        }
+    }
+
+    private static void awaitGoFile(String goFile) throws Exception {
+        Path path = Path.of(goFile);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        while (System.nanoTime() < deadline) {
+            if (Files.exists(path)) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        throw new IllegalStateException("timed out waiting for the delayed-response gate");
+    }
+
+    private static boolean isTimeout(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            String description = cause.getClass().getSimpleName() + " " + cause.getMessage();
+            String lower = description.toLowerCase(java.util.Locale.ROOT);
+            if (lower.contains("timeout") || lower.contains("deadline expired")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void asyncSend(String brokerAddress, String topic, String body) throws Exception {

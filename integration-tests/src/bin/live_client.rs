@@ -1,5 +1,6 @@
 use std::{
-    any::Any, collections::HashSet, env, error::Error, fmt::Write as _, sync::Arc, time::Duration,
+    any::Any, collections::HashSet, env, error::Error, fmt::Write as _, path::Path, sync::Arc,
+    time::Duration,
 };
 
 use rocketmq_classic::{
@@ -90,6 +91,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("send") if arguments.len() == 4 => {
             send(&arguments[1], &arguments[2], &arguments[3]).await
         }
+        Some("timeout-send") if arguments.len() == 7 => {
+            timeout_send(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                arguments[5].parse()?,
+                &arguments[6],
+            )
+            .await
+        }
         Some("async-send") if arguments.len() == 4 => {
             async_send(&arguments[1], &arguments[2], &arguments[3]).await
         }
@@ -169,7 +181,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -1290,6 +1302,95 @@ async fn max_offset(
     remoting.shutdown().await;
     println!("MAX_OFFSET\t{}", result?);
     Ok(())
+}
+
+async fn timeout_send(
+    broker_address: &str,
+    topic: &str,
+    producer_group: &str,
+    body: &str,
+    timeout_ms: u64,
+    go_file: &str,
+) -> Result<(), Box<dyn Error>> {
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    if let Err(error) = remoting.start() {
+        remoting.shutdown().await;
+        return Err(error.into());
+    }
+    let api = MQClientApi::new(remoting.clone());
+    let mut max_header = GetMaxOffsetRequestHeader::default();
+    max_header.set_topic(Some(topic.to_owned()));
+    max_header.set_queue_id(Some(0));
+    max_header.set_broker_name(Some("broker-a".to_owned()));
+    let initial_offset = api
+        .get_max_offset(
+            broker_address,
+            &max_header,
+            Instant::now() + Duration::from_secs(5),
+        )
+        .await?;
+    println!("TIMEOUT\tREADY\trust\t{initial_offset}");
+
+    let gate = Path::new(go_file);
+    let ready_deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    while !gate.exists() {
+        if tokio::time::Instant::now() >= ready_deadline {
+            remoting.shutdown().await;
+            return Err("timed out waiting for the delayed-response gate".into());
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    let message = Message::new(topic, body.as_bytes().to_vec());
+    let born_timestamp = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_millis(),
+    )?;
+    let mut header = SendMessageRequestHeaderV1::default();
+    header.set_producer_group(Some(producer_group.to_owned()));
+    header.set_topic(topic.to_owned());
+    header.set_default_topic("TBW102".to_owned());
+    header.set_default_topic_queue_nums(4);
+    header.set_queue_id(0);
+    header.set_sys_flag(0);
+    header.set_born_timestamp(born_timestamp);
+    header.set_flag(0);
+    header.set_properties(Some(encode_properties(&message.properties())));
+    header.set_reconsume_times(Some(0));
+    header.set_unit_mode(Some(false));
+    header.set_batch(Some(false));
+    header.set_broker_name(Some("broker-a".to_owned()));
+
+    let started = std::time::Instant::now();
+    let result = api
+        .send_message(
+            broker_address,
+            "broker-a",
+            &header,
+            body.as_bytes().to_vec(),
+            &format!("{body}-unique"),
+            SendKind::V2,
+            SendMode::Sync,
+            Instant::now() + Duration::from_millis(timeout_ms),
+        )
+        .await;
+    let elapsed_ms = started.elapsed().as_millis();
+    remoting.shutdown().await;
+
+    match result {
+        Err(error)
+            if error
+                .to_string()
+                .to_ascii_lowercase()
+                .contains("deadline expired") =>
+        {
+            println!("TIMEOUT\tRESULT\trust\tTIMEOUT\tRPC\t{elapsed_ms}\t{initial_offset}");
+            Ok(())
+        }
+        Err(error) => Err(error.into()),
+        Ok(_) => Err("Broker response did not exceed the send deadline".into()),
+    }
 }
 
 async fn offset_update(

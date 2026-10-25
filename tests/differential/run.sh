@@ -127,6 +127,8 @@ for scenario in selected:
         expected_reverse_topic = topic[:-5] + "_rust"
         if inputs.get("reverse_topic") != expected_reverse_topic:
             raise SystemExit("REQ-001 reverse request topic must be the matching _rust topic")
+    if scenario.get("id") == "PROD-005-send-timeout" and inputs.get("timeout_ms") != 100:
+        raise SystemExit("PROD-005 timeout must remain the reviewed 100 ms deadline")
     producer_group = inputs.get("producer_group", inputs.get("transaction_group", inputs.get("group", "-")))
     consumer_group = inputs.get("consumer_group", inputs.get("group", "-"))
     body = inputs.get("body", "-")
@@ -164,7 +166,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route" "P0-V03" "P6-V04" "P7-V02" "P9-V03" "REQ-001-request-reply-success")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route" "P0-V03" "P6-V04" "P7-V02" "P9-V03" "REQ-001-request-reply-success")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -203,6 +205,7 @@ fi
 
 IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group <"$selected_file"
 rust_request_topic=""
+timeout_ms=""
 if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     if [[ "$topic" != *_java ]]; then
         echo "The Java request topic must end with _java so the reverse-direction topic can be derived safely" >&2
@@ -210,9 +213,12 @@ if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     fi
     rust_request_topic="${topic%_java}_rust"
 fi
+if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
+    timeout_ms=100
+fi
 case "$profile:$scenario_id" in
     basic:*) ;;
-    two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c) ;;
+    two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c|two-broker:PROD-005-send-timeout) ;;
     transaction:TX-001-commit|transaction:TX-002-rollback) ;;
     host-routed:P6-V04|host-routed:P7-V02|host-routed:P9-V03) ;;
     host-routed:REQ-001-request-reply-success) ;;
@@ -322,6 +328,12 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    PROD-005-send-timeout:compat_phase0_timeout)
+        if [[ "$profile" != "two-broker" || "$timeout_ms" != "100" ]]; then
+            echo "Producer timeout metadata differs from the reviewed two-Broker 100 ms case" >&2
+            exit 3
+        fi
+        ;;
     P6-V04:compat_p6_shared)
         if [[ "$profile" != "host-routed" || "$consumer_group" != "compat_p6_consumer" ]]; then
             echo "P6-V04 metadata differs from the reviewed shared-runtime case" >&2
@@ -339,7 +351,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P9-V03" && "$scenario_id" != "REQ-001-request-reply-success" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P9-V03" && "$scenario_id" != "REQ-001-request-reply-success" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -427,6 +439,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveSharedRuntimeProbe.java
     compat/java-reference/src/main/java/compat/LivePullConsumerProbe.java
     compat/java-reference/src/main/java/compat/LiveRequestReplyProbe.java
+    tests/differential/delayed_response_proxy.py
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
     integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf integration-tests/config/broker-tx.conf integration-tests/config/broker-host.conf
     integration-tests/setup.sh integration-tests/cleanup.sh
@@ -501,6 +514,10 @@ if [[ "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" ]
 fi
 if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     printf 'consumer_group=%s\nrequest_topics=%s,%s\nrequest_timeout_ms=15000\n' "$consumer_group" "$topic" "$rust_request_topic" \
+        >>"$evidence_dir/metadata.txt"
+fi
+if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
+    printf 'topic=%s\nsend_timeout_ms=%s\nproxy_response_delay_ms=600\nexpected_committed_messages=2\n' "$topic" "$timeout_ms" \
         >>"$evidence_dir/metadata.txt"
 fi
 {
@@ -594,6 +611,17 @@ docker compose --project-name $project_name --file integration-tests/compose.yam
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g ${consumer_group}_java -n namesrv:9876
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g ${consumer_group}_rust -n namesrv:9876
 Rust responder / Java requester, then Java responder / Rust requester; each responder emits READY before its paired request.
+EOF
+elif [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
+python3 tests/differential/delayed_response_proxy.py --upstream $broker_addr --delay-ms 600 --delay-flag <evidence>/delay-next-response --ready-file <evidence>/proxy-ready.txt --log-file <evidence>/proxy.tsv
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="timeout-send <proxy-address> $topic compat_timeout_java timeout-java-body $timeout_ms <java-go-file>" exec:java@live-producer-probe
+target/debug/live_client timeout-send <proxy-address> $topic compat_timeout_rust timeout-rust-body $timeout_ms <rust-go-file>
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="pull $broker_addr compat_timeout_readback $topic 0 0" exec:java@live-consumer-probe
+target/debug/live_client pull $broker_addr compat_timeout_readback $topic 0 0
+target/debug/live_client max-offset $broker_addr $topic 0
 EOF
 elif [[ "$scenario_id" == "P0-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -703,6 +731,8 @@ if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     topic_cleanup_list+=("$rust_request_topic")
 fi
 responder_pid=""
+timeout_proxy_pid=""
+timeout_probe_pid=""
 cleanup() {
     status=$?
     trap - EXIT
@@ -710,6 +740,14 @@ cleanup() {
     if [[ -n "$responder_pid" ]] && kill -0 "$responder_pid" 2>/dev/null; then
         kill "$responder_pid" 2>/dev/null
         wait "$responder_pid" 2>/dev/null
+    fi
+    if [[ -n "$timeout_probe_pid" ]] && kill -0 "$timeout_probe_pid" 2>/dev/null; then
+        kill "$timeout_probe_pid" 2>/dev/null
+        wait "$timeout_probe_pid" 2>/dev/null
+    fi
+    if [[ -n "$timeout_proxy_pid" ]] && kill -0 "$timeout_proxy_pid" 2>/dev/null; then
+        kill "$timeout_proxy_pid" 2>/dev/null
+        wait "$timeout_proxy_pid" 2>/dev/null
     fi
     if [[ "$topic_created" == true ]]; then
         : >"$evidence_dir/topic-cleanup.log"
@@ -817,11 +855,11 @@ else
 fi
 cat "$evidence_dir/setup.log"
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     topic_queue_count=4
-    if [[ "$scenario_id" == "P6-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" ]]; then
+    if [[ "$scenario_id" == "P6-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "PROD-005-send-timeout" ]]; then
         topic_queue_count=1
     elif [[ "$scenario_id" == "REBAL-001-average-10q-3c" ]]; then
         topic_queue_count=5
@@ -961,6 +999,93 @@ run_reply_requester() {
             return 1
         fi
     fi
+}
+
+start_timeout_proxy() {
+    python3 "$repo_root/tests/differential/delayed_response_proxy.py" \
+        --upstream "$broker_addr" --delay-ms 600 \
+        --delay-flag "$evidence_dir/delay-next-response" \
+        --ready-file "$evidence_dir/proxy-ready.txt" \
+        --log-file "$evidence_dir/proxy.tsv" \
+        >"$evidence_dir/proxy.stdout" 2>"$evidence_dir/proxy.stderr" &
+    timeout_proxy_pid=$!
+    for _ in {1..100}; do
+        if [[ -s "$evidence_dir/proxy-ready.txt" ]]; then
+            timeout_proxy_addr="127.0.0.1:$(cat "$evidence_dir/proxy-ready.txt")"
+            return 0
+        fi
+        if ! kill -0 "$timeout_proxy_pid" 2>/dev/null; then
+            wait "$timeout_proxy_pid" 2>/dev/null || true
+            timeout_proxy_pid=""
+            cat "$evidence_dir/proxy.stdout" "$evidence_dir/proxy.stderr" 2>/dev/null >&2 || true
+            return 1
+        fi
+        sleep 0.1
+    done
+    echo "delayed-response proxy did not become ready" >&2
+    return 1
+}
+
+start_timeout_client() {
+    local language="$1"
+    local producer_group="$2"
+    local message_body="$3"
+    local output_file="$4"
+    local go_file="$5"
+    if [[ "$language" == "java" ]]; then
+        mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+            -Dexec.args="timeout-send $timeout_proxy_addr $topic $producer_group $message_body $timeout_ms $go_file" \
+            exec:java@live-producer-probe >"$output_file" 2>"${output_file%.tsv}.stderr" &
+    else
+        "$repo_root/target/debug/live_client" timeout-send "$timeout_proxy_addr" "$topic" \
+            "$producer_group" "$message_body" "$timeout_ms" "$go_file" \
+            >"$output_file" 2>"${output_file%.tsv}.stderr" &
+    fi
+    timeout_probe_pid=$!
+    for _ in {1..300}; do
+        if awk -F '\t' -v language="$language" \
+            '$1 == "TIMEOUT" && $2 == "READY" && $3 == language { found = 1 }
+            END { if (!found) exit 1 }' "$output_file" 2>/dev/null; then
+            return 0
+        fi
+        if ! kill -0 "$timeout_probe_pid" 2>/dev/null; then
+            wait "$timeout_probe_pid" 2>/dev/null || true
+            timeout_probe_pid=""
+            cat "$output_file" "${output_file%.tsv}.stderr" 2>/dev/null >&2 || true
+            return 1
+        fi
+        sleep 0.1
+    done
+    echo "$language timeout probe did not become ready" >&2
+    return 1
+}
+
+release_timeout_client() {
+    local go_file="$1"
+    touch "$evidence_dir/delay-next-response"
+    touch "$go_file"
+    if ! wait "$timeout_probe_pid"; then
+        cat "$evidence_dir/java-timeout.tsv" "$evidence_dir/java-timeout.stderr" \
+            "$evidence_dir/rust-timeout.tsv" "$evidence_dir/rust-timeout.stderr" 2>/dev/null >&2 || true
+        timeout_probe_pid=""
+        return 1
+    fi
+    timeout_probe_pid=""
+}
+
+wait_for_timeout_proxy_delays() {
+    local expected="$1"
+    for _ in {1..80}; do
+        delayed_count="$(awk -F '\t' '$1 == "PROXY" && $2 == "DELAY_DONE" { count++ }
+            END { print count + 0 }' "$evidence_dir/proxy.tsv" 2>/dev/null || true)"
+        if ((delayed_count >= expected)); then
+            return 0
+        fi
+        sleep 0.1
+    done
+    echo "proxy observed $delayed_count delayed Broker responses; expected at least $expected" >&2
+    cat "$evidence_dir/proxy.tsv" >&2
+    return 1
 }
 
 if [[ "$scenario_id" == "PROD-001-sync-send" ]]; then
@@ -1279,6 +1404,92 @@ PY
         fi
     done
     printf 'PASS %s: Java and Rust batch sends succeeded and each decoded both messages from the other client\n' "$scenario_id" \
+        | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
+    echo "Delaying each direct Broker response beyond the Java/Rust 100 ms send deadline"
+    start_timeout_proxy
+
+    start_timeout_client java compat_timeout_java timeout-java-body \
+        "$evidence_dir/java-timeout.tsv" "$evidence_dir/java-go"
+    release_timeout_client "$evidence_dir/java-go"
+    wait_for_timeout_proxy_delays 1
+
+    start_timeout_client rust compat_timeout_rust timeout-rust-body \
+        "$evidence_dir/rust-timeout.tsv" "$evidence_dir/rust-go"
+    release_timeout_client "$evidence_dir/rust-go"
+    wait_for_timeout_proxy_delays 2
+
+    if ! "$repo_root/target/debug/live_client" max-offset "$broker_addr" "$topic" 0 \
+        >"$evidence_dir/max-offset.tsv" 2>"$evidence_dir/max-offset.stderr"; then
+        cat "$evidence_dir/max-offset.tsv" "$evidence_dir/max-offset.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="pull $broker_addr compat_timeout_readback $topic 0 0" \
+        exec:java@live-consumer-probe >"$evidence_dir/java-pull.tsv" \
+        2>"$evidence_dir/java-pull.stderr"; then
+        cat "$evidence_dir/java-pull.tsv" "$evidence_dir/java-pull.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! "$repo_root/target/debug/live_client" pull "$broker_addr" \
+        compat_timeout_readback "$topic" 0 0 >"$evidence_dir/rust-pull.tsv" \
+        2>"$evidence_dir/rust-pull.stderr"; then
+        cat "$evidence_dir/rust-pull.tsv" "$evidence_dir/rust-pull.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+
+    if ! python3 - "$timeout_ms" "$evidence_dir/java-timeout.tsv" \
+        "$evidence_dir/rust-timeout.tsv" "$evidence_dir/proxy.tsv" \
+        "$evidence_dir/max-offset.tsv" "$evidence_dir/java-pull.tsv" \
+        "$evidence_dir/rust-pull.tsv" <<'PY'
+import sys
+from pathlib import Path
+
+timeout_ms = int(sys.argv[1])
+java_path, rust_path, proxy_path, max_offset_path, java_pull_path, rust_pull_path = sys.argv[2:]
+
+def lines(path):
+    return [line.split("\t") for line in Path(path).read_text().splitlines()]
+
+def check_timeout(path, language, body):
+    rows = lines(path)
+    ready = [row for row in rows if row[:3] == ["TIMEOUT", "READY", language]]
+    result = [row for row in rows if row[:4] == ["TIMEOUT", "RESULT", language, "TIMEOUT"]]
+    if len(ready) != 1 or len(ready[0]) != 4 or ready[0][3] != "0":
+        raise SystemExit(f"{path}: client did not prime queue zero from an empty starting offset")
+    if len(result) != 1 or len(result[0]) != 7 or not result[0][4]:
+        raise SystemExit(f"{path}: expected one typed timeout outcome")
+    elapsed = int(result[0][5])
+    if elapsed < timeout_ms or elapsed >= 2_000 or result[0][6] != "0":
+        raise SystemExit(f"{path}: timeout duration or starting queue offset differs: {result[0]!r}")
+    return body.encode().hex()
+
+java_body = check_timeout(java_path, "java", "timeout-java-body")
+rust_body = check_timeout(rust_path, "rust", "timeout-rust-body")
+proxy_rows = lines(proxy_path)
+delayed = [row for row in proxy_rows if row[:2] == ["PROXY", "DELAY_DONE"]]
+if len(delayed) != 2:
+    raise SystemExit(f"proxy did not delay exactly two Broker responses: {delayed!r}")
+if lines(max_offset_path) != [["MAX_OFFSET", "2"]]:
+    raise SystemExit("expected exactly two queue entries after the two timed-out sends")
+
+java_pull, rust_pull = lines(java_pull_path), lines(rust_pull_path)
+if len(java_pull) != 1 or len(rust_pull) != 1 or len(java_pull[0]) != 7 or len(rust_pull[0]) != 7:
+    raise SystemExit("Java and Rust pull probes must each return one complete result")
+for path, row in ((java_pull_path, java_pull[0]), (rust_pull_path, rust_pull[0])):
+    if row[0] != "PULL" or row[1] != "FOUND" or row[2] != "2" or row[4] != "2":
+        raise SystemExit(f"{path}: pull did not observe exactly two committed messages: {row!r}")
+    raw = row[6].lower()
+    if raw.count(java_body) != 1 or raw.count(rust_body) != 1:
+        raise SystemExit(f"{path}: timed-out send bodies were missing or duplicated")
+if java_pull[0] != rust_pull[0]:
+    raise SystemExit("Java and Rust pull results differ for the messages committed after timeout")
+PY
+    then
+        echo "Java/Rust producer timeout or duplicate-delivery relationship differs" >&2
+        exit 1
+    fi
+    printf 'PASS PROD-005-send-timeout: Java and Rust each timed out at 100 ms; both sends were committed exactly once and matched on pull readback\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
     echo "Sending the same heartbeat through both client APIs"
