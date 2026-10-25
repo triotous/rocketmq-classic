@@ -15,6 +15,7 @@ import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.common.message.MessageRequestMode;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.protocol.header.AckMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ChangeInvisibleTimeRequestHeader;
@@ -144,6 +145,7 @@ public final class LiveP13PopProbe {
 
     private static MessageExt pop(MQClientAPIExt api, String brokerAddress, String topic,
         String group, int queueId, String expectedBody, long invisibleTime) throws Exception {
+        api.setMessageRequestMode(brokerAddress, topic, group, MessageRequestMode.POP, 1, 10_000);
         PopMessageRequestHeader header = new PopMessageRequestHeader();
         header.setConsumerGroup(group);
         header.setTopic(topic);
