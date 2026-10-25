@@ -462,3 +462,11 @@
 - Clean-source run `20261025T152018Z` on revision `3760d22c5e273b186b74626d95bafe2f7cc7c4f1` failed before provisioning. The P10 execution sequence was accidentally placed in the command-template branch, so Java attempted its seed before the isolated Compose project started and could not connect to `127.0.0.1:19876`.
 - Evidence is retained under `docs/compatibility/evidence/phase-19/P10-V03/20261025T152018Z/`; `source_code_dirty=false`, exit status 1, and the manifest remains pending. Filtered Docker container, volume, and network queries returned no resources for the exact project name.
 - Moved the execution sequence into the post-provision live-scenario branch. The corrective runner revision must be clean-source replayed before recording P10-V03 as passed.
+
+## P19-05 P10-V03 second clean replay diagnostic — 2026-10-25
+
+- Clean-source run `20261025T152109Z` on revision `73f135c105...?` provisioned both Brokers, created the one-queue topic and retry-limited group, then failed before publishing a message. The plain `two-broker` profile registers Docker-internal Broker hostnames, which are not reachable by host-run Java and Rust probes.
+- The run trap also hit Bash `nounset` while expanding the empty P7 proxy PID array and stopped before Compose teardown. The isolated project was manually removed with the repository cleanup script; exact-project container, volume, and network filters then returned empty. The archived evidence records the clean source revision, commands, setup logs, failed Java probe, and exit status.
+- The runner now uses the host-routed two-Broker Compose profile internally for P10 while retaining the manifest's `two-broker` topology, configures each Broker directly, and safely handles an empty proxy PID array. The corrective runner revision must be clean-source replayed.
+
+- RLOG correction: the revision placeholder in the preceding P10-V03 second-replay bullet is `73f135c15e8627d7a16b673cfa95746aa7afcb80`.

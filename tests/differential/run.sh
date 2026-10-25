@@ -475,6 +475,12 @@ if [[ "${ROCKETMQ_PROFILE:-}" != "$profile" ]]; then
     echo "ROCKETMQ_PROFILE must explicitly equal the manifest profile '$profile'" >&2
     exit 2
 fi
+manifest_profile="$profile"
+if [[ "$scenario_id" == "P10-V03" ]]; then
+    # The manifest topology is two Brokers. Host-run probes need reachable
+    # addresses from the two-Broker Compose variant.
+    profile="two-broker-host"
+fi
 maven_java_version="$(mvn -version 2>&1 | sed -n 's/^Java version: \([^,]*\),.*/\1/p')"
 if [[ "$maven_java_version" != "27" ]]; then
     echo "The live Java 5.5.1 runner requires the CI-pinned Maven JDK 27; found '${maven_java_version:-unknown}'" >&2
@@ -618,9 +624,13 @@ fi
 mkdir -p "$evidence_dir"
 cp "$selected_file" "$evidence_dir/selected.tsv"
 printf 'scenario=%s\nprofile=%s\nproject=%s\nrun_id=%s\njava_client=5.5.1\nserver=5.3.4\nserver_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8\nsource_revision=%s\nsource_code_dirty=%s\nproducer_group=%s\nbody=%s\nseed=not-applicable\n' \
-    "$scenario_id" "$profile" "$project_name" "$run_id" \
+    "$scenario_id" "$manifest_profile" "$project_name" "$run_id" \
     "$(git -C "$repo_root" rev-parse HEAD)" "$source_code_dirty" "$producer_group" "$body" \
     >"$evidence_dir/metadata.txt"
+if [[ "$profile" != "$manifest_profile" ]]; then
+    printf 'runtime_compose_profile=%s\nruntime_profile_reason=host-routed-two-broker-profile-for-host-client-reachability\n' "$profile" \
+        >>"$evidence_dir/metadata.txt"
+fi
 if [[ "$scenario_id" == "PROD-003-oneway-send" ]]; then
     printf 'java_message_key=%s\nrust_message_key=%s\n' "$java_oneway_key" "$rust_oneway_key" \
         >>"$evidence_dir/metadata.txt"
@@ -802,13 +812,15 @@ target/debug/live_client p13-pop-consume $broker_addr $topic rust
 EOF
 elif [[ "$scenario_id" == "P10-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
-ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
-docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 1 -w 1 -n namesrv:9876
-docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker exec broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g $consumer_group -r $p10_retry_max_times -q 1 -n namesrv:9876
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateTopic -b 127.0.0.1:50911 -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateTopic -b 127.0.0.1:50921 -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateSubGroup -b 127.0.0.1:50911 -g $consumer_group -r $p10_retry_max_times -q 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateSubGroup -b 127.0.0.1:50921 -g $consumer_group -r $p10_retry_max_times -q 1 -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed-p10 $namesrv_addr $topic initial" exec:java@live-high-level-producer-probe
 target/debug/live_client p10-push $namesrv_addr $topic $consumer_group <evidence>/rust-ready <evidence>/seed-failure
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed-p10 $namesrv_addr $topic failure" exec:java@live-high-level-producer-probe
-The runner releases the failure seed gate after Java sends the failure message; Rust records callbacks and verifies the retry-topic/DLQ transition before shutdown.
+The manifest profile is two-broker; the host-routed two-Broker Compose profile publishes NameServer-advertised Broker endpoints to the host Java/Rust clients. The runner releases the failure seed gate after Java sends the failure message; Rust records callbacks and verifies the retry-topic/DLQ transition before shutdown.
 EOF
 elif [[ "$scenario_id" == "P9-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -1056,7 +1068,7 @@ cleanup() {
             } >>"$evidence_dir/broker-internal-logs.log" 2>&1
         done
     fi
-    if [[ "$scenario_id" == "P7-V03" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P15-V03" ]]; then
+    if [[ "$scenario_id" == "P7-V03" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P10-V03" || "$scenario_id" == "P15-V03" ]]; then
         "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 broker-a-host broker-b-host \
             >"$evidence_dir/broker-logs.log" 2>&1
     fi
@@ -1088,7 +1100,7 @@ cleanup() {
             fi
         done
     fi
-    for p7_proxy_pid in "${p7_proxy_pids[@]}"; do
+    for p7_proxy_pid in "${p7_proxy_pids[@]:-}"; do
         if [[ -n "$p7_proxy_pid" ]] && kill -0 "$p7_proxy_pid" 2>/dev/null; then
             kill "$p7_proxy_pid" 2>/dev/null
             wait "$p7_proxy_pid" 2>/dev/null
@@ -1326,11 +1338,16 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
         done
     elif [[ "$scenario_id" == "P10-V03" ]]; then
         echo "Creating scenario-owned Push consumer group with retry limit $p10_retry_max_times"
-        if ! "${compose[@]}" exec --no-TTY "$broker_service" ./mqadmin updateSubGroup -c RocketMQLocalTest -g "$consumer_group" -r "$p10_retry_max_times" -q 1 -n namesrv:9876 \
-            >"$evidence_dir/group-create.log" 2>&1; then
-            cat "$evidence_dir/group-create.log" >&2
-            exit 1
-        fi
+        : >"$evidence_dir/group-create.log"
+        for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
+            topic_service="${broker_admin_target%%:*}"
+            topic_broker="${broker_admin_target#*:}"
+            if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateSubGroup -b "$topic_broker" -g "$consumer_group" -r "$p10_retry_max_times" -q 1 -n namesrv:9876 \
+                >>"$evidence_dir/group-create.log" 2>&1; then
+                cat "$evidence_dir/group-create.log" >&2
+                exit 1
+            fi
+        done
     elif [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
         echo "Creating scenario-owned responder group $consumer_group"
         for responder_group in "$consumer_group" "${consumer_group}_java" "${consumer_group}_rust"; do
