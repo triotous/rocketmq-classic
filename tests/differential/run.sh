@@ -158,7 +158,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route" "P0-V03")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P5-V02-route" "P0-V03" "P7-V02")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -200,6 +200,7 @@ case "$profile:$scenario_id" in
     basic:*) ;;
     two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c) ;;
     transaction:TX-001-commit|transaction:TX-002-rollback) ;;
+    host-routed:P7-V02) ;;
     *)
         echo "Scenario metadata differs from the implemented profile" >&2
         exit 3
@@ -288,6 +289,12 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    P7-V02:compat_p7_send)
+        if [[ "$profile" != "host-routed" ]]; then
+            echo "P7-V02 requires the host-routed producer profile" >&2
+            exit 3
+        fi
+        ;;
     P0-V03:-)
         if [[ "$profile" != "basic" ]]; then
             echo "P0-V03 must use the reviewed basic-profile aggregate" >&2
@@ -299,7 +306,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P0-V03" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P7-V02" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -343,16 +350,24 @@ export ROCKETMQ_NAMESRV_HOST_PORT="${ROCKETMQ_NAMESRV_HOST_PORT:-19876}"
 default_broker_host_port=20911
 if [[ "$profile" == "transaction" ]]; then
     default_broker_host_port=30911
+elif [[ "$profile" == "host-routed" ]]; then
+    default_broker_host_port=40911
 fi
 export ROCKETMQ_BROKER_HOST_PORT="${ROCKETMQ_BROKER_HOST_PORT:-$default_broker_host_port}"
 if [[ "$profile" == "transaction" && "$ROCKETMQ_BROKER_HOST_PORT" != "30911" ]]; then
     echo "The transaction profile advertises broker-a on 127.0.0.1:30911; set ROCKETMQ_BROKER_HOST_PORT=30911" >&2
     exit 2
 fi
+if [[ "$profile" == "host-routed" && "$ROCKETMQ_BROKER_HOST_PORT" != "40911" ]]; then
+    echo "The host-routed profile advertises broker-a on 127.0.0.1:40911; set ROCKETMQ_BROKER_HOST_PORT=40911" >&2
+    exit 2
+fi
 compose=(docker compose --project-name "$project_name" --file "$repo_root/integration-tests/compose.yaml" --profile "$profile")
 broker_service=broker
 if [[ "$profile" == "transaction" ]]; then
     broker_service=broker-tx
+elif [[ "$profile" == "host-routed" ]]; then
+    broker_service=broker-host
 fi
 
 if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; then
@@ -375,8 +390,9 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveConsumerProbe.java
     compat/java-reference/src/main/java/compat/LiveRebalanceProbe.java
     compat/java-reference/src/main/java/compat/LiveTransactionProbe.java
+    compat/java-reference/src/main/java/compat/LiveHighLevelProducerProbe.java
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
-    integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf integration-tests/config/broker-tx.conf
+    integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf integration-tests/config/broker-tx.conf integration-tests/config/broker-host.conf
     integration-tests/setup.sh integration-tests/cleanup.sh
     tests/differential/compare.py tests/differential/run.sh)
 if [[ -n "$(git -C "$repo_root" status --porcelain -- "${code_dirty_paths[@]}")" ]]; then
@@ -456,7 +472,7 @@ fi
     docker version --format 'Docker client {{.Client.Version}} / server {{.Server.Version}}'
     docker compose version
     docker info --format 'Docker platform {{.OSType}}/{{.Architecture}}'
-    python3 - "$repo_root/integration-tests/compose.yaml" "$repo_root/integration-tests/config/broker.conf" "$repo_root/integration-tests/config/broker-b.conf" "$repo_root/integration-tests/config/broker-tx.conf" <<'PY'
+    python3 - "$repo_root/integration-tests/compose.yaml" "$repo_root/integration-tests/config/broker.conf" "$repo_root/integration-tests/config/broker-b.conf" "$repo_root/integration-tests/config/broker-tx.conf" "$repo_root/integration-tests/config/broker-host.conf" <<'PY'
 import hashlib
 import sys
 from pathlib import Path
@@ -502,6 +518,13 @@ cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- 
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- max-offset $broker_addr $topic 0
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="pull $broker_addr $consumer_group $topic 0 0" exec:java@live-consumer-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- pull $broker_addr $consumer_group $topic 0 0
+EOF
+elif [[ "$scenario_id" == "P7-V02" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=host-routed COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic" exec:java@live-high-level-producer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p7-producer $namesrv_addr $topic
 EOF
 elif [[ "$scenario_id" == "P0-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -713,7 +736,7 @@ else
 fi
 cat "$evidence_dir/setup.log"
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P5-V02-route" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P7-V02" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     topic_queue_count=4
@@ -1484,6 +1507,82 @@ PY
         printf 'PASS %s: Java/Rust rollbacks matched; no message was visible and max offset was %s\n' \
             "$scenario_id" "$expected_max_offset" | tee "$evidence_dir/result.txt"
     fi
+elif [[ "$scenario_id" == "P7-V02" ]]; then
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="$namesrv_addr $topic" exec:java@live-high-level-producer-probe \
+        >"$evidence_dir/java-high-level-producer.tsv" \
+        2>"$evidence_dir/java-high-level-producer.stderr"; then
+        cat "$evidence_dir/java-high-level-producer.tsv" "$evidence_dir/java-high-level-producer.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        p7-producer "$namesrv_addr" "$topic" \
+        >"$evidence_dir/rust-high-level-producer.tsv" \
+        2>"$evidence_dir/rust-high-level-producer.stderr"; then
+        cat "$evidence_dir/rust-high-level-producer.tsv" "$evidence_dir/rust-high-level-producer.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! python3 - "$evidence_dir/java-high-level-producer.tsv" \
+        "$evidence_dir/rust-high-level-producer.tsv" <<'PY'
+import sys
+from pathlib import Path
+
+expected_methods = {"SYNC", "ASYNC", "ONEWAY", "EXPLICIT_QUEUE", "SELECTOR", "VALID_BATCH", "INVALID_BATCH"}
+
+def parse(path):
+    results = {}
+    for line in Path(path).read_text().splitlines():
+        if not line.startswith("P7\t"):
+            continue
+        row = line.split("\t")
+        if len(row) < 3 or row[1] in results:
+            raise SystemExit(f"invalid or duplicate producer result row: {line}")
+        results[row[1]] = row[2:]
+    if set(results) != expected_methods:
+        raise SystemExit(f"producer methods differ from expected set: {sorted(results)}")
+    return results
+
+def normalize(results):
+    sync = results["SYNC"]
+    if len(sync) != 2 or sync[0] != "SEND_OK" or not sync[1].isdecimal():
+        raise SystemExit("sync send must return SEND_OK and a queue ID")
+    async_result = results["ASYNC"]
+    if len(async_result) != 3 or async_result[0] != "1" or async_result[1] != "SEND_OK" or not async_result[2].isdecimal():
+        raise SystemExit("async send must complete once with SEND_OK")
+    if results["ONEWAY"] != ["NO_RESPONSE"]:
+        raise SystemExit("oneway send must return without a Broker response")
+    explicit = results["EXPLICIT_QUEUE"]
+    if explicit != ["SEND_OK", "1"]:
+        raise SystemExit("explicit-queue send must succeed on queue 1")
+    selector = results["SELECTOR"]
+    if selector != ["SEND_OK", "2"]:
+        raise SystemExit("selector send must succeed on selected queue 2")
+    batch = results["VALID_BATCH"]
+    if len(batch) != 3 or batch[0] != "SEND_OK" or not batch[1].isdecimal() or batch[2] != "2":
+        raise SystemExit("valid batch must send two messages successfully")
+    if results["INVALID_BATCH"] != ["REJECTED"]:
+        raise SystemExit("mixed-topic batch must be rejected")
+    return {
+        "SYNC": (sync[0],),
+        "ASYNC": tuple(async_result[:2]),
+        "ONEWAY": tuple(results["ONEWAY"]),
+        "EXPLICIT_QUEUE": tuple(explicit),
+        "SELECTOR": tuple(selector),
+        "VALID_BATCH": (batch[0], batch[2]),
+        "INVALID_BATCH": tuple(results["INVALID_BATCH"]),
+    }
+
+java = normalize(parse(sys.argv[1]))
+rust = normalize(parse(sys.argv[2]))
+if java != rust:
+    raise SystemExit(f"Java/Rust high-level producer outcomes differ: {java!r} != {rust!r}")
+PY
+    then
+        echo "Java/Rust high-level producer outcomes do not satisfy P7-V02" >&2
+        exit 1
+    fi
+    printf 'PASS P7-V02: Java and Rust matched all seven high-level producer send modes\n' \
+        | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P0-V03" ]]; then
     constituents=(
         "ROUTE-001-get-existing-topic:basic"

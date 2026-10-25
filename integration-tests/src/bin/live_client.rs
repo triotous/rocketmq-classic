@@ -39,6 +39,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("rebalance") if arguments.len() == 4 => {
             rebalance(&arguments[1], &arguments[2], &arguments[3]).await
         }
+        Some("p7-producer") if arguments.len() == 3 => {
+            high_level_producer_modes(&arguments[1], &arguments[2]).await
+        }
         Some("transaction") if arguments.len() == 7 => {
             transaction(
                 &arguments[1],
@@ -138,7 +141,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | max-offset <broker-address> <topic> <queue-id> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -337,6 +340,87 @@ async fn send(broker_address: &str, topic: &str, body: &str) -> Result<(), Box<d
 
 async fn async_send(broker_address: &str, topic: &str, body: &str) -> Result<(), Box<dyn Error>> {
     send_with_mode(broker_address, topic, body, SendMode::Future).await
+}
+
+async fn high_level_producer_modes(
+    namesrv_address: &str,
+    topic: &str,
+) -> Result<(), Box<dyn Error>> {
+    let mut config = ProducerConfig::new("compat_p7_rust")?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    config.set_send_timeout_millis(10_000);
+    let producer = Arc::new(Producer::new(config));
+    producer.start().await?;
+
+    let result = async {
+        let mut sync_message = Message::new(topic, b"p7-sync".to_vec());
+        let sync = producer.send(&mut sync_message).await?;
+        println!("P7\tSYNC\t{}\t{}", sync.status.name(), sync.queue_id);
+
+        let mut async_message = Message::new(topic, b"p7-async".to_vec());
+        let async_result = producer.send_future(&mut async_message).await?;
+        println!(
+            "P7\tASYNC\t1\t{}\t{}",
+            async_result.status.name(),
+            async_result.queue_id
+        );
+
+        let mut oneway_message = Message::new(topic, b"p7-oneway".to_vec());
+        producer.send_oneway(&mut oneway_message).await?;
+        println!("P7\tONEWAY\tNO_RESPONSE");
+
+        let explicit_queue = MessageQueue::new(topic, "broker-a", 1);
+        let mut explicit_message = Message::new(topic, b"p7-explicit".to_vec());
+        let explicit = producer
+            .send_to_queue(&mut explicit_message, &explicit_queue)
+            .await?;
+        println!(
+            "P7\tEXPLICIT_QUEUE\t{}\t{}",
+            explicit.status.name(),
+            explicit.queue_id
+        );
+
+        let mut selector_message = Message::new(topic, b"p7-selector".to_vec());
+        let selected = producer
+            .send_with_selector(&mut selector_message, |queues, _| {
+                queues.iter().find(|queue| queue.queue_id() == 2).cloned()
+            })
+            .await?;
+        println!(
+            "P7\tSELECTOR\t{}\t{}",
+            selected.status.name(),
+            selected.queue_id
+        );
+
+        let mut batch = vec![
+            Message::new(topic, b"p7-batch-0".to_vec()),
+            Message::new(topic, b"p7-batch-1".to_vec()),
+        ];
+        let valid_batch = producer.send_batch(&mut batch).await?;
+        println!(
+            "P7\tVALID_BATCH\t{}\t{}\t{}",
+            valid_batch.status.name(),
+            valid_batch.queue_id,
+            batch.len()
+        );
+
+        let mut invalid_batch = vec![
+            Message::new(topic, b"p7-invalid-batch-0".to_vec()),
+            Message::new(format!("{topic}-different"), b"p7-invalid-batch-1".to_vec()),
+        ];
+        if producer.send_batch(&mut invalid_batch).await.is_ok() {
+            return Err("batch with mixed topics was accepted".into());
+        }
+        println!("P7\tINVALID_BATCH\tREJECTED");
+        Ok::<(), Box<dyn Error>>(())
+    }
+    .await;
+
+    let shutdown = producer.shutdown().await;
+    shutdown?;
+    result
 }
 
 async fn oneway_send(
