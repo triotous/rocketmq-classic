@@ -200,7 +200,12 @@ for row in required:
         failures.append(f"{scenario_id}: live_status={row.get('live_status')} evidence={evidence}")
         continue
     evidence_path = root / evidence
-    results = list(evidence_path.glob("*/result.txt")) if evidence_path.is_dir() else []
+    results = []
+    if evidence_path.is_dir():
+        direct_result = evidence_path / "result.txt"
+        if direct_result.is_file():
+            results.append(direct_result)
+        results.extend(evidence_path.glob("*/result.txt"))
     if not any(path.read_text(errors="replace").startswith(f"PASS {scenario_id}:") for path in results):
         failures.append(f"{scenario_id}: PASS evidence result is absent from {evidence}")
 if failures:

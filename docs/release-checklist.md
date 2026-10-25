@@ -10993,3 +10993,20 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [ ] The aggregate attempt stopped at the differential self-test before
   subsequent server-free gates or Docker replay. Rerun `run-local.sh --all`
   from the committed correction before Phase 19 acceptance.
+
+## P19-03 live runner and evidence reconciliation corrections — 2026-10-25 (`f048f09d`)
+
+- [x] The corrected aggregate attempt passed all server-free gates and started
+  `tests/differential/run.sh --all`. Inspection of its archived output showed
+  that the parent manifest loop executed only `ROUTE-001`: its child command
+  inherited the manifest input descriptor and consumed the remaining rows.
+  The live step's exit status alone did not prove all 37 rows ran.
+- [x] The final reconciliation also assumed each manifest evidence path was a
+  parent directory, although entries point directly to a run directory with a
+  top-level `result.txt`. The checker now supports both direct and nested run
+  evidence paths; a local check reconciled all 37 current PASS records.
+- [x] The `--all` child invocation now reads from `/dev/null`, preserving the
+  parent's selected-row input. Shell syntax, direct evidence reconciliation,
+  and diff hygiene pass with both fixes.
+- [ ] Rerun the full aggregate gate and verify the log names all 37 live
+  scenarios before accepting Phase 19.

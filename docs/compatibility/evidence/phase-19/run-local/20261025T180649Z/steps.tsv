@@ -1,0 +1,23 @@
+PASS	cargo-format
+PASS	diff-check
+PASS	workspace-tests-default
+PASS	workspace-tests-all-features
+PASS	workspace-check
+PASS	workspace-clippy
+PASS	java-verify
+PASS	differential-self-test
+PASS	differential-manifest
+PASS	race-leak-smoke
+PASS	fuzz-smoke
+PASS	release-examples
+PASS	benchmark-build
+PASS	benchmark-run
+PASS	cargo-metadata
+PASS	workspace-metadata
+PASS	package-content
+PASS	unique-id-utc
+PASS	unique-id-taipei
+PASS	differential-live-coverage
+PASS	docker-toolchain
+PASS	live-scenarios
+FAIL	scenario-evidence-reconciliation	1

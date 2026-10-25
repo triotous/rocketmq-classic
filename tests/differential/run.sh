@@ -317,7 +317,8 @@ fi
 if [[ "$selection" != "scenario" ]]; then
     while IFS=$'\t' read -r scenario_id profile _; do
         printf 'Running manifest scenario %s with profile %s\n' "$scenario_id" "$profile"
-        ROCKETMQ_PROFILE="$profile" "$repo_root/tests/differential/run.sh" --scenario "$scenario_id"
+        # Child probes must not consume the parent loop's manifest input.
+        ROCKETMQ_PROFILE="$profile" "$repo_root/tests/differential/run.sh" --scenario "$scenario_id" </dev/null
     done <"$selected_file"
     exit 0
 fi
