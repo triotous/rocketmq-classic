@@ -111,13 +111,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--upstream", required=True, help="host:port of the disposable Broker")
     parser.add_argument("--delay-ms", type=int, required=True)
+    parser.add_argument("--listen-port", type=int, default=0)
     parser.add_argument("--delay-flag", type=Path, required=True)
     parser.add_argument("--ready-file", type=Path, required=True)
     parser.add_argument("--log-file", type=Path, required=True)
     args = parser.parse_args()
     host, port_text = args.upstream.rsplit(":", 1)
     server = Server(
-        ("127.0.0.1", 0),
+        ("127.0.0.1", args.listen_port),
         (host, int(port_text)),
         args.delay_flag,
         args.delay_ms / 1000,

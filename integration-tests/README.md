@@ -118,6 +118,12 @@ clients reject an untrusted CA and report zero retained remoting resources at
 shutdown. `P7-V04` uses two host-routed Brokers to send 20 messages in each of
 three producer start/shutdown cycles and checks that pending requests,
 connections, and task groups return to zero each time.
+`P7-V03` uses two host-routed Brokers and transparent response proxies. Both
+clients make three synchronous attempts across retryable `NO_PERMISSION`
+responses while preserving the original body and unique ID, then each hits a
+900 ms send deadline against a delayed Broker response. The runner restores
+Broker write permission before deleting the scenario topic and tearing down
+the disposable project.
 `PROD-005-send-timeout` delays each direct Broker response beyond the reviewed
 100 ms deadline and verifies the timed-out sends were each committed once by
 cross-language pull readback.
@@ -192,6 +198,15 @@ tests/differential/run.sh --scenario P7-V02
 
 It checks sync, async, oneway, explicit-queue, selector, valid-batch, and
 mixed-topic batch rejection behavior against the same isolated Broker.
+
+The high-level producer retry and deadline check uses the host-routed
+two-Broker profile:
+
+```bash
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable \
+ROCKETMQ_PROFILE=two-broker-host \
+tests/differential/run.sh --scenario P7-V03
+```
 
 The shared-runtime lifecycle check also uses the host-routed profile:
 

@@ -153,7 +153,7 @@ services:
       - ./config/broker-a-host.conf:/etc/rocketmq/broker.conf:ro
       - broker-a-host-store:/home/rocketmq/store
     ports:
-      - "127.0.0.1:50911:50911"
+      - "127.0.0.1:${ROCKETMQ_BROKER_A_PUBLISHED_HOST_PORT:-50911}:50911"
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/50911'"]
       interval: 2s
@@ -174,7 +174,7 @@ services:
       - ./config/broker-b-host.conf:/etc/rocketmq/broker.conf:ro
       - broker-b-host-store:/home/rocketmq/store
     ports:
-      - "127.0.0.1:50921:50921"
+      - "127.0.0.1:${ROCKETMQ_BROKER_B_PUBLISHED_HOST_PORT:-50921}:50921"
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/50921'"]
       interval: 2s

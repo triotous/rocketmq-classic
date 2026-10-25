@@ -420,3 +420,11 @@
   binary Clippy (`-D warnings`), pinned Maven compile, Bash syntax, differential
   manifest validation and `git diff --check` pass. The fail-closed inventory
   remains expected to stop at the eight runnerless cases.
+
+## P19-04 P7-V03 retry and deadline runner — 2026-10-25
+
+- Added Java 5.5.1 and Rust high-level Producer probes that prefetch a writable route from both Brokers, gate the send, and record every send-hook attempt, Broker name, outcome, body, and unique message ID.
+- Added deterministic retry coverage using Broker `NO_PERMISSION` response code 16, explicitly registered as retryable in each client, and a delayed-response case with a 900 ms Producer deadline against a 1,800 ms disposable TCP proxy delay. Both Brokers are read-only only during the retry check; the runner restores their write permission before deadline probes and teardown.
+- Added a `two-broker-host` published-port override for this case so local proxies bind the advertised Broker ports while forwarding to the disposable Broker ports. The existing host profile defaults are unchanged.
+- Updated P7-V03 manifest inputs, runner dispatch, evidence commands, and integration-test documentation. The phase plan files remain unchanged. Live Broker verification and clean-source evidence are pending.
+- `cargo fmt --all -- --check`, strict integration-binary Clippy (`-D warnings`), pinned Maven compile, `bash -n`, proxy Python compilation, manifest validation, Docker Compose config validation (including the P7 port override), and `git diff --check` pass. Initial checks caught a Clippy collapsible-replace warning and Java compiler API/package errors; those were corrected before this entry.

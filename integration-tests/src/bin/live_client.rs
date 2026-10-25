@@ -6,8 +6,9 @@ use std::{
 use rocketmq_classic::{
     ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, LocalTransactionState, MessageSelector,
     Producer, ProducerConfig, ProducerError, PullConsumer, PullConsumerConfig, PushConsumer,
-    PushConsumerConfig, PushMessageListener, RequestFutureHolder, TransactionCallbackError,
-    TransactionListener, TransactionProducer, create_reply_message,
+    PushConsumerConfig, PushMessageListener, RequestFutureHolder, SendMessageContext,
+    SendMessageHook, TransactionCallbackError, TransactionListener, TransactionProducer,
+    create_reply_message,
 };
 use rocketmq_classic_common::message::{
     DecodeOptions, Message, MessageExt, MessageQueue, decode_many_as_client_compatible,
@@ -63,6 +64,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Some("p7-producer") if arguments.len() == 3 => {
             high_level_producer_modes(&arguments[1], &arguments[2]).await
+        }
+        Some("p7-retry") if arguments.len() == 8 => {
+            p7_retry_probe(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                arguments[5].parse()?,
+                &arguments[6],
+                &arguments[7],
+            )
+            .await
         }
         Some("p7-lifecycle") if arguments.len() == 3 => {
             producer_lifecycle_probe(&arguments[1], &arguments[2]).await
@@ -603,6 +616,146 @@ async fn high_level_producer_modes(
     }
     .await;
 
+    let shutdown = producer.shutdown().await;
+    shutdown?;
+    result
+}
+
+struct P7RetryAttemptHook {
+    attempts: std::sync::Mutex<usize>,
+}
+
+impl SendMessageHook for P7RetryAttemptHook {
+    fn hook_name(&self) -> &str {
+        "p7-retry-attempt-recorder"
+    }
+
+    fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
+        let attempt = {
+            let mut attempts = self
+                .attempts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *attempts += 1;
+            *attempts
+        };
+        let broker = context.queue.broker_name().unwrap_or_default();
+        let status = context
+            .send_result
+            .as_ref()
+            .map_or("ERROR", |result| result.status.name());
+        let body = String::from_utf8_lossy(context.message.body().as_ref()).replace('\t', " ");
+        let unique_id = context
+            .message
+            .properties()
+            .get("UNIQ_KEY")
+            .cloned()
+            .unwrap_or_default();
+        println!("ATTEMPT\trust\t{attempt}\t{broker}\t{status}\t{body}\t{unique_id}");
+        let error = context
+            .exception
+            .map(ToString::to_string)
+            .unwrap_or_default()
+            .replace(['\t', '\n'], " ");
+        println!("ATTEMPT_ERROR\trust\t{attempt}\t{error}");
+    }
+}
+
+async fn p7_retry_probe(
+    namesrv_address: &str,
+    topic: &str,
+    mode: &str,
+    body: &str,
+    timeout_ms: i32,
+    ready_file: &str,
+    go_file: &str,
+) -> Result<(), Box<dyn Error>> {
+    let mut config = ProducerConfig::new("compat_p7_retry_rust")?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    config.set_send_timeout_millis(timeout_ms);
+    config.set_retry_times_when_send_failed(2);
+    let producer = Arc::new(Producer::new(config));
+    producer.add_retry_response_code(rocketmq_classic_protocol::codes::response::NO_PERMISSION);
+    producer.register_send_message_hook(Arc::new(P7RetryAttemptHook {
+        attempts: std::sync::Mutex::new(0),
+    }));
+    producer.start().await?;
+
+    let result = async {
+        let queues = producer.fetch_publish_message_queues(topic).await?;
+        let mut brokers = queues
+            .iter()
+            .filter_map(|queue| queue.broker_name().map(str::to_owned))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        brokers.sort();
+        let has_both_brokers = brokers.iter().any(|broker| broker == "broker-a")
+            && brokers.iter().any(|broker| broker == "broker-b");
+        println!("ROUTE\trust\t{}", brokers.join(","));
+        if !has_both_brokers {
+            return Err("P7-V03 requires writable queues on both Brokers".into());
+        }
+        std::fs::write(ready_file, "ready\n")?;
+        let gate_deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while !Path::new(go_file).exists() {
+            if std::time::Instant::now() >= gate_deadline {
+                return Err("timed out waiting for the P7-V03 send gate".into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        let mut message = Message::new(topic, body.as_bytes().to_vec());
+        message.set_keys(format!("compat_p7_{mode}_rust"))?;
+        let started = Instant::now();
+        let send = producer.send(&mut message).await;
+        let elapsed = started.elapsed().as_millis();
+        match send {
+            Ok(result) => {
+                println!(
+                    "RESULT\trust\t{mode}\tSUCCESS\t{}\t{}\t{elapsed}",
+                    result.status.name(),
+                    result.broker_name
+                );
+                if mode != "deadline" {
+                    return Err("retry probe expected an exhausted Broker error".into());
+                }
+                Err("deadline probe unexpectedly completed successfully".into())
+            }
+            Err(error) => {
+                let description = error.to_string();
+                let lower = description.to_lowercase();
+                let outcome = if lower.contains("timeout") || lower.contains("deadline") {
+                    "TIMEOUT"
+                } else {
+                    "BROKER_ERROR"
+                };
+                println!("RESULT\trust\t{mode}\t{outcome}\t{description}\t{elapsed}");
+                match mode {
+                    "retry"
+                        if matches!(
+                            &error,
+                            ProducerError::SendRetriesExhausted {
+                                response_code: 16,
+                                ..
+                            }
+                        ) =>
+                    {
+                        Ok(())
+                    }
+                    "retry" => {
+                        Err("retry probe did not classify final code as NO_PERMISSION".into())
+                    }
+                    "deadline" if outcome == "TIMEOUT" => Ok(()),
+                    "deadline" => Err("deadline probe did not return a timeout".into()),
+                    _ => Err(format!("unknown P7-V03 mode: {mode}").into()),
+                }
+            }
+        }
+    }
+    .await;
     let shutdown = producer.shutdown().await;
     shutdown?;
     result

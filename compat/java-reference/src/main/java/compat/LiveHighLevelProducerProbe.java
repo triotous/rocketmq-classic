@@ -2,27 +2,152 @@ package compat;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.TreeSet;
 
 import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.client.hook.SendMessageContext;
+import org.apache.rocketmq.client.hook.SendMessageHook;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.client.producer.SendCallback;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageQueue;
+import org.apache.rocketmq.common.message.MessageConst;
+import org.apache.rocketmq.remoting.protocol.ResponseCode;
 
 /** Exercises the high-level Java producer send overloads against a live Broker. */
 public final class LiveHighLevelProducerProbe {
     private LiveHighLevelProducerProbe() {}
 
     public static void main(String[] args) throws Exception {
+        if (args.length == 8 && "retry-probe".equals(args[0])) {
+            retryProbe(args[1], args[2], args[3], args[4], Integer.parseInt(args[5]), args[6], args[7]);
+            return;
+        }
         if (args.length != 2) {
-            throw new IllegalArgumentException("usage: <nameserver-address> <topic>");
+            throw new IllegalArgumentException("usage: <nameserver-address> <topic> | retry-probe <nameserver-address> <topic> <mode> <body> <timeout-ms> <ready-file> <go-file>");
         }
         run(args[0], args[1]);
+    }
+
+    private static void retryProbe(
+        String namesrvAddress, String topic, String mode, String body, int timeoutMillis,
+        String readyFile, String goFile
+    ) throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("compat_p7_retry_java");
+        producer.setNamesrvAddr(namesrvAddress);
+        producer.setSendMessageWithVIPChannel(false);
+        producer.setSendMsgTimeout(timeoutMillis);
+        producer.setRetryTimesWhenSendFailed(2);
+        producer.getRetryResponseCodes().add(ResponseCode.NO_PERMISSION);
+        AtomicInteger attempt = new AtomicInteger();
+        producer.getDefaultMQProducerImpl().registerSendMessageHook(new SendMessageHook() {
+            @Override
+            public String hookName() {
+                return "p7-retry-attempt-recorder";
+            }
+
+            @Override
+            public void sendMessageBefore(SendMessageContext context) {}
+
+            @Override
+            public void sendMessageAfter(SendMessageContext context) {
+                int number = attempt.incrementAndGet();
+                Message message = context.getMessage();
+                String uniqueId = message.getProperty(MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX);
+                String status = context.getSendResult() == null ? "ERROR" :
+                    context.getSendResult().getSendStatus().name();
+                String error = context.getException() == null ? "" : context.getException().toString();
+                System.out.printf("ATTEMPT\tjava\t%d\t%s\t%s\t%s\t%s%n",
+                    number, context.getMq().getBrokerName(), status,
+                    toHex(message.getBody()),
+                    uniqueId == null ? "" : uniqueId);
+                System.out.printf("ATTEMPT_ERROR\tjava\t%d\t%s%n", number,
+                    error.replace('\t', ' ').replace('\n', ' '));
+            }
+        });
+        producer.start();
+        Throwable failure = null;
+        String outcome = "SUCCESS";
+        long started;
+        try {
+            TreeSet<String> brokers = new TreeSet<>();
+            for (MessageQueue queue : producer.fetchPublishMessageQueues(topic)) {
+                brokers.add(queue.getBrokerName());
+            }
+            System.out.printf("ROUTE\tjava\t%s%n", String.join(",", brokers));
+            if (!brokers.contains("broker-a") || !brokers.contains("broker-b")) {
+                throw new IllegalStateException("topic route has no writable queues");
+            }
+            Files.writeString(Path.of(readyFile), "ready\n");
+            awaitGoFile(goFile);
+            Message message = new Message(topic, body.getBytes(StandardCharsets.UTF_8));
+            message.setKeys("compat_p7_" + mode + "_java");
+            started = System.nanoTime();
+            try {
+                SendResult result = producer.send(message);
+                System.out.printf("RESULT\tjava\t%s\t%s\t%s\t%d%n", mode,
+                    result.getSendStatus().name(), result.getMessageQueue().getBrokerName(),
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+            } catch (Throwable error) {
+                failure = error;
+                outcome = isTimeout(error) ? "TIMEOUT" : "BROKER_ERROR";
+                System.out.printf("RESULT\tjava\t%s\t%s\t%s\t%d%n", mode, outcome,
+                    error.toString().replace('\t', ' ').replace('\n', ' '),
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+            }
+            if ("retry".equals(mode) && outcome != "BROKER_ERROR") {
+                throw new IllegalStateException("retry probe expected a Broker error", failure);
+            }
+            if ("deadline".equals(mode) && outcome != "TIMEOUT") {
+                throw new IllegalStateException("deadline probe expected timeout", failure);
+            }
+            if (!"retry".equals(mode) && !"deadline".equals(mode)) {
+                throw new IllegalArgumentException("unknown retry probe mode: " + mode);
+            }
+        } finally {
+            producer.shutdown();
+        }
+    }
+
+    private static void awaitGoFile(String goFile) throws Exception {
+        Path path = Path.of(goFile);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        while (System.nanoTime() < deadline) {
+            if (Files.exists(path)) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        throw new IllegalStateException("timed out waiting for the send gate");
+    }
+
+    private static boolean isTimeout(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            String description = (cause.getClass().getSimpleName() + " " + cause.getMessage())
+                .toLowerCase(java.util.Locale.ROOT);
+            if (description.contains("timeout") || description.contains("deadline")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String toHex(byte[] value) {
+        char[] digits = "0123456789abcdef".toCharArray();
+        char[] encoded = new char[value.length * 2];
+        for (int index = 0; index < value.length; index++) {
+            int octet = value[index] & 0xff;
+            encoded[index * 2] = digits[octet >>> 4];
+            encoded[index * 2 + 1] = digits[octet & 0x0f];
+        }
+        return new String(encoded);
     }
 
     private static void run(String namesrvAddress, String topic) throws Exception {

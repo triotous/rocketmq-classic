@@ -136,6 +136,17 @@ for scenario in selected:
         or inputs.get("late_reply_hold_ms") != 4000
     ):
         raise SystemExit("P15-V03 timeout and late-reply bounds differ from the reviewed live case")
+    if scenario_id == "P7-V03" and (
+        scenario.get("profile") != "two-broker-host"
+        or inputs.get("retry_count") != 2
+        or inputs.get("retry_timeout_ms") != 10000
+        or inputs.get("deadline_timeout_ms") != 900
+        or inputs.get("response_delay_ms") != 1800
+        or inputs.get("retry_response_code") != 16
+        or inputs.get("retry_body") != "p7-retry-original-body"
+        or inputs.get("deadline_body") != "p7-deadline-original-body"
+    ):
+        raise SystemExit("P7-V03 retry and deadline bounds differ from the reviewed live case")
     if scenario_id == "P5-V02-producer" and inputs.get("methods") != [
         "send-v1", "send-v2", "batch", "reply-v1", "reply-v2", "end-transaction"
     ]:
@@ -187,7 +198,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P5-V02-extensions" "P0-V03" "P6-V04" "P7-V02" "P7-V04" "P9-V03" "P13-V02" "REQ-001-request-reply-success" "P15-V03")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P5-V02-extensions" "P0-V03" "P6-V04" "P7-V02" "P7-V03" "P7-V04" "P9-V03" "P13-V02" "REQ-001-request-reply-success" "P15-V03")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -232,6 +243,11 @@ p15_timeout_ms=4500
 p15_no_reply_hold_ms=1500
 p15_late_reply_delay_ms=6500
 p15_late_reply_hold_ms=4000
+p7_retry_timeout_ms=10000
+p7_deadline_timeout_ms=900
+p7_response_delay_ms=1800
+p7_retry_body="p7-retry-original-body"
+p7_deadline_body="p7-deadline-original-body"
 if [[ "$scenario_id" == "REQ-001-request-reply-success" ]]; then
     if [[ "$topic" != *_java ]]; then
         echo "The Java request topic must end with _java so the reverse-direction topic can be derived safely" >&2
@@ -248,7 +264,7 @@ fi
 case "$profile:$scenario_id" in
     basic:*) ;;
     two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c|two-broker:PROD-005-send-timeout|two-broker:P5-V02-consumer|two-broker:P13-V02) ;;
-    two-broker-host:P7-V04|two-broker-host:P15-V03) ;;
+    two-broker-host:P7-V03|two-broker-host:P7-V04|two-broker-host:P15-V03) ;;
     transaction:TX-001-commit|transaction:TX-002-rollback) ;;
     tls:P3-V04) ;;
     host-routed:P6-V04|host-routed:P7-V02|host-routed:P9-V03) ;;
@@ -372,6 +388,12 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    P7-V03:compat_p7_retry)
+        if [[ "$profile" != "two-broker-host" ]]; then
+            echo "P7-V03 requires the host-routed two-Broker profile" >&2
+            exit 3
+        fi
+        ;;
     P7-V04:compat_p7_lifecycle)
         if [[ "$profile" != "two-broker-host" ]]; then
             echo "P7-V04 requires the host-routed two-Broker profile" >&2
@@ -419,7 +441,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P5-V02-extensions" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P7-V04" && "$scenario_id" != "P9-V03" && "$scenario_id" != "P13-V02" && "$scenario_id" != "REQ-001-request-reply-success" && "$scenario_id" != "P15-V03" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P5-V02-extensions" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P7-V03" && "$scenario_id" != "P7-V04" && "$scenario_id" != "P9-V03" && "$scenario_id" != "P13-V02" && "$scenario_id" != "REQ-001-request-reply-success" && "$scenario_id" != "P15-V03" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -482,6 +504,18 @@ if [[ "$profile" == "two-broker-host" ]]; then
     if [[ "$ROCKETMQ_BROKER_HOST_PORT" != "50911" || "$ROCKETMQ_BROKER_B_HOST_PORT" != "50921" ]]; then
         echo "The two-Broker host profile advertises 127.0.0.1:50911 and 127.0.0.1:50921" >&2
         exit 2
+    fi
+    if [[ "$scenario_id" == "P7-V03" ]]; then
+        if [[ "${ROCKETMQ_BROKER_A_PUBLISHED_HOST_PORT:-51911}" != "51911" || \
+            "${ROCKETMQ_BROKER_B_PUBLISHED_HOST_PORT:-51921}" != "51921" ]]; then
+            echo "P7-V03 requires direct Broker ports 51911/51921 behind proxies at advertised ports 50911/50921" >&2
+            exit 2
+        fi
+        export ROCKETMQ_BROKER_A_PUBLISHED_HOST_PORT=51911
+        export ROCKETMQ_BROKER_B_PUBLISHED_HOST_PORT=51921
+    else
+        export ROCKETMQ_BROKER_A_PUBLISHED_HOST_PORT="${ROCKETMQ_BROKER_A_PUBLISHED_HOST_PORT:-50911}"
+        export ROCKETMQ_BROKER_B_PUBLISHED_HOST_PORT="${ROCKETMQ_BROKER_B_PUBLISHED_HOST_PORT:-50921}"
     fi
 fi
 compose=(docker compose --project-name "$project_name" --file "$repo_root/integration-tests/compose.yaml" --profile "$profile")
@@ -759,6 +793,20 @@ docker compose --project-name $project_name --file integration-tests/compose.yam
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g ${consumer_group}_rust -n namesrv:9876
 Rust responder / Java requester, then Java responder / Rust requester; each responder emits READY before its paired request.
 EOF
+elif [[ "$scenario_id" == "P7-V03" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host ROCKETMQ_BROKER_A_PUBLISHED_HOST_PORT=51911 ROCKETMQ_BROKER_B_PUBLISHED_HOST_PORT=51921 COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateTopic -b 127.0.0.1:50911 -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateTopic -b 127.0.0.1:50921 -t $topic -r 1 -w 1 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateBrokerConfig -b 127.0.0.1:50911 -k brokerPermission -v 4 -n namesrv:9876
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateBrokerConfig -b 127.0.0.1:50921 -k brokerPermission -v 4 -n namesrv:9876
+python3 tests/differential/delayed_response_proxy.py --upstream 127.0.0.1:51911 --listen-port 50911 --delay-ms $p7_response_delay_ms --delay-flag <evidence>/broker-a-proxy.delay-flag --ready-file <evidence>/broker-a-proxy.ready --log-file <evidence>/broker-a-proxy.tsv
+python3 tests/differential/delayed_response_proxy.py --upstream 127.0.0.1:51921 --listen-port 50921 --delay-ms $p7_response_delay_ms --delay-flag <evidence>/broker-b-proxy.delay-flag --ready-file <evidence>/broker-b-proxy.ready --log-file <evidence>/broker-b-proxy.tsv
+The runner uses Java and Rust send hooks to record each Broker, response classification, body, and unique ID; it restores brokerPermission=6 before topic deletion and Compose teardown.
+retry_timeout_ms=$p7_retry_timeout_ms
+deadline_timeout_ms=$p7_deadline_timeout_ms
+retry_response_code=16
+EOF
 elif [[ "$scenario_id" == "P15-V03" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host COMPOSE_PROJECT_NAME=$project_name bash tests/differential/run.sh --scenario P15-V03
@@ -925,6 +973,8 @@ responder_pid=""
 timeout_proxy_pid=""
 tls_proxy_pid=""
 timeout_probe_pid=""
+p7_proxy_pids=()
+p7_probe_pid=""
 cleanup() {
     status=$?
     trap - EXIT
@@ -945,6 +995,28 @@ cleanup() {
         kill "$tls_proxy_pid" 2>/dev/null
         wait "$tls_proxy_pid" 2>/dev/null
     fi
+    for p7_proxy_pid in "${p7_proxy_pids[@]}"; do
+        if [[ -n "$p7_proxy_pid" ]] && kill -0 "$p7_proxy_pid" 2>/dev/null; then
+            kill "$p7_proxy_pid" 2>/dev/null
+            wait "$p7_proxy_pid" 2>/dev/null
+        fi
+    done
+    if [[ -n "$p7_probe_pid" ]] && kill -0 "$p7_probe_pid" 2>/dev/null; then
+        kill "$p7_probe_pid" 2>/dev/null
+        wait "$p7_probe_pid" 2>/dev/null
+    fi
+    if [[ "$scenario_id" == "P7-V03" ]]; then
+        : >"$evidence_dir/broker-permission-cleanup.log"
+        for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
+            topic_service="${broker_admin_target%%:*}"
+            topic_broker="${broker_admin_target#*:}"
+            if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateBrokerConfig -b "$topic_broker" -k brokerPermission -v 6 -n namesrv:9876 \
+                >>"$evidence_dir/broker-permission-cleanup.log" 2>&1; then
+                status=1
+                echo "Failed to restore $topic_service brokerPermission before cleanup" >&2
+            fi
+        done
+    fi
     if [[ "$scenario_id" == "P13-V02" ]]; then
         "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 broker broker-b \
             >"$evidence_dir/broker-logs.log" 2>&1
@@ -962,7 +1034,7 @@ cleanup() {
             } >>"$evidence_dir/broker-internal-logs.log" 2>&1
         done
     fi
-    if [[ "$scenario_id" == "P7-V04" || "$scenario_id" == "P15-V03" ]]; then
+    if [[ "$scenario_id" == "P7-V03" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P15-V03" ]]; then
         "${compose[@]}" logs --no-color --timestamps --since 10m --tail 5000 broker-a-host broker-b-host \
             >"$evidence_dir/broker-logs.log" 2>&1
     fi
@@ -971,11 +1043,17 @@ cleanup() {
         for topic_to_delete in "${topic_cleanup_list[@]}"; do
             if [[ "$profile" == "two-broker-host" ]]; then
                 for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
+                    topic_service="${broker_admin_target%%:*}"
                     topic_broker="${broker_admin_target#*:}"
-                    mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-                        -Dexec.args="delete-topic $topic_broker $topic_to_delete" \
-                        exec:java@live-producer-lifecycle-probe \
-                        >>"$evidence_dir/topic-cleanup.log" 2>&1
+                    if [[ "$scenario_id" == "P7-V03" ]]; then
+                        "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin deleteTopic -b "$topic_broker" -t "$topic_to_delete" -n namesrv:9876 \
+                            >>"$evidence_dir/topic-cleanup.log" 2>&1
+                    else
+                        mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+                            -Dexec.args="delete-topic $topic_broker $topic_to_delete" \
+                            exec:java@live-producer-lifecycle-probe \
+                            >>"$evidence_dir/topic-cleanup.log" 2>&1
+                    fi
                     delete_status=$?
                     if ((delete_status)); then
                         status=1
@@ -1113,11 +1191,11 @@ if [[ "$scenario_id" == "P5-V02-extensions" ]]; then
     done
 fi
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P3-V04" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P5-V02-producer" || "$scenario_id" == "P5-V02-consumer" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "P13-V02" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "CONS-001-query-offset" || "$scenario_id" == "CONS-002-pull-found" || "$scenario_id" == "CONS-003-pull-no-new-msg" || "$scenario_id" == "CONS-004-update-offset" || "$scenario_id" == "ORDER-001-lock-unlock" || "$scenario_id" == "REBAL-001-average-10q-3c" || "$scenario_id" == "TX-001-commit" || "$scenario_id" == "TX-002-rollback" || "$scenario_id" == "P3-V04" || "$scenario_id" == "P5-V02-route" || "$scenario_id" == "P5-V02-producer" || "$scenario_id" == "P5-V02-consumer" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V02" || "$scenario_id" == "P7-V03" || "$scenario_id" == "P7-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "P13-V02" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     topic_queue_count=4
-    if [[ "$scenario_id" == "P3-V04" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "P5-V02-consumer" ]]; then
+    if [[ "$scenario_id" == "P3-V04" || "$scenario_id" == "P6-V04" || "$scenario_id" == "P7-V03" || "$scenario_id" == "P9-V03" || "$scenario_id" == "REQ-001-request-reply-success" || "$scenario_id" == "P15-V03" || "$scenario_id" == "PROD-005-send-timeout" || "$scenario_id" == "P5-V02-consumer" ]]; then
         topic_queue_count=1
     elif [[ "$scenario_id" == "REBAL-001-average-10q-3c" ]]; then
         topic_queue_count=5
@@ -1251,6 +1329,51 @@ if ! cargo build --locked -p rocketmq-classic-integration --bin live_client \
     >"$evidence_dir/rust-build.log" 2>&1; then
     cat "$evidence_dir/rust-build.log" >&2
     exit 1
+fi
+
+if [[ "$scenario_id" == "P7-V03" ]]; then
+    echo "Setting both disposable Brokers read-only for deterministic retryable permission responses"
+    : >"$evidence_dir/broker-permission.log"
+    for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
+        topic_service="${broker_admin_target%%:*}"
+        topic_broker="${broker_admin_target#*:}"
+        if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateBrokerConfig -b "$topic_broker" -k brokerPermission -v 4 -n namesrv:9876 \
+            >>"$evidence_dir/broker-permission.log" 2>&1; then
+            cat "$evidence_dir/broker-permission.log" >&2
+            exit 1
+        fi
+    done
+
+    start_p7_proxy() {
+        local broker_name="$1"
+        local listen_port="$2"
+        local upstream_port="$3"
+        local proxy_prefix="$evidence_dir/$broker_name-proxy"
+        python3 "$repo_root/tests/differential/delayed_response_proxy.py" \
+            --upstream "127.0.0.1:$upstream_port" \
+            --delay-ms "$p7_response_delay_ms" \
+            --listen-port "$listen_port" \
+            --delay-flag "$proxy_prefix.delay-flag" \
+            --ready-file "$proxy_prefix.ready" \
+            --log-file "$proxy_prefix.tsv" \
+            >"$proxy_prefix.stdout" 2>"$proxy_prefix.stderr" &
+        p7_proxy_pid="$!"
+        p7_proxy_pids+=("$p7_proxy_pid")
+        for _ in {1..50}; do
+            if [[ -s "$proxy_prefix.ready" ]]; then
+                return 0
+            fi
+            if ! kill -0 "$p7_proxy_pid" 2>/dev/null; then
+                cat "$proxy_prefix.stdout" "$proxy_prefix.stderr" >&2 2>/dev/null || true
+                return 1
+            fi
+            sleep 0.1
+        done
+        echo "P7-V03 proxy $broker_name did not become ready on 127.0.0.1:$listen_port" >&2
+        return 1
+    }
+    start_p7_proxy broker-a 50911 51911
+    start_p7_proxy broker-b 50921 51921
 fi
 
 start_reply_responder() {
@@ -3131,6 +3254,170 @@ PY
         exit 1
     fi
     printf 'PASS P7-V04: Java and Rust each sent 20 messages in three live producer cycles and returned to zero pending requests, connections, and owned task groups after every shutdown\n' \
+        | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "P7-V03" ]]; then
+    run_p7_retry_probe() {
+        local language="$1"
+        local mode="$2"
+        local body="$3"
+        local timeout="$4"
+        local ready_file="$evidence_dir/${language}-${mode}.ready"
+        local go_file="$evidence_dir/${language}-${mode}.go"
+        local output_file="$evidence_dir/${language}-${mode}.tsv"
+        local stderr_file="$evidence_dir/${language}-${mode}.stderr"
+        rm -f "$ready_file" "$go_file"
+        if [[ "$language" == "java" ]]; then
+            mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+                -Dexec.args="retry-probe $namesrv_addr $topic $mode $body $timeout $ready_file $go_file" \
+                exec:java@live-high-level-producer-probe \
+                >"$output_file" 2>"$stderr_file" &
+        else
+            "$repo_root/target/debug/live_client" p7-retry \
+                "$namesrv_addr" "$topic" "$mode" "$body" "$timeout" "$ready_file" "$go_file" \
+                >"$output_file" 2>"$stderr_file" &
+        fi
+        p7_probe_pid="$!"
+        for _ in {1..120}; do
+            if [[ -s "$ready_file" ]]; then
+                break
+            fi
+            if ! kill -0 "$p7_probe_pid" 2>/dev/null; then
+                wait "$p7_probe_pid" 2>/dev/null || true
+                p7_probe_pid=""
+                cat "$output_file" "$stderr_file" >&2 2>/dev/null || true
+                return 1
+            fi
+            sleep 0.1
+        done
+        if [[ ! -s "$ready_file" ]]; then
+            echo "$language $mode producer did not fetch both Broker routes" >&2
+            kill "$p7_probe_pid" 2>/dev/null || true
+            wait "$p7_probe_pid" 2>/dev/null || true
+            p7_probe_pid=""
+            cat "$output_file" "$stderr_file" >&2 2>/dev/null || true
+            return 1
+        fi
+        if [[ "$mode" == "deadline" ]]; then
+            : >"$evidence_dir/broker-a-proxy.delay-flag"
+            : >"$evidence_dir/broker-b-proxy.delay-flag"
+        fi
+        : >"$go_file"
+        if ! wait "$p7_probe_pid"; then
+            p7_probe_pid=""
+            cat "$output_file" "$stderr_file" >&2 2>/dev/null || true
+            return 1
+        fi
+        p7_probe_pid=""
+        if [[ "$mode" == "deadline" ]]; then
+            rm -f "$evidence_dir/broker-a-proxy.delay-flag" "$evidence_dir/broker-b-proxy.delay-flag"
+            sleep $(((p7_response_delay_ms + 999) / 1000))
+        fi
+    }
+
+    echo "Retrying the same message across Broker permission errors and exhausting a bounded send deadline"
+    for language in java rust; do
+        if ! run_p7_retry_probe "$language" retry "$p7_retry_body" "$p7_retry_timeout_ms"; then
+            exit 1
+        fi
+    done
+
+    echo "Restoring write permission before the delayed-response deadline checks"
+    for broker_admin_target in "broker-a-host:127.0.0.1:50911" "broker-b-host:127.0.0.1:50921"; do
+        topic_service="${broker_admin_target%%:*}"
+        topic_broker="${broker_admin_target#*:}"
+        if ! "${compose[@]}" exec --no-TTY "$topic_service" ./mqadmin updateBrokerConfig -b "$topic_broker" -k brokerPermission -v 6 -n namesrv:9876 \
+            >>"$evidence_dir/broker-permission.log" 2>&1; then
+            cat "$evidence_dir/broker-permission.log" >&2
+            exit 1
+        fi
+    done
+    for language in java rust; do
+        if ! run_p7_retry_probe "$language" deadline "$p7_deadline_body" "$p7_deadline_timeout_ms"; then
+            exit 1
+        fi
+    done
+
+    if ! python3 - "$evidence_dir" "$p7_retry_body" "$p7_deadline_body" \
+        "$p7_deadline_timeout_ms" "$p7_response_delay_ms" <<'PY'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+retry_body = sys.argv[2]
+deadline_body = sys.argv[3]
+deadline_timeout = int(sys.argv[4])
+response_delay = int(sys.argv[5])
+
+def records(language, mode, expected_body):
+    path = root / f"{language}-{mode}.tsv"
+    attempts = []
+    errors = {}
+    results = []
+    routes = []
+    for line in path.read_text().splitlines():
+        row = line.split("\t")
+        if row[0] == "ROUTE":
+            routes.append(row)
+        elif row[0] == "ATTEMPT":
+            if len(row) != 7 or row[1] != language:
+                raise SystemExit(f"{path}: malformed attempt row {line!r}")
+            attempt = int(row[2])
+            body = bytes.fromhex(row[5]).decode() if language == "java" else row[5]
+            attempts.append((attempt, row[3], row[4], body, row[6]))
+        elif row[0] == "ATTEMPT_ERROR":
+            if len(row) != 4 or row[1] != language:
+                raise SystemExit(f"{path}: malformed attempt error row {line!r}")
+            errors[int(row[2])] = row[3]
+        elif row[0] == "RESULT" and len(row) >= 5:
+            results.append(row)
+    if len(routes) != 1 or not routes[0][-1].split(",") == ["broker-a", "broker-b"]:
+        raise SystemExit(f"{path}: producer did not resolve both Brokers: {routes!r}")
+    if not attempts or [row[0] for row in attempts] != list(range(1, len(attempts) + 1)):
+        raise SystemExit(f"{path}: attempt sequence is missing or unordered: {attempts!r}")
+    if any(row[3] != expected_body or not row[4] for row in attempts):
+        raise SystemExit(f"{path}: body or unique ID changed/was missing: {attempts!r}")
+    if len({row[4] for row in attempts}) != 1:
+        raise SystemExit(f"{path}: unique ID changed across retries: {attempts!r}")
+    if len(results) != 1 or results[0][1:3] != [language, mode]:
+        raise SystemExit(f"{path}: expected one {language}/{mode} result: {results!r}")
+    return attempts, errors, results[0]
+
+retry = {}
+for language in ("java", "rust"):
+    attempts, errors, result = records(language, "retry", retry_body)
+    if len(attempts) != 3 or any(row[2] != "ERROR" for row in attempts):
+        raise SystemExit(f"{language}: retry budget should produce three failed attempts: {attempts!r}")
+    if any("16" not in errors.get(index, "") for index in range(1, 4)):
+        raise SystemExit(f"{language}: attempts did not retain Broker NO_PERMISSION code 16: {errors!r}")
+    brokers = [row[1] for row in attempts]
+    if set(brokers) != {"broker-a", "broker-b"} or any(a == b for a, b in zip(brokers, brokers[1:])):
+        raise SystemExit(f"{language}: retries did not avoid the previous failed Broker: {brokers!r}")
+    if result[3] != "BROKER_ERROR" or "16" not in " ".join(result[4:-1]):
+        raise SystemExit(f"{language}: final status did not classify NO_PERMISSION: {result!r}")
+    retry[language] = (brokers, attempts[0][4])
+
+for language in ("java", "rust"):
+    attempts, errors, result = records(language, "deadline", deadline_body)
+    if len(attempts) != 1 or attempts[0][2] != "ERROR":
+        raise SystemExit(f"{language}: deadline should terminate after one in-flight attempt: {attempts!r}")
+    if result[3] != "TIMEOUT":
+        raise SystemExit(f"{language}: delayed Broker response was not classified as timeout: {result!r}")
+    elapsed = int(result[-1])
+    if elapsed < deadline_timeout - 200 or elapsed > response_delay + 5000:
+        raise SystemExit(f"{language}: deadline elapsed outside the reviewed bound: {elapsed} ms")
+
+delays = 0
+for proxy in ("broker-a-proxy.tsv", "broker-b-proxy.tsv"):
+    path = root / proxy
+    delays += sum(line.startswith("PROXY\tDELAY_START\t") for line in path.read_text().splitlines())
+if delays != 2:
+    raise SystemExit(f"expected one delayed response for each language's deadline, observed {delays}")
+PY
+    then
+        echo "P7-V03 retry, status, deadline, body, or unique-ID assertions failed" >&2
+        exit 1
+    fi
+    printf 'PASS P7-V03: Java and Rust each retried NO_PERMISSION across both Brokers for three total attempts with stable body/unique ID, then exhausted the 900 ms send deadline after one delayed-response attempt\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P7-V02" ]]; then
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
