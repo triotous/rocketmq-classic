@@ -47,6 +47,10 @@
             <configuration><mainClass>compat.LiveP3RemotingProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-p16-security-probe</id>
+            <configuration><mainClass>compat.LiveP16SecurityProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>live-heartbeat-probe</id>
             <configuration><mainClass>compat.LiveHeartbeatProbe</mainClass></configuration>
           </execution>

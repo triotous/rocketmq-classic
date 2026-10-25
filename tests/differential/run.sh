@@ -208,6 +208,19 @@ for scenario in selected:
         ]
     ):
         raise SystemExit("P14-V03 transaction inputs differ from the reviewed live case")
+    if scenario_id == "P16-V02" and (
+        profile != "tls-auth"
+        or inputs.get("checks") != [
+            "signed-request-accepted", "wrong-secret-rejected", "tampered-body-rejected",
+            "trusted-ca-accepted", "wrong-hostname-rejected", "untrusted-ca-rejected",
+            "missing-client-certificate-rejected"
+        ]
+        or scenario.get("assertions") != inputs.get("checks")
+        or scenario.get("client_directions") != [
+            "java-5.5.1-client->server-5.3.4", "rust-client->server-5.3.4"
+        ]
+    ):
+        raise SystemExit("P16-V02 security inputs differ from the reviewed live case")
     if scenario_id == "P5-V02-producer" and inputs.get("methods") != [
         "send-v1", "send-v2", "batch", "reply-v1", "reply-v2", "end-transaction"
     ]:
@@ -259,7 +272,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P5-V02-extensions" "P0-V03" "P6-V04" "P7-V02" "P7-V03" "P7-V04" "P9-V03" "P10-V03" "P11-V03" "P11-V04" "P12-V03" "P13-V02" "P14-V03" "REQ-001-request-reply-success" "P15-V03")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send" "PROD-005-send-timeout" "CONS-001-query-offset" "CONS-002-pull-found" "CONS-003-pull-no-new-msg" "CONS-004-update-offset" "ORDER-001-lock-unlock" "REBAL-001-average-10q-3c" "TX-001-commit" "TX-002-rollback" "P3-V04" "P5-V02-route" "P5-V02-producer" "P5-V02-consumer" "P5-V02-extensions" "P0-V03" "P6-V04" "P7-V02" "P7-V03" "P7-V04" "P9-V03" "P10-V03" "P11-V03" "P11-V04" "P12-V03" "P13-V02" "P14-V03" "P16-V02" "REQ-001-request-reply-success" "P15-V03")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count java_offset rust_offset queue_id pull_offset missing_topic queue_count consumer_ids consumer_group; do
     is_implemented=false
@@ -331,6 +344,7 @@ case "$profile:$scenario_id" in
     basic:*) ;;
     two-broker:ORDER-001-lock-unlock|two-broker:REBAL-001-average-10q-3c|two-broker:PROD-005-send-timeout|two-broker:P5-V02-consumer|two-broker:P10-V03|two-broker:P11-V03|two-broker:P11-V04|two-broker:P12-V03|two-broker:P13-V02|two-broker:P14-V03) ;;
     two-broker-host:P7-V03|two-broker-host:P7-V04|two-broker-host:P15-V03) ;;
+    tls-auth:P16-V02) ;;
     transaction:TX-001-commit|transaction:TX-002-rollback) ;;
     tls:P3-V04) ;;
     host-routed:P6-V04|host-routed:P7-V02|host-routed:P9-V03) ;;
@@ -490,6 +504,7 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    P16-V02:-) ;;
     P7-V04:compat_p7_lifecycle)
         if [[ "$profile" != "two-broker-host" ]]; then
             echo "P7-V04 requires the host-routed two-Broker profile" >&2
@@ -537,7 +552,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P5-V02-extensions" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P7-V03" && "$scenario_id" != "P7-V04" && "$scenario_id" != "P9-V03" && "$scenario_id" != "P10-V03" && "$scenario_id" != "P11-V03" && "$scenario_id" != "P11-V04" && "$scenario_id" != "P12-V03" && "$scenario_id" != "P13-V02" && "$scenario_id" != "P14-V03" && "$scenario_id" != "REQ-001-request-reply-success" && "$scenario_id" != "P15-V03" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" && "$scenario_id" != "PROD-005-send-timeout" && "$scenario_id" != "CONS-001-query-offset" && "$scenario_id" != "CONS-004-update-offset" && "$scenario_id" != "CONS-002-pull-found" && "$scenario_id" != "CONS-003-pull-no-new-msg" && "$scenario_id" != "ORDER-001-lock-unlock" && "$scenario_id" != "REBAL-001-average-10q-3c" && "$scenario_id" != "TX-001-commit" && "$scenario_id" != "TX-002-rollback" && "$scenario_id" != "P3-V04" && "$scenario_id" != "P5-V02-route" && "$scenario_id" != "P5-V02-producer" && "$scenario_id" != "P5-V02-consumer" && "$scenario_id" != "P5-V02-extensions" && "$scenario_id" != "P0-V03" && "$scenario_id" != "P6-V04" && "$scenario_id" != "P7-V02" && "$scenario_id" != "P7-V03" && "$scenario_id" != "P7-V04" && "$scenario_id" != "P9-V03" && "$scenario_id" != "P10-V03" && "$scenario_id" != "P11-V03" && "$scenario_id" != "P11-V04" && "$scenario_id" != "P12-V03" && "$scenario_id" != "P13-V02" && "$scenario_id" != "P14-V03" && "$scenario_id" != "P16-V02" && "$scenario_id" != "REQ-001-request-reply-success" && "$scenario_id" != "P15-V03" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -587,7 +602,11 @@ if [[ ! "$project_name" =~ ^rocketmq-classic-p19-[a-z0-9-]+$ ]]; then
 fi
 export COMPOSE_PROJECT_NAME="$project_name"
 export ROCKETMQ_PROFILE="$profile"
-export ROCKETMQ_NAMESRV_HOST_PORT="${ROCKETMQ_NAMESRV_HOST_PORT:-19876}"
+default_namesrv_host_port=19876
+if [[ "$profile" == "tls-auth" ]]; then
+    default_namesrv_host_port=61876
+fi
+export ROCKETMQ_NAMESRV_HOST_PORT="${ROCKETMQ_NAMESRV_HOST_PORT:-$default_namesrv_host_port}"
 default_broker_host_port=20911
 if [[ "$profile" == "transaction" ]]; then
     default_broker_host_port=30911
@@ -595,8 +614,14 @@ elif [[ "$profile" == "host-routed" ]]; then
     default_broker_host_port=40911
 elif [[ "$profile" == "two-broker-host" ]]; then
     default_broker_host_port=50911
+elif [[ "$profile" == "tls-auth" ]]; then
+    default_broker_host_port=61911
 fi
 export ROCKETMQ_BROKER_HOST_PORT="${ROCKETMQ_BROKER_HOST_PORT:-$default_broker_host_port}"
+if [[ "$profile" == "tls-auth" && ( "$ROCKETMQ_NAMESRV_HOST_PORT" != "61876" || "$ROCKETMQ_BROKER_HOST_PORT" != "61911" ) ]]; then
+    echo "The tls-auth profile reserves NameServer/Broker ports 61876/61911 for its local probes" >&2
+    exit 2
+fi
 if [[ "$profile" == "transaction" && "$ROCKETMQ_BROKER_HOST_PORT" != "30911" ]]; then
     echo "The transaction profile advertises broker-a on 127.0.0.1:30911; set ROCKETMQ_BROKER_HOST_PORT=30911" >&2
     exit 2
@@ -632,6 +657,8 @@ elif [[ "$profile" == "host-routed" ]]; then
     broker_service=broker-host
 elif [[ "$profile" == "two-broker-host" ]]; then
     broker_service=broker-a-host
+elif [[ "$profile" == "tls-auth" ]]; then
+    broker_service=broker-auth
 fi
 if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; then
     echo "Docker Engine and Docker Compose are required for live differential scenarios" >&2
@@ -652,6 +679,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LivePushInteropProbe.java
     compat/java-reference/src/main/java/compat/LiveRouteProbe.java
     compat/java-reference/src/main/java/compat/LiveP3RemotingProbe.java
+    compat/java-reference/src/main/java/compat/LiveP16SecurityProbe.java
     compat/java-reference/src/main/java/compat/LiveHeartbeatProbe.java
     compat/java-reference/src/main/java/compat/LiveProducerProbe.java
     compat/java-reference/src/main/java/compat/LiveP5ProducerProbe.java
@@ -665,10 +693,10 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveSharedRuntimeProbe.java
     compat/java-reference/src/main/java/compat/LivePullConsumerProbe.java
     compat/java-reference/src/main/java/compat/LiveRequestReplyProbe.java
-    tests/differential/delayed_response_proxy.py tests/differential/tls_broker_proxy.py
+    tests/differential/delayed_response_proxy.py tests/differential/tls_broker_proxy.py tests/differential/acl_tampering_proxy.py
     crates/rocketmq-classic-remoting/src/client/mod.rs
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
-    integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf integration-tests/config/broker-tx.conf integration-tests/config/broker-host.conf integration-tests/config/broker-a-host.conf integration-tests/config/broker-b-host.conf integration-tests/config/broker-a-transaction-host.conf integration-tests/config/broker-b-transaction-host.conf
+    integration-tests/compose.yaml integration-tests/config/broker.conf integration-tests/config/broker-b.conf integration-tests/config/broker-tx.conf integration-tests/config/broker-host.conf integration-tests/config/broker-a-host.conf integration-tests/config/broker-b-host.conf integration-tests/config/broker-a-transaction-host.conf integration-tests/config/broker-b-transaction-host.conf integration-tests/config/broker-auth.conf
     integration-tests/setup.sh integration-tests/cleanup.sh
     tests/differential/compare.py tests/differential/run.sh tests/differential/check_mixed_ownership.py tests/differential/check_p11_push.py tests/differential/check_p12_orderly.py)
 if [[ -n "$(git -C "$repo_root" status --porcelain -- "${code_dirty_paths[@]}")" ]]; then
@@ -774,6 +802,10 @@ if [[ "$scenario_id" == "P14-V03" ]]; then
     printf 'consumer_group=%s\ntopic_queues_per_broker=1\nbroker_transaction_check_interval_ms=2000\ncheck_callback_timeout_seconds=25\n' \
         "$consumer_group" >>"$evidence_dir/metadata.txt"
 fi
+if [[ "$scenario_id" == "P16-V02" ]]; then
+    printf 'checks=signed-request-accepted,wrong-secret-rejected,tampered-body-rejected,trusted-ca-accepted,wrong-hostname-rejected,untrusted-ca-rejected,missing-client-certificate-rejected\nmutual_tls=true\ninsecure_tls_bypass=false\ncredentials=per-run-random-synthetic-and-redacted\n' \
+        >>"$evidence_dir/metadata.txt"
+fi
 if [[ "$scenario_id" == "PROD-005-send-timeout" ]]; then
     printf 'topic=%s\nsend_timeout_ms=%s\nproxy_response_delay_ms=600\nexpected_committed_messages=2\n' "$topic" "$timeout_ms" \
         >>"$evidence_dir/metadata.txt"
@@ -812,7 +844,7 @@ fi
     docker version --format 'Docker client {{.Client.Version}} / server {{.Server.Version}}'
     docker compose version
     docker info --format 'Docker platform {{.OSType}}/{{.Architecture}}'
-    python3 - "$repo_root/integration-tests/compose.yaml" "$repo_root/integration-tests/config/broker.conf" "$repo_root/integration-tests/config/broker-b.conf" "$repo_root/integration-tests/config/broker-tx.conf" "$repo_root/integration-tests/config/broker-host.conf" "$repo_root/integration-tests/config/broker-a-host.conf" "$repo_root/integration-tests/config/broker-b-host.conf" <<'PY'
+    python3 - "$repo_root/integration-tests/compose.yaml" "$repo_root/integration-tests/config/broker.conf" "$repo_root/integration-tests/config/broker-b.conf" "$repo_root/integration-tests/config/broker-tx.conf" "$repo_root/integration-tests/config/broker-host.conf" "$repo_root/integration-tests/config/broker-a-host.conf" "$repo_root/integration-tests/config/broker-b-host.conf" "$repo_root/integration-tests/config/broker-auth.conf" <<'PY'
 import hashlib
 import sys
 from pathlib import Path
@@ -822,7 +854,17 @@ for filename in sys.argv[1:]:
     print(f"sha256 {hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
 PY
 } >"$evidence_dir/toolchain.txt" 2>&1
-if [[ "$scenario_id" == "ORDER-001-lock-unlock" ]]; then
+if [[ "$scenario_id" == "P16-V02" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=tls-auth COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+python3 tests/differential/acl_tampering_proxy.py --upstream $broker_addr --ready-file <evidence>/acl-proxy-ready.txt --log-file <evidence>/acl-proxy-events.tsv
+python3 tests/differential/tls_broker_proxy.py --upstream $broker_addr --cert <evidence>/tls/server.pem --key <evidence>/tls/server.key --client-ca <evidence>/tls/ca.pem --ready-file <evidence>/tls-proxy-ready.txt --log-file <evidence>/tls-proxy-events.tsv
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="auth-{valid,wrong-secret,tampered} <broker-or-acl-proxy>" exec:java@live-p16-security-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p16-auth <broker-or-acl-proxy> {valid,wrong-secret,tampered}
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="tls-{trusted,wrong-host,untrusted,missing-client} <tls-proxy> <ca> <client-cert|-> <client-key|->" exec:java@live-p16-security-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p16-tls <tls-proxy> {trusted,wrong-host,untrusted,missing-client} <ca> <client-cert|-> <client-key|->
+EOF
+elif [[ "$scenario_id" == "ORDER-001-lock-unlock" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
@@ -1204,6 +1246,8 @@ p11_rust_pid=""
 p12_java_pid=""
 p12_rust_pid=""
 group_created=false
+p16_proxy_pids=()
+p16_auth_config_path=""
 cleanup() {
     status=$?
     trap - EXIT
@@ -1327,6 +1371,12 @@ cleanup() {
             wait "$p7_proxy_pid" 2>/dev/null
         fi
     done
+    for p16_proxy_pid in "${p16_proxy_pids[@]:-}"; do
+        if [[ -n "$p16_proxy_pid" ]] && kill -0 "$p16_proxy_pid" 2>/dev/null; then
+            kill "$p16_proxy_pid" 2>/dev/null
+            wait "$p16_proxy_pid" 2>/dev/null
+        fi
+    done
     ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
         COMPOSE_PROJECT_NAME="$project_name" bash "$repo_root/integration-tests/cleanup.sh" \
         >"$evidence_dir/compose-cleanup.log" 2>&1
@@ -1334,6 +1384,13 @@ cleanup() {
     if ((compose_cleanup_status)); then
         status=1
         echo "Compose cleanup failed; see $evidence_dir/compose-cleanup.log" >&2
+    fi
+    if [[ -n "$p16_auth_config_path" ]]; then
+        rm -f "$p16_auth_config_path"
+    fi
+    if [[ "$scenario_id" == "P16-V02" && -d "$evidence_dir/tls" ]]; then
+        rm -f "$evidence_dir/tls"/*.key "$evidence_dir/tls"/*.csr "$evidence_dir/tls"/*.srl
+        printf 'private_keys_removed=true\n' >>"$evidence_dir/metadata.txt"
     fi
     if ! python3 - "$evidence_dir" "$repo_root" "${HOME:-}" <<'PY'
 import sys
@@ -1407,6 +1464,63 @@ PY
 }
 trap cleanup EXIT
 
+if [[ "$scenario_id" == "P16-V02" ]]; then
+    p16_access_key="$(openssl rand -hex 16)"
+    p16_secret_key="$(openssl rand -hex 32)"
+    export P16_ACCESS_KEY="$p16_access_key"
+    export P16_SECRET_KEY="$p16_secret_key"
+    p16_auth_config_path="$(mktemp "${TMPDIR:-/tmp}/rocketmq-p16-broker.XXXXXX")"
+    chmod 600 "$p16_auth_config_path"
+    sed -e "s/P16_RUNTIME_USER/$p16_access_key/g" \
+        -e "s/P16_RUNTIME_SECRET/$p16_secret_key/g" \
+        "$repo_root/integration-tests/config/broker-auth.conf" >"$p16_auth_config_path"
+    export ROCKETMQ_BROKER_AUTH_CONFIG="$p16_auth_config_path"
+    p16_tls_dir="$evidence_dir/tls"
+    mkdir -p "$p16_tls_dir"
+    openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+        -keyout "$p16_tls_dir/ca.key" -out "$p16_tls_dir/ca.pem" \
+        -subj "/CN=rocketmq-classic-p16-test-ca" >"$p16_tls_dir/ca-generation.log" 2>&1
+    openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+        -keyout "$p16_tls_dir/untrusted-ca.key" -out "$p16_tls_dir/untrusted-ca.pem" \
+        -subj "/CN=rocketmq-classic-p16-untrusted-test-ca" >"$p16_tls_dir/untrusted-ca-generation.log" 2>&1
+    openssl req -new -newkey rsa:2048 -nodes \
+        -keyout "$p16_tls_dir/server.key" -out "$p16_tls_dir/server.csr" \
+        -subj "/CN=localhost" >"$p16_tls_dir/server-key-generation.log" 2>&1
+    cat >"$p16_tls_dir/server.ext" <<'EOF'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:localhost
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid,issuer
+EOF
+    openssl x509 -req -days 2 -in "$p16_tls_dir/server.csr" \
+        -CA "$p16_tls_dir/ca.pem" -CAkey "$p16_tls_dir/ca.key" -CAcreateserial \
+        -extfile "$p16_tls_dir/server.ext" -out "$p16_tls_dir/server.pem" \
+        >"$p16_tls_dir/server-signing.log" 2>&1
+    openssl req -new -newkey rsa:2048 -nodes \
+        -keyout "$p16_tls_dir/client.key" -out "$p16_tls_dir/client.csr" \
+        -subj "/CN=rocketmq-classic-p16-test-client" >"$p16_tls_dir/client-key-generation.log" 2>&1
+    cat >"$p16_tls_dir/client.ext" <<'EOF'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=clientAuth
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid,issuer
+EOF
+    openssl x509 -req -days 2 -in "$p16_tls_dir/client.csr" \
+        -CA "$p16_tls_dir/ca.pem" -CAkey "$p16_tls_dir/ca.key" -CAcreateserial \
+        -extfile "$p16_tls_dir/client.ext" -out "$p16_tls_dir/client.pem" \
+        >"$p16_tls_dir/client-signing.log" 2>&1
+    chmod 600 "$p16_tls_dir"/*.key
+    {
+        openssl x509 -in "$p16_tls_dir/server.pem" -noout -fingerprint -sha256 -ext subjectAltName -ext extendedKeyUsage
+        openssl x509 -in "$p16_tls_dir/client.pem" -noout -fingerprint -sha256 -ext extendedKeyUsage
+        openssl x509 -in "$p16_tls_dir/ca.pem" -noout -fingerprint -sha256
+        openssl x509 -in "$p16_tls_dir/untrusted-ca.pem" -noout -fingerprint -sha256
+    } >"$p16_tls_dir/certificate-fingerprints.txt" 2>&1
+fi
+
 echo "Provisioning isolated $profile profile in $project_name"
 if [[ "$scenario_id" == "P0-V03" ]]; then
     printf 'Aggregate parent starts no Broker; each constituent run owns and removes its Compose project.\n' \
@@ -1420,6 +1534,129 @@ else
     fi
 fi
 cat "$evidence_dir/setup.log"
+
+if [[ "$scenario_id" == "P16-V02" ]]; then
+    start_p16_proxy() {
+        local script_name="$1"
+        local label="$2"
+        shift 2
+        python3 -u "$repo_root/tests/differential/$script_name" "$@" \
+            >"$evidence_dir/${label}-proxy.stdout.log" \
+            2>"$evidence_dir/${label}-proxy.stderr.log" &
+        local proxy_pid=$!
+        p16_proxy_pids+=("$proxy_pid")
+        local ready_file="$evidence_dir/${label}-proxy-ready.txt"
+        for attempt in {1..100}; do
+            if [[ -s "$ready_file" ]]; then
+                return 0
+            fi
+            if ! kill -0 "$proxy_pid" 2>/dev/null; then
+                echo "$label proxy exited before becoming ready; inspect evidence logs" >&2
+                exit 1
+            fi
+            sleep 0.1
+        done
+        echo "$label proxy did not become ready; inspect evidence logs" >&2
+        exit 1
+    }
+    run_p16_java() {
+        local label="$1"
+        local expected="$2"
+        local args="$3"
+        if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+            "-Dexec.args=$args" exec:java@live-p16-security-probe \
+            >"$evidence_dir/java-${label}.tsv" 2>"$evidence_dir/java-${label}.stderr.log"; then
+            echo "Java P16 probe $label failed; inspect its evidence output" >&2
+            exit 1
+        fi
+        if ! grep -Fxq "$expected" "$evidence_dir/java-${label}.tsv"; then
+            echo "Java P16 probe $label returned an unexpected evidence row" >&2
+            exit 1
+        fi
+    }
+    run_p16_rust() {
+        local label="$1"
+        local expected="$2"
+        shift 2
+        if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- "$@" \
+            >"$evidence_dir/rust-${label}.tsv" 2>"$evidence_dir/rust-${label}.stderr.log"; then
+            echo "Rust P16 probe $label failed; inspect its evidence output" >&2
+            exit 1
+        fi
+        if ! grep -Fxq "$expected" "$evidence_dir/rust-${label}.tsv"; then
+            echo "Rust P16 probe $label returned an unexpected evidence row" >&2
+            exit 1
+        fi
+    }
+    start_p16_proxy acl_tampering_proxy.py acl \
+        --upstream "$broker_addr" \
+        --ready-file "$evidence_dir/acl-proxy-ready.txt" \
+        --log-file "$evidence_dir/acl-proxy-events.tsv"
+    p16_acl_proxy_port="$(cat "$evidence_dir/acl-proxy-ready.txt")"
+    p16_acl_proxy_addr="127.0.0.1:$p16_acl_proxy_port"
+    run_p16_java auth-valid $'P16\tACL\tvalid\tACCEPTED\t0\t0\t0' "auth-valid $broker_addr"
+    run_p16_rust auth-valid $'P16\tACL\tvalid\tACCEPTED\t0\t0\t0' p16-auth "$broker_addr" valid
+    run_p16_java auth-wrong-secret $'P16\tACL\twrong-secret\tREJECTED\t0\t0\t0' "auth-wrong-secret $broker_addr"
+    run_p16_rust auth-wrong-secret $'P16\tACL\twrong-secret\tREJECTED\t0\t0\t0' p16-auth "$broker_addr" wrong-secret
+    run_p16_java auth-tampered $'P16\tACL\ttampered\tREJECTED\t0\t0\t0' "auth-tampered $p16_acl_proxy_addr"
+    run_p16_rust auth-tampered $'P16\tACL\ttampered\tREJECTED\t0\t0\t0' p16-auth "$p16_acl_proxy_addr" tampered
+
+    start_p16_proxy tls_broker_proxy.py tls \
+        --upstream "$broker_addr" \
+        --cert "$p16_tls_dir/server.pem" \
+        --key "$p16_tls_dir/server.key" \
+        --client-ca "$p16_tls_dir/ca.pem" \
+        --ready-file "$evidence_dir/tls-proxy-ready.txt" \
+        --log-file "$evidence_dir/tls-proxy-events.tsv"
+    p16_tls_proxy_port="$(cat "$evidence_dir/tls-proxy-ready.txt")"
+    for language in java rust; do
+        for mode in trusted wrong-host untrusted missing-client; do
+            p16_tls_addr="localhost:$p16_tls_proxy_port"
+            p16_tls_ca="$p16_tls_dir/ca.pem"
+            p16_tls_cert="$p16_tls_dir/client.pem"
+            p16_tls_key="$p16_tls_dir/client.key"
+            if [[ "$mode" == "wrong-host" ]]; then
+                p16_tls_addr="127.0.0.1:$p16_tls_proxy_port"
+            elif [[ "$mode" == "untrusted" ]]; then
+                p16_tls_ca="$p16_tls_dir/untrusted-ca.pem"
+            elif [[ "$mode" == "missing-client" ]]; then
+                p16_tls_cert="-"
+                p16_tls_key="-"
+            fi
+            p16_tls_outcome=REJECTED
+            if [[ "$mode" == "trusted" || ( "$language" == "java" && "$mode" == "wrong-host" ) ]]; then
+                p16_tls_outcome=ACCEPTED
+            fi
+            printf -v expected 'P16\tTLS\t%s\t%s\t0\t0\t0' "$mode" "$p16_tls_outcome"
+            if [[ "$language" == "java" ]]; then
+                run_p16_java "tls-$mode" "$expected" \
+                    "tls-$mode $p16_tls_addr $p16_tls_ca $p16_tls_cert $p16_tls_key"
+            else
+                run_p16_rust "tls-$mode" "$expected" p16-tls \
+                    "$p16_tls_addr" "$mode" "$p16_tls_ca" "$p16_tls_cert" "$p16_tls_key"
+            fi
+        done
+    done
+
+    tampered_count="$(awk -F '\t' '$2 == "TAMPERED_BODY" { count++ } END { print count + 0 }' \
+        "$evidence_dir/acl-proxy-events.tsv")"
+    tls_accepted_count="$(awk -F '\t' '$2 == "TLS_ACCEPTED" { count++ } END { print count + 0 }' \
+        "$evidence_dir/tls-proxy-events.tsv")"
+    tls_rejected_count="$(awk -F '\t' '$2 ~ /^HANDSHAKE_REJECTED:/ { count++ } END { print count + 0 }' \
+        "$evidence_dir/tls-proxy-events.tsv")"
+    if [[ "$tampered_count" != "2" || "$tls_accepted_count" -lt 3 || "$tls_rejected_count" -lt 4 ]]; then
+        echo "P16 proxy evidence did not show both body mutations and expected mTLS handshakes" >&2
+        exit 1
+    fi
+    for p16_proxy_pid in "${p16_proxy_pids[@]}"; do
+        kill "$p16_proxy_pid" 2>/dev/null || true
+        wait "$p16_proxy_pid" 2>/dev/null || true
+    done
+    p16_proxy_pids=()
+    printf 'PASS P16-V02: Java 5.5.1 and Rust accepted valid ACL signatures and rejected wrong secrets and tampered heartbeat bodies; mutual TLS accepted trusted clients and rejected untrusted CAs and missing client certificates; Rust rejected the trusted wrong-host certificate while Java 5.5.1 accepted its trusted chain without hostname verification\n' \
+        | tee "$evidence_dir/result.txt"
+    exit 0
+fi
 
 if [[ "$scenario_id" == "P5-V02-extensions" ]]; then
     echo "Creating the one-queue extension topic and isolated Java/Rust POP groups"

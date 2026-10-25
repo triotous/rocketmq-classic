@@ -11,12 +11,12 @@ use std::{
 };
 
 use rocketmq_classic::{
-    ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
+    AclClientRpcHook, ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
     ConsumeOrderlyStatus, EndTransactionContext, EndTransactionHook, LocalTransactionState,
     MessageSelector, Producer, ProducerConfig, ProducerError, PullConsumer, PullConsumerConfig,
     PushConsumer, PushConsumerConfig, PushMessageListener, RequestFutureHolder, SendMessageContext,
-    SendMessageHook, TransactionCallbackError, TransactionListener, TransactionProducer,
-    create_reply_message,
+    SendMessageHook, SessionCredentials, TransactionCallbackError, TransactionListener,
+    TransactionProducer, create_reply_message,
 };
 use rocketmq_classic_common::message::{
     DecodeOptions, Message, MessageExt, MessageQueue, decode_many_as_client_compatible,
@@ -66,6 +66,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Some("p3-tls") if arguments.len() == 5 => {
             p3_tls(&arguments[1], &arguments[2], &arguments[3], &arguments[4]).await
+        }
+        Some("p16-auth") if arguments.len() == 3 => {
+            p16_auth(&arguments[1], &arguments[2]).await
+        }
+        Some("p16-tls") if arguments.len() == 6 => {
+            p16_tls(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                &arguments[5],
+            )
+            .await
         }
         Some("rebalance") if arguments.len() == 4 => {
             rebalance(&arguments[1], &arguments[2], &arguments[3]).await
@@ -1124,6 +1137,118 @@ async fn p3_tls(
     }
     println!(
         "P3\tTLS\t{mode}\t{}\t{}\t{}\t{}",
+        if accepted { "ACCEPTED" } else { "REJECTED" },
+        counts.pending_requests,
+        counts.connections,
+        counts.owned_tasks,
+    );
+    Ok(())
+}
+
+async fn p16_auth(address: &str, mode: &str) -> Result<(), Box<dyn Error>> {
+    let access_key = env::var("P16_ACCESS_KEY")?;
+    let valid_secret = env::var("P16_SECRET_KEY")?;
+    let secret = if mode == "wrong-secret" {
+        "p16-deliberately-wrong-secret".to_owned()
+    } else {
+        valid_secret
+    };
+    let remoting = RemotingClient::with_config(ClientConfig {
+        connect_timeout: 5_000,
+        ..ClientConfig::default()
+    })?;
+    remoting.add_rpc_hook(Arc::new(AclClientRpcHook::new(SessionCredentials::new(
+        access_key, secret,
+    ))));
+    remoting.start()?;
+    let api = MQClientApi::new(remoting.clone());
+    let mut heartbeat = HeartbeatData {
+        client_id: Some(format!("compat-p16-rust-{mode}")),
+        ..HeartbeatData::default()
+    };
+    heartbeat.set_producer_data_set_owned(Some(vec![Some(ProducerData {
+        group_name: Some("compat_p16_security".to_owned()),
+    })]));
+    let result = api
+        .send_heartbeat(
+            address,
+            &heartbeat,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+    let accepted = result.is_ok();
+    remoting.shutdown().await;
+    let counts = remoting.lifecycle_counts();
+    if counts.pending_requests != 0 || counts.connections != 0 || counts.owned_tasks != 0 {
+        return Err(format!("ACL shutdown retained resources: {counts:?}").into());
+    }
+    let expected = mode == "valid";
+    if accepted != expected {
+        return Err(format!("unexpected ACL outcome for {mode}: {accepted}").into());
+    }
+    println!(
+        "P16\tACL\t{mode}\t{}\t{}\t{}\t{}",
+        if accepted { "ACCEPTED" } else { "REJECTED" },
+        counts.pending_requests,
+        counts.connections,
+        counts.owned_tasks,
+    );
+    Ok(())
+}
+
+async fn p16_tls(
+    address: &str,
+    mode: &str,
+    trust_cert_path: &str,
+    client_cert_path: &str,
+    client_key_path: &str,
+) -> Result<(), Box<dyn Error>> {
+    let access_key = env::var("P16_ACCESS_KEY")?;
+    let secret_key = env::var("P16_SECRET_KEY")?;
+    let mut tls = TlsConfig::default();
+    tls.ca_pem = Some(std::fs::read(trust_cert_path)?);
+    tls.test_mode = false;
+    tls.auth_server = true;
+    if client_cert_path != "-" && client_key_path != "-" {
+        tls.client_cert_pem = Some(std::fs::read(client_cert_path)?);
+        tls.client_key_pem = Some(std::fs::read(client_key_path)?);
+    }
+    let remoting = RemotingClient::with_config(ClientConfig {
+        transport: TransportMode::Tls(tls),
+        connect_timeout: 5_000,
+        ..ClientConfig::default()
+    })?;
+    remoting.add_rpc_hook(Arc::new(AclClientRpcHook::new(SessionCredentials::new(
+        access_key, secret_key,
+    ))));
+    remoting.start()?;
+    let api = MQClientApi::new(remoting.clone());
+    let mut heartbeat = HeartbeatData {
+        client_id: Some(format!("compat-p16-rust-tls-{mode}")),
+        ..HeartbeatData::default()
+    };
+    heartbeat.set_producer_data_set_owned(Some(vec![Some(ProducerData {
+        group_name: Some("compat_p16_security".to_owned()),
+    })]));
+    let result = api
+        .send_heartbeat(
+            address,
+            &heartbeat,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+    let accepted = result.is_ok();
+    remoting.shutdown().await;
+    let counts = remoting.lifecycle_counts();
+    if counts.pending_requests != 0 || counts.connections != 0 || counts.owned_tasks != 0 {
+        return Err(format!("TLS shutdown retained resources: {counts:?}").into());
+    }
+    let expected = mode == "trusted";
+    if accepted != expected {
+        return Err(format!("unexpected TLS outcome for {mode}: {accepted}").into());
+    }
+    println!(
+        "P16\tTLS\t{mode}\t{}\t{}\t{}\t{}",
         if accepted { "ACCEPTED" } else { "REJECTED" },
         counts.pending_requests,
         counts.connections,

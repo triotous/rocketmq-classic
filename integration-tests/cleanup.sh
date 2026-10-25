@@ -9,8 +9,8 @@ if [[ "${ROCKETMQ_CLASSIC_TEST_ENV:-}" != "local-disposable" ]]; then
     exit 2
 fi
 
-if [[ "${ROCKETMQ_PROFILE:-basic}" != "basic" && "${ROCKETMQ_PROFILE:-basic}" != "two-broker" && "${ROCKETMQ_PROFILE:-basic}" != "two-broker-host" && "${ROCKETMQ_PROFILE:-basic}" != "transaction" && "${ROCKETMQ_PROFILE:-basic}" != "host-routed" && "${ROCKETMQ_PROFILE:-basic}" != "tls" ]]; then
-    echo "ROCKETMQ_PROFILE must name an implemented profile (currently: basic, two-broker, two-broker-host, transaction, host-routed, or tls)" >&2
+if [[ "${ROCKETMQ_PROFILE:-basic}" != "basic" && "${ROCKETMQ_PROFILE:-basic}" != "two-broker" && "${ROCKETMQ_PROFILE:-basic}" != "two-broker-host" && "${ROCKETMQ_PROFILE:-basic}" != "transaction" && "${ROCKETMQ_PROFILE:-basic}" != "host-routed" && "${ROCKETMQ_PROFILE:-basic}" != "tls" && "${ROCKETMQ_PROFILE:-basic}" != "tls-auth" ]]; then
+    echo "ROCKETMQ_PROFILE must name an implemented profile (currently: basic, two-broker, two-broker-host, transaction, host-routed, tls, or tls-auth)" >&2
     exit 2
 fi
 

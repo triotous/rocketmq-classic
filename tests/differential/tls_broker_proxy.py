@@ -65,13 +65,16 @@ class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, upstream, cert_path, key_path, log_path):
+    def __init__(self, upstream, cert_path, key_path, client_ca_path, log_path):
         super().__init__(("localhost", 0), Handler)
         self.upstream = upstream
         self.log_path = log_path
         self.log_lock = threading.Lock()
         self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         self.context.load_cert_chain(str(cert_path), str(key_path))
+        if client_ca_path is not None:
+            self.context.load_verify_locations(cafile=str(client_ca_path))
+            self.context.verify_mode = ssl.CERT_REQUIRED
 
 
 def main():
@@ -79,12 +82,14 @@ def main():
     parser.add_argument("--upstream", required=True)
     parser.add_argument("--cert", required=True, type=Path)
     parser.add_argument("--key", required=True, type=Path)
+    parser.add_argument("--client-ca", type=Path,
+                        help="require a client certificate signed by this CA")
     parser.add_argument("--ready-file", required=True, type=Path)
     parser.add_argument("--log-file", required=True, type=Path)
     args = parser.parse_args()
     host, port_text = args.upstream.rsplit(":", 1)
     args.log_file.write_text("", encoding="utf-8")
-    server = Server((host, int(port_text)), args.cert, args.key, args.log_file)
+    server = Server((host, int(port_text)), args.cert, args.key, args.client_ca, args.log_file)
     args.ready_file.write_text(f"{server.server_address[1]}\n", encoding="utf-8")
     print(f"READY\t127.0.0.1\t{server.server_address[1]}", flush=True)
     try:
