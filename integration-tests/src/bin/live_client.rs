@@ -961,7 +961,7 @@ async fn p11_push_retry_probe(
 
         consumer.shutdown().await?;
         assert_p11_runtime_stopped(&runtime, &manager, &format!("Rust Push cycle {cycle}"))?;
-        let counts = remoting_lifecycle_counts(&runtime.remoting())?;
+        let counts = remoting_lifecycle_counts(runtime.remoting())?;
         println!(
             "P11\tCYCLE\trust\t{cycle}\t{}\t{}\t{}\t{}",
             counts.pending_requests,
@@ -1024,7 +1024,7 @@ fn assert_p11_runtime_stopped(
     manager: &ClientRuntimeManager,
     owner: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let counts = remoting_lifecycle_counts(&runtime.remoting())?;
+    let counts = remoting_lifecycle_counts(runtime.remoting())?;
     let factories_empty = manager.factory_table().is_empty()?;
     if runtime.state() != RuntimeState::Stopped
         || !factories_empty
@@ -1882,7 +1882,7 @@ async fn producer_lifecycle_probe(
         producer.shutdown().await?;
         let deadline = Instant::now() + Duration::from_secs(5);
         let counts = loop {
-            let counts = remoting_lifecycle_counts(&runtime.remoting())?;
+            let counts = remoting_lifecycle_counts(runtime.remoting())?;
             let factories_empty = manager.factory_table().is_empty()?;
             if counts.pending_requests == 0
                 && counts.connections == 0
