@@ -114,3 +114,10 @@
 - Focused validation passed: locked Rust live-client build, Maven offline Java compile, shell syntax, Rust formatting, manifest validation, and runner selection. `--check-all` now identifies 18 remaining unimplemented IDs and starts no Docker resources.
 - Clean-source P6-V04 run `20261025T095527Z` passed on revision `1261cedd9245fe9d38b32d3ff34333bad8179284`; metadata records `source_code_dirty=false`, exit status 0, and 76 seconds. Java/Rust observed the same three messages and lifecycle markers. Evidence is under `docs/compatibility/evidence/phase-19/P6-V04/20261025T095527Z/`.
 - The scenario-owned topic and host-routed Compose project were removed. No matching containers, volumes, or networks remain. Manifest and current coverage docs report 19/37 passed and 18 pending. Full local gates have not been rerun since the P6 runner was added; broad P18-V01, MAN-01..05 owner inputs, remaining 18 live cases, and remote Docker CI remain open.
+
+## P19 P9-V03 explicit pull and offset resume — 2026-10-25
+
+- Added Java `DefaultMQPullConsumer` and Rust `PullConsumer` probes for manual pull, four Broker statuses, suggested Broker ID, min/max/search offset RPCs, and persisted offset resume. Implementation commit: `3343347dab7c640cd9fdbf24467c08dac4175580`.
+- Focused validation passed: locked Rust live-client build, Maven offline Java compile, shell syntax, formatting, manifest validation, and clean-runner selection. The fail-closed coverage gate now reports 17 unimplemented IDs.
+- Clean-source P9-V03 run `20261025T100359Z` passed on the implementation revision with `source_code_dirty=false`, exit 0, duration 76 seconds. Java and Rust matched FOUND, NO_MATCHED_MSG, NO_NEW_MSG, OFFSET_ILLEGAL, suggested Broker ID 0, min/max/search values 0/2/0, the seeded message body, and offset 1 after restart.
+- The scenario topic and host-routed Compose project were removed; no matching containers, volumes, or networks remain. Manifest and current coverage docs report 20/37 PASS and 17 pending. Full local gates have not been rerun after P9; broad P18-V01, MAN-01..05 owner inputs, remaining local cases, and remote Docker CI remain open.

@@ -10580,3 +10580,19 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - Live coverage is 19/37, with 18 scenarios pending. The full local gate must
   be rerun after the remaining runner additions; broad P18-V01, MAN-01..05,
   and remote Docker CI remain open.
+
+## P19 P9-V03 explicit pull and offset resume — 2026-10-25 (`3343347d`)
+
+- [x] Added the Java 5.5.1 `DefaultMQPullConsumer` probe and Rust `PullConsumer`
+  probe for manual pull, all pull statuses, suggested-broker selection,
+  offset-boundary RPCs, and restart offset resumption. Implementation commit:
+  `3343347d`.
+- [x] `P9-V03` passed at `20261025T100359Z` on
+  `3343347dab7c640cd9fdbf24467c08dac4175580` with `source_code_dirty=false`.
+  Java and Rust matched all four statuses, broker ID 0, min/max/search offsets
+  `0/2/0`, the seeded body, and resumed offset 1.
+- [x] The manifest points to the clean run. Topic deletion and host-routed
+  Compose teardown passed; no project containers, volume, or network remained.
+- Live coverage is 20/37, with 17 scenarios pending. Full local gates must be
+  rerun after the remaining runner additions; broad P18-V01, MAN-01..05, and
+  remote Docker CI remain open.

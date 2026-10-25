@@ -58,8 +58,8 @@ The scenario manifest contains 37 live cases. The seven rows above, four
 consumer rows, the P5 route row, `P6-V04`, `ORDER-001-lock-unlock`,
 `REBAL-001-average-10q-3c`, and the two transaction rows are implemented and
 passed by the current runner; `P0-V03` also passes as an aggregate over eleven
-clean constituent runs, and `P7-V02` covers high-level producer send modes. 18
-remain pending. The two-Broker profile covers
+clean constituent runs, `P7-V02` covers high-level producer send modes, and
+`P9-V03` covers manual pull and offset resume. 17 remain pending. The two-Broker profile covers
 lock/unlock and average queue assignment; retry, query, and broader
 interoperability coverage, TLS, ACL, and feature-specific profiles remain
 incomplete. No server limitation is inferred from an unrun case. Phase 19
@@ -217,3 +217,15 @@ sent successfully and its message reached the consumer. The run exited 0 and
 removed its topic and host-routed Compose resources:
 [`20261025T095527Z`](evidence/phase-19/P6-V04/20261025T095527Z/).
 Live coverage is now 19/37, with 18 cases pending.
+
+## Explicit pull statuses and offset resume — 2026-10-25
+
+`P9-V03` passed on committed revision
+`3343347dab7c640cd9fdbf24467c08dac4175580` with
+`source_code_dirty=false`. Java 5.5.1 and Rust matched FOUND,
+NO_MATCHED_MSG, NO_NEW_MSG, and OFFSET_ILLEGAL results, all suggesting Broker
+ID 0. Both read the seeded body, returned min/max/search offsets `0/2/0`, and
+resumed at offset 1 after a new consumer instance started. The run exited 0
+and removed its topic and host-routed Compose resources:
+[`20261025T100359Z`](evidence/phase-19/P9-V03/20261025T100359Z/).
+Live coverage is now 20/37, with 17 cases pending.
