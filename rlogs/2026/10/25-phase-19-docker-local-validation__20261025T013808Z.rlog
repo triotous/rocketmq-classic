@@ -217,3 +217,9 @@
 
 - Clean-source run `20261025T124251Z` on `1333586f` recorded `NOT_FOUND` for all six groups' queue 0 offsets after mode preparation and after each seed. At the first Java POP call, the group offset was 1 while queue min/max were `0/1`; POP returned `POLLING_NOT_FOUND`. No lifecycle assertion passed and Rust consumption did not run. Evidence is under `docs/compatibility/evidence/phase-19/P13-V02/20261025T124251Z/`.
 - The runner removed the isolated resources. The next runner will explicitly initialize each scenario group's queue offsets to 0 after seeding, verify them, and filter diagnostic rows from the parity comparison. P13 remains pending; coverage remains 25/37 PASS with 12 pending. No production, remote checkout, or owner environment was accessed.
+
+## P19 P13-V02 POP offset reset retry — 2026-10-25 (`d68d8f12`)
+
+- Added an explicit post-seed offset update for both queues of all six Java/Rust POP groups and verified every update as offset 0. The parser excludes extra diagnostic rows from parity comparison.
+- Clean-source run `20261025T124657Z` passed seed routing, max-offset visibility, and all twelve offset-reset checks. The separate Java consume probe observed committed offset 1 before its first POP while queue min/max were `0/1`; POP returned `POLLING_NOT_FOUND`, no lifecycle assertion passed, and Rust consumption did not run. The exact transition after reset is still unlocalized. Evidence: `docs/compatibility/evidence/phase-19/P13-V02/20261025T124657Z/`.
+- The runner deleted the scenario topic and removed its isolated two-Broker containers, network, and volumes. P13 remains pending; coverage remains 25/37 PASS with 12 Phase 19 scenarios pending. No production, remote checkout, or owner environment was accessed.

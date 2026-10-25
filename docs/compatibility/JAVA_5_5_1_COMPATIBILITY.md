@@ -64,6 +64,12 @@ full client parity. See
 cases and [`../owner-validation.md`](../owner-validation.md) for the blocked
 owner inputs. Final compatibility and release approval remain blocked.
 
+P13 follow-up: run `20261025T124657Z` initialized and verified offset 0 on
+both queues for all six groups after seeding. The separate Java consume probe
+observed offset 1 before its first POP and again returned
+`POLLING_NOT_FOUND`; the exact transition after reset remains unlocalized.
+All ten P13 diagnostic runs were cleaned up. P13-V02 remains pending.
+
 Phase 18 Fastjson U+001A end-of-input continuation (`12de2474`, 2026-10-24):
 the pinned Java 5.5.1 heartbeat DTO oracle accepts 108 new inputs with control
 or Unicode characters after U+001A and between repeated markers, and two more

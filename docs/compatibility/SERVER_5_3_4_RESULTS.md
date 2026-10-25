@@ -377,3 +377,13 @@ resources; evidence is under
 [`20261025T124251Z`](evidence/phase-19/P13-V02/20261025T124251Z/). Next, the
 runner will initialize the scenario groups at offset 0 after seeding and verify
 that starting point before POP.
+
+Run `20261025T124657Z` on `d68d8f12` initialized and verified offset 0 on both
+queues for all six groups after seeding. The separate Java consume probe still
+observed offset 1 before its first POP, with queue min/max `0/1`, and received
+`POLLING_NOT_FOUND`. No lifecycle assertion passed and Rust consumption did
+not run. The exact point after reset where the offset changes remains
+unlocalized. The runner removed the topic and Compose resources; evidence is
+under [`20261025T124657Z`](evidence/phase-19/P13-V02/20261025T124657Z/).
+Next, trace the group offset immediately after API startup and around the
+min/max queries preceding POP.
