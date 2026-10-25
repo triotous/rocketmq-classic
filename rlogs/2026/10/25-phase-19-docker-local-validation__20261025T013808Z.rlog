@@ -526,3 +526,9 @@
 - Added P12 runner registration and fail-closed manifest input checks, isolated topic/group creation and cleanup, a Java 5.5.1 orderly probe, and a Rust orderly probe. The scenario uses a bounded 1-second unlock-delay property and retains the pinned unmodified RocketMQ 5.3.4 image.
 - Static checks pass: Maven Java compile, Rust integration live-client build, Rust fmt check, strict integration-client Clippy, Bash syntax, Python checker compile and file-state checks, and `git diff --check`.
 - `run.sh --check-all` recognizes P12-V03 and fails closed before Docker with only P14-V03, P16-V02, and P17-V02 still lacking runners. Clean-source P12 replay is pending after the implementation commit.
+
+## P19-05 P12-V03 first clean replay diagnostic — 2026-10-25
+
+- Clean-source run `20261025T161816Z` on revision `264a7863a8532758f6c32b8cd22ce568497b37a7` provisioned the pinned 5.3.4 host-routed two-Broker profile, created the topic/group on both Brokers, initialized offsets, and seeded all four ordered messages. It stopped before Rust joined because the Java consumer invocation omitted the probe's required `consumer` subcommand; Maven reported the probe usage and exited.
+- Evidence is retained at `docs/compatibility/evidence/phase-19/P12-V03/20261025T161816Z/` with `source_code_dirty=false`, exit status 1, and 130 seconds. The runner successfully deleted the consumer group from both Brokers, deleted the scenario topic, and removed the exact Compose project's containers, volumes and network; filtered Docker queries were empty.
+- P12-V03 remains pending. Correct the Java argument and repeat the clean-source replay; this diagnostic does not count as a scenario result.
