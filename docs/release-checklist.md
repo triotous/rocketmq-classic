@@ -11196,11 +11196,38 @@ Run record:
   thread and preserves partial dumps when every safe signal is blocked. Windows
   capture now resolves names before stack walking, prioritizes named threads,
   and gives each thread a 100 ms unwind budget within the 5-second snapshot
-  deadline. A fresh push-triggered workflow is required to validate both
-  platform paths and resume the Docker matrix.
+  deadline. The fresh push-triggered validation and its remaining timeout gates
+  are documented in the following section.
 - Linux ARM64 Rust 1.85.0 focused stack tests passed (7/7), strict Clippy
   passed, and the full consumer library suite passed all 276 tests. The
   Windows GNU cross-check could not run because `x86_64-w64-mingw32-gcc` is
   unavailable in the container.
 - MAN-01 through MAN-04 remain owner-input blocked. No plan files were edited;
   no tag or package was created or published.
+
+## 2026-10-26 push-triggered CI revalidation on `fadc19d9`
+
+- GitHub Actions run `40308005851` checked
+  `fadc19d9a8934362fca20e8e9ecfce2be46ce4af`. The Windows stack-runtime
+  regression passed.
+- The general test job passed formatting, strict Clippy, both default and
+  all-feature workspace suites, timezone-specific unique-ID coverage,
+  differential self-tests and manifest validation, fuzz smoke, race/leak
+  smoke, and Maven verify. GitHub canceled the job at its 60-minute limit
+  during `cargo build -p rocketmq-classic --examples --release --locked`;
+  benchmark and metadata steps were skipped.
+- The Docker matrix passed both workspace suites and every server-free gate,
+  including workspace check and Clippy, Java verify, release examples,
+  benchmark build and run, package content, metadata, timezone-specific tests,
+  differential live-coverage validation, and Docker toolchain validation. It
+  entered `live-scenarios` at `2026-10-26T11:37:16Z`; GitHub canceled the
+  aggregate step at `2026-10-26T13:32:06Z` when the job reached its
+  180-minute limit. The captured log contains no scenario assertion failure.
+  The full live scenario set and final evidence reconciliation did not finish.
+- All three job logs and run metadata are archived in
+  `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-003/20261026T103057Z/`.
+- The general test job limit is raised from 60 to 90 minutes to give the
+  release examples build more time. The matrix job limit is raised from 180 to
+  GitHub's 360-minute maximum because its live scenario stage exceeded the
+  prior limit. A fresh push-triggered workflow is required to validate these
+  timeout changes and complete the live scenarios.

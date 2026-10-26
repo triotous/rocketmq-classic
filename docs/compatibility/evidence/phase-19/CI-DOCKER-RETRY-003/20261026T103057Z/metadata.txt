@@ -1,0 +1,34 @@
+GitHub Actions run: 40308005851
+URL: https://github.com/triotous/rocketmq-classic/actions/runs/40308005851
+Source revision: fadc19d9a8934362fca20e8e9ecfce2be46ce4af
+Branch: phase/19-docker-local-validation
+Date: 2026-10-26 UTC
+Run conclusion: cancelled
+
+Job results:
+- windows-stack-runtime (121521824412): success, 3m55s.
+- test (121521824911): cancelled at its 60-minute limit. Formatting, strict
+  Clippy, default and all-feature workspace tests, targeted timezone test,
+  differential self-test and manifest checks, fuzz and race/leak smoke, and
+  Maven verify passed. The release examples build was canceled; benchmark and
+  metadata steps were skipped.
+- Required Docker local Phase 19 matrix (121521824841): cancelled at its
+  180-minute limit. Both workspace suites and all server-free gates passed,
+  including workspace check and Clippy, Java verify, release examples,
+  benchmark build and run, package content, metadata, UTC and Taipei unique-ID
+  checks, differential live-coverage validation, and Docker toolchain checks.
+  `live-scenarios` started at 2026-10-26T11:37:16Z and was canceled at
+  2026-10-26T13:32:06Z. No scenario assertion failure appears in the job log;
+  the 37 live scenarios and final evidence reconciliation did not complete.
+
+Archived raw job logs:
+- windows-stack-runtime.log
+- general-test.log
+- docker-local-matrix.log
+
+Workflow timeout adjustments prepared after this run:
+- General `test` job: 60 to 90 minutes, to give the release examples build more
+  time after all workspace tests and earlier gates passed.
+- Docker matrix job: 180 to 360 minutes, because the full server-free gates
+  completed but the live scenario stage was still running when the three-hour
+  limit canceled the job.
