@@ -609,7 +609,8 @@ if [[ "$scenario_id" == "P14-V03" ]]; then
     export ROCKETMQ_BROKER_B_HOST_CONFIG=./config/broker-b-transaction-host.conf
 fi
 maven_java_version="$(mvn -version 2>&1 | sed -n 's/^Java version: \([^,]*\),.*/\1/p')"
-if [[ "$maven_java_version" != "27" ]]; then
+maven_java_major="${maven_java_version%%.*}"
+if [[ "$maven_java_major" != "27" ]]; then
     echo "The live Java 5.5.1 runner requires the CI-pinned Maven JDK 27; found '${maven_java_version:-unknown}'" >&2
     exit 2
 fi
