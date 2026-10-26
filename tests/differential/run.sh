@@ -238,6 +238,21 @@ for scenario in selected:
         ]
     ):
         raise SystemExit("P17-V02 query inputs differ from the reviewed live case")
+    if scenario_id == "P7-V04" and (
+        profile != "two-broker-host"
+        or inputs.get("topic") != "compat_p7_lifecycle"
+        or inputs.get("messages") != 8192
+        or inputs.get("max_inflight") != 32
+        or inputs.get("seed") != 1592594996
+        or inputs.get("checks") != [
+            "sustained-sends", "fixed-seed-variable-payloads", "bounded-concurrency",
+            "contiguous-broker-offsets", "matching-workload-checksum",
+            "repeated-start-shutdown", "zero-pending-requests", "zero-connections",
+            "zero-owned-tasks"
+        ]
+        or scenario.get("assertions") != inputs.get("checks")
+    ):
+        raise SystemExit("P7-V04 bounded stress inputs differ from the reviewed live case")
     if scenario_id == "P5-V02-producer" and inputs.get("methods") != [
         "send-v1", "send-v2", "batch", "reply-v1", "reply-v2", "end-transaction"
     ]:
@@ -860,7 +875,8 @@ if [[ "$scenario_id" == "P3-V04" ]]; then
         >>"$evidence_dir/metadata.txt"
 fi
 if [[ "$scenario_id" == "P7-V04" ]]; then
-    printf 'topic=%s\nbrokers=127.0.0.1:50911,127.0.0.1:50921\ncycles=3\nsends_per_cycle=20\n' "$topic" \
+    printf 'topic=%s\nbrokers=127.0.0.1:50911,127.0.0.1:50921\nstress_messages=%s\nstress_max_inflight=32\nstress_seed=1592594996\nstress_deadline_ms=120000\ncycles=3\nsends_per_cycle=20\n' \
+        "$topic" "$message_count" \
         >>"$evidence_dir/metadata.txt"
 fi
 if [[ "$scenario_id" == "P5-V02-producer" ]]; then
@@ -972,6 +988,8 @@ elif [[ "$scenario_id" == "P7-V04" ]]; then
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateTopic -b 127.0.0.1:50911 -t $topic -r 4 -w 4 -n namesrv:9876
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateTopic -b 127.0.0.1:50921 -t $topic -r 4 -w 4 -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic $message_count 32 1592594996 0" exec:java@live-producer-stress-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p7-stress $namesrv_addr $topic $message_count 32 1592594996 $message_count
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic" exec:java@live-producer-lifecycle-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p7-lifecycle $namesrv_addr $topic
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="delete-topic 127.0.0.1:50911 $topic" exec:java@live-producer-lifecycle-probe
@@ -4665,6 +4683,62 @@ PY
     printf 'PASS P6-V04: Java and Rust applied the new subscription, filtered the old tag, and retained the surviving producer\n' \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P7-V04" ]]; then
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="$namesrv_addr $topic $message_count 32 1592594996 0" \
+        exec:java@live-producer-stress-probe \
+        >"$evidence_dir/java-producer-stress.tsv" \
+        2>"$evidence_dir/java-producer-stress.stderr"; then
+        cat "$evidence_dir/java-producer-stress.tsv" "$evidence_dir/java-producer-stress.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        p7-stress "$namesrv_addr" "$topic" "$message_count" 32 1592594996 "$message_count" \
+        >"$evidence_dir/rust-producer-stress.tsv" \
+        2>"$evidence_dir/rust-producer-stress.stderr"; then
+        cat "$evidence_dir/rust-producer-stress.tsv" "$evidence_dir/rust-producer-stress.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! python3 - "$evidence_dir/java-producer-stress.tsv" \
+        "$evidence_dir/rust-producer-stress.tsv" "$message_count" <<'PY'
+import sys
+from pathlib import Path
+
+count = int(sys.argv[3])
+expected = {
+    "java": (0, count - 1),
+    "rust": (count, 2 * count - 1),
+}
+
+def parse(path, language):
+    rows = [line.split("\t") for line in Path(path).read_text().splitlines()
+            if line.startswith("P7S\tLOAD\t")]
+    if len(rows) != 1 or len(rows[0]) != 13:
+        raise SystemExit(f"{path}: expected exactly one 13-column P7S load row")
+    row = rows[0]
+    if row[:3] != ["P7S", "LOAD", language]:
+        raise SystemExit(f"{path}: unexpected P7S language row: {row!r}")
+    numeric = [int(value) for value in row[3:6] + row[7:13]]
+    messages, max_inflight, payload_bytes = numeric[:3]
+    elapsed_ms, first_offset, last_offset, pending, connections, tasks = numeric[3:]
+    if messages != count or max_inflight != 32 or payload_bytes <= count * 256:
+        raise SystemExit(f"{path}: stress workload limits or payload size differ: {row!r}")
+    if len(row[6]) != 16 or any(character not in "0123456789abcdef" for character in row[6]):
+        raise SystemExit(f"{path}: invalid fixed-seed workload checksum: {row[6]!r}")
+    if elapsed_ms > 120_000 or (first_offset, last_offset) != expected[language]:
+        raise SystemExit(f"{path}: stress deadline or queue offsets differ: {row!r}")
+    if (pending, connections, tasks) != (0, 0, 0):
+        raise SystemExit(f"{path}: producer shutdown retained resources: {row!r}")
+    return messages, max_inflight, payload_bytes, row[6]
+
+java = parse(sys.argv[1], "java")
+rust = parse(sys.argv[2], "rust")
+if java != rust:
+    raise SystemExit(f"Java/Rust fixed-seed workload differs: {java!r} != {rust!r}")
+PY
+    then
+        echo "Java/Rust bounded producer stress behavior does not satisfy P7-V04" >&2
+        exit 1
+    fi
     if ! mvn -q -e -f "$repo_root/compat/java-reference/pom.xml" \
         -Dexec.args="$namesrv_addr $topic" exec:java@live-producer-lifecycle-probe \
         >"$evidence_dir/java-producer-lifecycle.tsv" \
@@ -4711,7 +4785,7 @@ PY
         echo "Producer lifecycle behavior does not satisfy P7-V04" >&2
         exit 1
     fi
-    printf 'PASS P7-V04: Java and Rust each sent 20 messages in three live producer cycles and returned to zero pending requests, connections, and owned task groups after every shutdown\n' \
+    printf 'PASS P7-V04: Java and Rust each sent %s fixed-seed variable-size messages with at most 32 concurrent sends, matching payload bytes/checksum and contiguous Broker offsets; three additional 20-send lifecycle cycles returned to zero pending requests, connections, and owned task groups after every shutdown\n' "$message_count" \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "P7-V03" ]]; then
     run_p7_retry_probe() {

@@ -7,7 +7,7 @@ use std::{
     path::Path,
     sync::Arc,
     sync::atomic::{AtomicUsize, Ordering},
-    time::Duration,
+    time::{Duration, Instant as StdInstant},
 };
 
 use rocketmq_classic::{
@@ -183,6 +183,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Some("p7-lifecycle") if arguments.len() == 3 => {
             producer_lifecycle_probe(&arguments[1], &arguments[2]).await
+        }
+        Some("p7-stress") if arguments.len() == 7 => {
+            let count = arguments[3].parse::<usize>()?;
+            let max_in_flight = arguments[4].parse::<usize>()?;
+            let seed = arguments[5].parse::<u32>()?;
+            let start_offset = arguments[6].parse::<i64>()?;
+            producer_stress_probe(
+                &arguments[1],
+                &arguments[2],
+                count,
+                max_in_flight,
+                seed,
+                start_offset,
+            )
+            .await
         }
         Some("p5-producer") if arguments.len() == 4 => {
             p5_producer(&arguments[1], &arguments[2], &arguments[3]).await
@@ -1906,6 +1921,163 @@ async fn producer_lifecycle_probe(
     }
 
     Ok(())
+}
+
+async fn producer_stress_probe(
+    namesrv_address: &str,
+    topic: &str,
+    count: usize,
+    max_in_flight: usize,
+    seed: u32,
+    start_offset: i64,
+) -> Result<(), Box<dyn Error>> {
+    if count == 0 || max_in_flight == 0 || start_offset < 0 {
+        return Err("stress inputs must be positive and bounded".into());
+    }
+
+    let mut payload_bytes = 0usize;
+    let mut payload_hash = 0xcbf2_9ce4_8422_2325u64;
+    let bodies = (0..count)
+        .map(|sequence| p7_stress_body(seed, sequence))
+        .inspect(|body| {
+            payload_bytes += body.len();
+            for byte in body {
+                payload_hash ^= u64::from(*byte);
+                payload_hash = payload_hash.wrapping_mul(0x100_0000_01b3);
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let manager = ClientRuntimeManager::shared_default();
+    let mut config = ProducerConfig::new("compat_p7_stress_rust")?;
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(namesrv_address.to_owned()));
+    config.set_send_timeout_millis(15_000);
+    let producer = Arc::new(Producer::new(config.clone()));
+    producer.start().await?;
+    let runtime = manager.get_or_create(config.client_config()).await?;
+    let queue = MessageQueue::new(topic, "broker-a", 0);
+    let started = StdInstant::now();
+    let mut offsets = Vec::with_capacity(count);
+
+    let load_result: Result<(), Box<dyn Error>> = async {
+        for first in (0..count).step_by(max_in_flight) {
+            let end = (first + max_in_flight).min(count);
+            let mut tasks = tokio::task::JoinSet::new();
+            for (sequence, body) in bodies.iter().enumerate().take(end).skip(first) {
+                let producer = Arc::clone(&producer);
+                let queue = queue.clone();
+                let topic = topic.to_owned();
+                let body = body.clone();
+                tasks.spawn(async move {
+                    let mut message = Message::new(topic, body);
+                    message
+                        .set_keys(format!("compat_p7_stress_rust_{sequence}"))
+                        .map_err(|error| error.to_string())?;
+                    let result = producer
+                        .send_to_queue(&mut message, &queue)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    if result.status.name() != "SEND_OK"
+                        || result.queue_id != 0
+                        || result.broker_name != "broker-a"
+                    {
+                        return Err(format!(
+                            "stress send returned unexpected Broker result: {:?}",
+                            result
+                        ));
+                    }
+                    Ok::<i64, String>(result.queue_offset)
+                });
+            }
+
+            let mut failures = Vec::new();
+            while let Some(result) = tasks.join_next().await {
+                match result {
+                    Ok(Ok(offset)) => offsets.push(offset),
+                    Ok(Err(error)) => failures.push(error),
+                    Err(error) => failures.push(error.to_string()),
+                }
+            }
+            if !failures.is_empty() {
+                return Err(failures.join("; ").into());
+            }
+        }
+        Ok(())
+    }
+    .await;
+    let elapsed_millis = started.elapsed().as_millis();
+    let shutdown = producer.shutdown().await;
+    load_result?;
+    shutdown?;
+
+    if elapsed_millis > 120_000 {
+        return Err(format!(
+            "bounded stress workload exceeded its 120-second deadline: {elapsed_millis}ms"
+        )
+        .into());
+    }
+    offsets.sort_unstable();
+    let expected_offsets = (start_offset..start_offset + count as i64).collect::<Vec<_>>();
+    if offsets != expected_offsets {
+        return Err(format!(
+            "stress queue offsets were not contiguous: expected {}..{}, got {}..{} across {} results",
+            start_offset,
+            start_offset + count as i64 - 1,
+            offsets.first().copied().unwrap_or(-1),
+            offsets.last().copied().unwrap_or(-1),
+            offsets.len()
+        )
+        .into());
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let counts = loop {
+        let counts = remoting_lifecycle_counts(runtime.remoting())?;
+        let factories_empty = manager.factory_table().is_empty()?;
+        if counts.pending_requests == 0
+            && counts.connections == 0
+            && counts.owned_tasks == 0
+            && factories_empty
+        {
+            break counts;
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "stress producer did not quiesce after shutdown: {counts:?}, factories_empty={factories_empty}"
+            )
+            .into());
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    };
+    println!(
+        "P7S\tLOAD\trust\t{count}\t{max_in_flight}\t{payload_bytes}\t{payload_hash:016x}\t{elapsed_millis}\t{}\t{}\t{}\t{}\t{}",
+        offsets[0],
+        offsets[count - 1],
+        counts.pending_requests,
+        counts.connections,
+        counts.owned_tasks
+    );
+    Ok(())
+}
+
+fn p7_stress_body(seed: u32, sequence: usize) -> Vec<u8> {
+    let mut state = seed ^ (sequence as u32 + 1).wrapping_mul(0x9e37_79b9);
+    state = p7_xorshift(state);
+    let length = 256 + (state & 0x3ff) as usize;
+    (0..length)
+        .map(|_| {
+            state = p7_xorshift(state);
+            state as u8
+        })
+        .collect()
+}
+
+fn p7_xorshift(mut state: u32) -> u32 {
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^ (state << 5)
 }
 
 async fn shared_runtime_probe(
