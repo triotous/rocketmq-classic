@@ -1,0 +1,1 @@
+PASS PROD-002-async-send: matching async results, one Java callback / Rust future completion, and bidirectional cross-language readback

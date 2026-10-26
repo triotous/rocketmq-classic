@@ -1,0 +1,12 @@
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker COMPOSE_PROJECT_NAME=rocketmq-classic-p19-order-001-lock-unlock-20261026t031403z bash integration-tests/setup.sh
+docker compose --project-name rocketmq-classic-p19-order-001-lock-unlock-20261026t031403z --file integration-tests/compose.yaml --profile two-broker exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t compat_phase0_order_topic -r 4 -w 4 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-order-001-lock-unlock-20261026t031403z --file integration-tests/compose.yaml --profile two-broker exec broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_phase0_order -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="lock 127.0.0.1:20911 compat_phase0_order java-initial compat_phase0_order_topic broker-a 0" exec:java@live-consumer-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="unlock 127.0.0.1:20911 compat_phase0_order java-initial compat_phase0_order_topic broker-a 0" exec:java@live-consumer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- lock 127.0.0.1:20911 compat_phase0_order rust-initial compat_phase0_order_topic broker-a 0
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- unlock 127.0.0.1:20911 compat_phase0_order rust-initial compat_phase0_order_topic broker-a 0
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="lock 127.0.0.1:20911 compat_phase0_order java-order-owner compat_phase0_order_topic broker-a 0" exec:java@live-consumer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- lock 127.0.0.1:20911 compat_phase0_order rust-order-contender compat_phase0_order_topic broker-a 0
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="unlock 127.0.0.1:20911 compat_phase0_order java-order-owner compat_phase0_order_topic broker-a 0" exec:java@live-consumer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- lock 127.0.0.1:20911 compat_phase0_order rust-order-contender compat_phase0_order_topic broker-a 0
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- unlock 127.0.0.1:20911 compat_phase0_order rust-order-contender compat_phase0_order_topic broker-a 0

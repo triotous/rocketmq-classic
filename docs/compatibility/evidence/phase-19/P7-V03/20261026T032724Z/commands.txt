@@ -1,0 +1,9 @@
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host ROCKETMQ_BROKER_A_PUBLISHED_HOST_PORT=51911 ROCKETMQ_BROKER_B_PUBLISHED_HOST_PORT=51921 COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p7-v03-20261026t032724z bash integration-tests/setup.sh
+docker compose --project-name rocketmq-classic-p19-p7-v03-20261026t032724z --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateTopic -b 127.0.0.1:50911 -t compat_p7_retry -r 1 -w 1 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p7-v03-20261026t032724z --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateTopic -b 127.0.0.1:50921 -t compat_p7_retry -r 1 -w 1 -n namesrv:9876
+python3 tests/differential/delayed_response_proxy.py --upstream 127.0.0.1:51911 --listen-port 50911 --delay-ms 1800 --delay-flag <evidence>/broker-a-proxy.delay-flag --delay-send-flag <evidence>/broker-a-proxy.delay-send-flag --reject-send-flag <evidence>/broker-a-proxy.reject-flag --reject-response-code 16 --ready-file <evidence>/broker-a-proxy.ready --log-file <evidence>/broker-a-proxy.tsv
+python3 tests/differential/delayed_response_proxy.py --upstream 127.0.0.1:51921 --listen-port 50921 --delay-ms 1800 --delay-flag <evidence>/broker-b-proxy.delay-flag --delay-send-flag <evidence>/broker-b-proxy.delay-send-flag --reject-send-flag <evidence>/broker-b-proxy.reject-flag --reject-response-code 16 --ready-file <evidence>/broker-b-proxy.ready --log-file <evidence>/broker-b-proxy.tsv
+The runner gates each client after route lookup, injects one NO_PERMISSION response per Broker without forwarding those two send requests, then forwards the third attempt; it records all attempts and keeps the proxies alive through topic deletion.
+retry_timeout_ms=10000
+deadline_timeout_ms=900
+retry_response_code=16

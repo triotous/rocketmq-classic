@@ -1,0 +1,7 @@
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic COMPOSE_PROJECT_NAME=rocketmq-classic-p19-cons-004-update-offset-20261026t025118z bash integration-tests/setup.sh
+docker compose --project-name rocketmq-classic-p19-cons-004-update-offset-20261026t025118z --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t compat_phase0_update_offset -r 4 -w 4 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-cons-004-update-offset-20261026t025118z --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_phase0_update_group -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="update 127.0.0.1:20911 compat_phase0_update_group compat_phase0_update_offset 0 31" exec:java@live-consumer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- offset-query 127.0.0.1:20911 compat_phase0_update_group compat_phase0_update_offset 0
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- offset-update 127.0.0.1:20911 compat_phase0_update_group compat_phase0_update_offset 0 47
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="query 127.0.0.1:20911 compat_phase0_update_group compat_phase0_update_offset 0" exec:java@live-consumer-probe

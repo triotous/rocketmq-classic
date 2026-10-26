@@ -1,0 +1,5 @@
+P5E	pop	FOUND	70352d657874656e73696f6e2d73656564
+P5E	pop-lite	UNSUPPORTED	200070	3
+P5E	ack	OK
+P5E	batch-ack	OK
+P5E	change-invisible-time	OK	METADATA

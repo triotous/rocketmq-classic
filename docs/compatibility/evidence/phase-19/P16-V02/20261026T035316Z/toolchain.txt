@@ -1,0 +1,26 @@
+Darwin 25.6.0 arm64
+cargo 1.85.0 (d73d2caf9 2024-12-31)
+rustc 1.85.0 (4d91de4e4 2025-02-17)
+Apache Maven 3.10.0 (c43a36b8d67be7e0805a411bc0898af1a51f5472)
+Maven home: /opt/homebrew/Cellar/maven/3.10.0/libexec
+Java version: 27, vendor: Homebrew, runtime: /opt/homebrew/Cellar/openjdk/27/libexec/openjdk.jdk/Contents/Home
+Default locale: zh_TW_#Hant, platform encoding: UTF-8, time zone: UTC
+OS name: "mac os x", version: "26.6.1", arch: "aarch64", family: "mac"
+openjdk version "21.0.12.1" 2026-08-18 LTS
+OpenJDK Runtime Environment Zulu21.52+203-CA (build 21.0.12.1+1-LTS)
+OpenJDK 64-Bit Server VM Zulu21.52+203-CA (build 21.0.12.1+1-LTS, mixed mode, sharing)
+Docker client 29.8.2 / server 29.8.2
+Docker Compose version v5.5.0
+Docker platform linux/aarch64
+sha256 dc56a1e95a07728c74f825382d17cc19f6b983ed3b4477c28b9ac6e99b7eb943  compose.yaml
+sha256 3dee2c196806f4027271e34cfc1329fb532b03f54214b6d298b72d5b73545c87  broker.conf
+sha256 dff17811e361dee7f40a7689d788f803adc9820e5f2ea6d17ea672129b8f1141  broker-b.conf
+sha256 4f7261f505d60b81dc0f75b27c2341e84e735a20a9dae67baf538bfa92160bf8  broker-tx.conf
+sha256 a73f270af5d464d45af2edae200c2eabde90268b779e524c15292864b7568ba8  broker-host.conf
+sha256 0cb9972be4870c53284915a46b45ac7819bcbbdf5d2c576f717ad953d88c0919  broker-a-host.conf
+sha256 0d09abc0c0bd3e7a2fbc578fd1214889739fbdfb316422e46bd194f7cdf825da  broker-b-host.conf
+sha256 017ec931b6685fbaf33330075531474346cf5191c6a1a4cbe8043ee57ee00b6e  broker-auth.conf
+sha256 0085ff299a465725058628c51ee513c02ca1e5824fb6c831e0731e5980acc822  build-official-rocketmq-5.3.4-amd64.sh
+sha256 28f5b3d92654cca46377ea5382726d7352c8373e7a9fb0b8aecfd7e7ad429ebd  rocketmq-5.3.4-amd64.Dockerfile
+sha256 7306c2ee4af2ff728dc43f7e1964faad6eed7ba9b956274c07d30d72dbc7c995  rocketmq-5.3.4-entrypoint.sh
+P16 auth Broker image sha256:7f4febac10f1fca154784f2ff10f731f680634b9294238385dfbdb750ff1ccc2 / linux/amd64

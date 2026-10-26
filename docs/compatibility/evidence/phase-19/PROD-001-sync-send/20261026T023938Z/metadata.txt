@@ -1,0 +1,14 @@
+scenario=PROD-001-sync-send
+profile=basic
+project=rocketmq-classic-p19-prod-001-sync-send-20261026t023938z
+run_id=20261026T023938Z
+java_client=5.5.1
+server=5.3.4
+server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+source_revision=5764ec8488c3319768246bb9218616c339d433f6
+source_code_dirty=false
+producer_group=-
+body=fixed
+seed=not-applicable
+exit_status=0
+duration_seconds=75

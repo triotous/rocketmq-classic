@@ -1,0 +1,18 @@
+OffsetID:            C0A86B0200002A9F0000000000000126
+Topic:               compat_phase0_send
+Tags:                [null]
+Keys:                [compat_phase0_oneway_rust_20261026t015225z]
+Queue ID:            0
+Queue Offset:        1
+CommitLog Offset:    294
+Reconsume Times:     0
+Born Timestamp:      2026-10-26 01:53:21,101
+Store Timestamp:     2026-10-26 01:53:21,109
+Born Host:           192.168.107.1:45164
+Store Host:          192.168.107.2:10911
+System Flag:         0
+Properties:          {MSG_REGION=DefaultRegion, UNIQ_KEY=compat_phase0_oneway_rust_20261026t015225z_uniq, CLUSTER=RocketMQLocalTest, KEYS=compat_phase0_oneway_rust_20261026t015225z, WAIT=true, TRACE_ON=true}
+Message Body Path:   /tmp/rocketmq/msgbodys/compat_phase0_oneway_rust_20261026t015225z_uniq
+
+
+WARN: No Consumer

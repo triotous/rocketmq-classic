@@ -1,0 +1,26 @@
+P13	seed	p13-java-q0	0	0	1
+P13	pop-offset-state	phase=after-seed-q0	group=compat_p13_pop_java_expiry	queue=0	offset=NOT_FOUND
+P13	pop-offset-state	phase=after-seed-q0	group=compat_p13_pop_java_change	queue=0	offset=NOT_FOUND
+P13	pop-offset-state	phase=after-seed-q0	group=compat_p13_pop_java_mixed	queue=0	offset=NOT_FOUND
+P13	pop-offset-state	phase=after-seed-q0	group=compat_p13_pop_rust_expiry	queue=0	offset=NOT_FOUND
+P13	pop-offset-state	phase=after-seed-q0	group=compat_p13_pop_rust_change	queue=0	offset=NOT_FOUND
+P13	pop-offset-state	phase=after-seed-q0	group=compat_p13_pop_rust_mixed	queue=0	offset=NOT_FOUND
+P13	seed	p13-java-q1	1	0	1
+P13	pop-offset-state	phase=after-seed-q1	group=compat_p13_pop_java_expiry	queue=0	offset=NOT_FOUND
+P13	pop-offset-state	phase=after-seed-q1	group=compat_p13_pop_java_change	queue=0	offset=NOT_FOUND
+P13	pop-offset-state	phase=after-seed-q1	group=compat_p13_pop_java_mixed	queue=0	offset=NOT_FOUND
+P13	pop-offset-state	phase=after-seed-q1	group=compat_p13_pop_rust_expiry	queue=0	offset=NOT_FOUND
+P13	pop-offset-state	phase=after-seed-q1	group=compat_p13_pop_rust_change	queue=0	offset=NOT_FOUND
+P13	pop-offset-state	phase=after-seed-q1	group=compat_p13_pop_rust_mixed	queue=0	offset=NOT_FOUND
+P13	pop-offset-reset	compat_p13_pop_java_expiry	0	0
+P13	pop-offset-reset	compat_p13_pop_java_expiry	1	0
+P13	pop-offset-reset	compat_p13_pop_java_change	0	0
+P13	pop-offset-reset	compat_p13_pop_java_change	1	0
+P13	pop-offset-reset	compat_p13_pop_java_mixed	0	0
+P13	pop-offset-reset	compat_p13_pop_java_mixed	1	0
+P13	pop-offset-reset	compat_p13_pop_rust_expiry	0	0
+P13	pop-offset-reset	compat_p13_pop_rust_expiry	1	0
+P13	pop-offset-reset	compat_p13_pop_rust_change	0	0
+P13	pop-offset-reset	compat_p13_pop_rust_change	1	0
+P13	pop-offset-reset	compat_p13_pop_rust_mixed	0	0
+P13	pop-offset-reset	compat_p13_pop_rust_mixed	1	0

@@ -11093,3 +11093,40 @@ Run record:
 
 Run record:
 `rlogs/2026/10/26-phase-19-p7-v04-broker-backed-stress__20261026T010127Z.rlog`.
+
+## P19 final bounded-stress aggregate — 2026-10-26 (`5764ec84`)
+
+- [x] The fresh `ROCKETMQ_CLASSIC_TEST_ENV=local-disposable bash
+  integration-tests/run-local.sh --all` replay passed all 23 recorded gates at
+  source revision `5764ec8488c3319768246bb9218616c339d433f6`. The live runner
+  executed all 37 registered Phase 19 scenarios, and the final reconciliation
+  passed all 37 manifest rows against their PASS evidence. Aggregate evidence:
+  `docs/compatibility/evidence/phase-19/run-local/20261026T021806Z/`.
+- [x] P7-V04 passed in the aggregate at
+  `docs/compatibility/evidence/phase-19/P7-V04/20261026T032917Z/` with clean
+  source and exit status 0. Java and Rust each sent 8,192 fixed-seed messages
+  (6,292,961 bytes; checksum `f47e95bbe41fd746`) with at most 32 concurrent
+  sends and contiguous Broker offsets. Three further 20-send lifecycle cycles
+  ended with zero pending requests, connections, or owned task groups.
+- [x] The prior aggregate at
+  `docs/compatibility/evidence/phase-19/run-local/20261026T010231Z/` stopped
+  during P6-V04's Rust probe wait after earlier gates passed. A focused P6-V04
+  rerun passed at `20261026T021437Z`, and P6-V04 passed again in the complete
+  aggregate at `20261026T032432Z`. The earlier failure remains archived as a
+  diagnostic; it did not recur.
+- [x] Removed generated TLS private-key copies from archived evidence. Exact
+  Phase 19 Docker project queries found no leftover containers, volumes, or
+  networks.
+- [ ] Push the evidence and manifest-pointer commit, then await GitHub Actions
+  on the final source revision. The earlier run `40249722222` was for
+  `1e4152b9` and exposed a CI Java-version check that rejected Temurin's
+  `27.0.1.0.2` version string. Commit `5764ec84` now checks the Java major
+  version; the fresh workflow must confirm the fix.
+- [ ] MAN-01 through MAN-04 remain pending owner-provided network paths,
+  security material and policy, authorized HA topology, and representative
+  workload/SLO inputs. The bounded local stress case does not establish
+  production capacity or replicated HA failover. No owner or production
+  environment was accessed.
+
+Run record:
+`rlogs/2026/10/26-phase-19-final-stress-aggregate__20261026T035914Z.rlog`.
