@@ -11294,3 +11294,26 @@ Run record:
   match the checked-in fixture, and local offline Maven verification passes.
 - The updated fixture probe and the full Docker matrix still need a fresh
   push-triggered CI run.
+
+
+## 2026-10-26 Phase 19 current-revision local result
+
+- [x] `413f735ad0ab41717acb9d76e2cb664b42076f4d` passed
+  `ROCKETMQ_CLASSIC_TEST_ENV=local-disposable bash integration-tests/run-local.sh --all`.
+  All 23 aggregate gates passed, including default/all-feature workspace
+  suites, strict Clippy, Maven verification, offline race/fuzz/example/benchmark
+  gates, timezone coverage, Docker profile preflight, the complete live
+  scenario matrix, and final evidence reconciliation. The aggregate evidence is
+  `docs/compatibility/evidence/phase-19/run-local/20261026T190920Z/`.
+- [x] The manifest reconciliation selected current clean-source PASS evidence
+  for all 37/37 scenario rows. Post-run Docker queries found no Phase 19 project
+  containers, volumes, or networks.
+- [ ] Current-revision remote CI remains unverified. GitHub run `40383732405`
+  started zero job steps and cites failed account payments or an insufficient
+  Actions spending limit; see
+  `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-007/20261026T203546Z/`.
+  Rerun after the repository owner resolves the billing/spending-limit state.
+- [ ] MAN-01 through MAN-04 remain BLOCKED pending owner-provided network,
+  security, HA, and representative workload/SLO inputs. MAN-05 remains N/A per
+  the current-tree source/API delta audit. Final compatibility/release approval
+  remains blocked; no package, tag, or deployment was created.

@@ -78,29 +78,36 @@ matching Java/Rust pull results. `P3-V04` compares raw NameServer routing, CA
 trust, and client shutdown through a local TLS-terminating proxy. Java 5.5.1
 and Rust accept a CA-trusted wrong-host certificate because the Java TLS
 handler does not receive a peer hostname; Rust verified mode now matches this
-behavior while still rejecting an untrusted CA. P7-V04 now has clean-source live
-evidence for 20 sends over three Java and Rust producer cycles with zero
-pending requests, connections, and owned task groups after every shutdown.
+behavior while still rejecting an untrusted CA. P7-V04 now has current
+clean-source live evidence for 8,192 fixed-seed variable-size sends per client,
+with matching payload bytes/checksum and contiguous Broker offsets. Three
+additional shutdown cycles returned pending requests, connections, and owned
+task groups to zero
+([evidence](evidence/phase-19/P7-V04/20261026T201111Z/)).
 `P14-V03` passes cross-language commit visibility, rollback invisibility with
 unchanged normal offsets, and bounded Unknown resolution through actual Broker
 checks in both directions. `P17-V02` passes duplicate-key and bounded-time
 queries, preserves Broker A results when Broker B fails, and maps terminal
 query failures to `NO_MESSAGE`; see the
-[live evidence](evidence/phase-19/P17-V02/20261025T172205Z/).
+[live evidence](evidence/phase-19/P17-V02/20261026T203310Z/).
 All 37 registered Phase 19 live scenarios have passing manifest evidence,
 including corrected clean-source runs for P3-V04, P6-V04, and P16-V02. The
-final `run-local.sh --all` replay passed all 23 gates at workspace revision
-`c877869bd1f9bfacf288a27593649cca12ed9c5d`; its evidence reconciliation
-verified all 37 manifest rows have clean-source PASS results and exit status
-0. The Phase 18 source/API/settings reverse audit and current-tree delta
-review are recorded. MAN-01 through MAN-04 remain blocked on owner inputs.
+latest `run-local.sh --all` replay passed all 23 gates at workspace revision
+`413f735ad0ab41717acb9d76e2cb664b42076f4d`; evidence reconciliation verified
+all 37 manifest rows have current clean-source PASS results and exit status 0
+([aggregate evidence](evidence/phase-19/run-local/20261026T190920Z/)). The Phase
+18 source/API/settings reverse audit and current-tree delta review are recorded.
+MAN-01 through MAN-04 remain blocked on owner inputs.
 `P13-V02` and `P5-V02-extensions` now have clean Java/Rust evidence; the
 latter records the two unsupported Lite request paths on 5.3.4 and separate
 positive Lite success evidence on 5.5.0. These results do not establish owner
 environment behavior or production approval. See
 [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server
 cases and [`../owner-validation.md`](../owner-validation.md) for the blocked
-owner inputs. Final compatibility and release approval remain blocked.
+owner inputs. Current-revision remote CI run `40383732405` ran zero steps because
+GitHub reports an account payment/spending-limit issue; the next workflow run
+must wait until that external account state is fixed. Final compatibility and
+release approval remain blocked.
 
 P13 follow-up: run `20261025T124657Z` initialized and verified offset 0 on
 both queues for all six groups after seeding. The separate Java consume probe

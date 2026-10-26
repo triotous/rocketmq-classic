@@ -1,0 +1,1 @@
+PASS TX-001-commit: Java/Rust commits matched; both committed messages were visible and max offset was 2

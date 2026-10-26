@@ -509,3 +509,30 @@ or networks. Synthetic private-key copies left inside three TLS evidence
 directories were removed; public certificates and command/result records
 remain. This local aggregate does not provide the owner-specific evidence
 listed in MAN-01 through MAN-04.
+
+
+## Final Phase 19 local aggregate — 2026-10-26
+
+At source revision `413f735ad0ab41717acb9d76e2cb664b42076f4d`,
+`ROCKETMQ_CLASSIC_TEST_ENV=local-disposable bash integration-tests/run-local.sh --all`
+passed all 23 aggregate gates. The run executed every Phase 19 live scenario;
+reconciliation reported 37/37 manifest rows with current clean-source PASS
+evidence and the aggregate exited 0:
+[aggregate evidence](evidence/phase-19/run-local/20261026T190920Z/). The
+manifest in `tests/differential/scenarios.yaml` now points to the latest
+successful per-scenario evidence. Earlier failed/diagnostic attempts remain
+archived and are not selected as PASS evidence.
+
+After completion, Docker queries found no Phase 19 project containers, volumes,
+or networks. Temporary synthetic private keys were removed from the TLS
+scenario evidence; public certificates and fingerprints remain. The local run confirms the available macOS/Docker environment; it
+does not supply MAN-01 through MAN-04 owner-network, organization-security,
+production HA, or representative workload/SLO evidence.
+
+The push-triggered GitHub Actions follow-up `40383732405` checked the same code
+revision but all three jobs failed before starting, with zero runner steps.
+GitHub's annotation says recent account payments failed or the Actions
+spending limit must be increased. Therefore the current-revision remote CI gate
+remains unverified until the repository owner resolves that account billing
+state and reruns the workflow. Captured details:
+[CI run evidence](evidence/phase-19/CI-DOCKER-RETRY-007/20261026T203546Z/).

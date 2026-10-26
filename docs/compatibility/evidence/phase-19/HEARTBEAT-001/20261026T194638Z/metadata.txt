@@ -1,0 +1,14 @@
+scenario=HEARTBEAT-001
+profile=basic
+project=rocketmq-classic-p19-heartbeat-001-20261026t194638z
+run_id=20261026T194638Z
+java_client=5.5.1
+server=5.3.4
+server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+source_revision=413f735ad0ab41717acb9d76e2cb664b42076f4d
+source_code_dirty=false
+producer_group=compat_phase0
+body=-
+seed=not-applicable
+exit_status=0
+duration_seconds=55

@@ -1,0 +1,4 @@
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic COMPOSE_PROJECT_NAME=rocketmq-classic-p19-route-002-topic-not-exist-20261026t192451z bash integration-tests/setup.sh
+docker compose --project-name rocketmq-classic-p19-route-002-topic-not-exist-20261026t192451z --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t compat_phase0_missing -r 4 -w 4 -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="127.0.0.1:19876 compat_phase0_missing" exec:java@live-route-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- route 127.0.0.1:19876 compat_phase0_missing

@@ -1,0 +1,11 @@
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p11-v03-20261026t201558z bash integration-tests/setup.sh
+docker compose --project-name rocketmq-classic-p19-p11-v03-20261026t201558z --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateTopic -b 127.0.0.1:50911 -t compat_p11_mixed -r 4 -w 4 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p11-v03-20261026t201558z --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateTopic -b 127.0.0.1:50921 -t compat_p11_mixed -r 4 -w 4 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p11-v03-20261026t201558z --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateSubGroup -b 127.0.0.1:50911 -g compat_p11_mixed -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p11-v03-20261026t201558z --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateSubGroup -b 127.0.0.1:50921 -g compat_p11_mixed -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="127.0.0.1:19876 compat_p11_mixed compat_p11_mixed <java-ownership-file> <java-stop-file>" exec:java@live-mixed-group-probe
+target/debug/live_client p11-mixed-group 127.0.0.1:19876 compat_p11_mixed compat_p11_mixed <rust-ownership-file> <rust-stop-file> <rust-exited-file>
+python3 tests/differential/check_mixed_ownership.py java-only compat_p11_mixed <java-ownership-file> <rust-ownership-file> <java-exited-file> 90
+python3 tests/differential/check_mixed_ownership.py joined compat_p11_mixed <java-ownership-file> <rust-ownership-file> <java-exited-file> 90
+python3 tests/differential/check_mixed_ownership.py rust-only compat_p11_mixed <java-ownership-file> <rust-ownership-file> <java-exited-file> 90
+The host-routed two-Broker Compose profile is used because the clients run on the host and need reachable advertised Broker addresses. The ownership checker requires four stable samples within 90 seconds at each membership transition; transient redelivery is allowed while assignments converge.

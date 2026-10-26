@@ -243,7 +243,8 @@ The lifecycle helper is available only when the test harness enables its
 private cfg and is absent from ordinary public builds. Verified TLS now checks
 the CA chain and validity without hostname identification, matching Java's
 client handler construction. Corrected clean-source P3-V04, P6-V04, and
-P16-V02 evidence and the final [full local aggregate](evidence/phase-19/run-local/20261025T225807Z/)
+P16-V02 evidence and the latest [full local aggregate](evidence/phase-19/run-local/20261026T190920Z/)
 are recorded. The aggregate passed all 23 gates at workspace revision
-`c877869bd1f9bfacf288a27593649cca12ed9c5d`, and its reconciliation verified
-all 37 manifest scenarios have clean-source PASS evidence with exit status 0.
+`413f735ad0ab41717acb9d76e2cb664b42076f4d`, and its reconciliation verified
+all 37 manifest scenarios have current clean-source PASS evidence with exit
+status 0.

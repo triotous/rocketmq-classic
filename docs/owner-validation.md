@@ -1,11 +1,12 @@
 # Owner validation handoff
 
 Status date: 2026-10-26. The Phase 19 production code candidate is
-`d3c7d2e845364e40ad72f0540a0a498fc1582247`; the latest evidence and manifest
-commit is `f92b7917`. This document is a handoff, not
-owner approval or release evidence. The owner is the RocketMQ service owner
-plus the relevant network/security/operations owner; names and authorized
-resources have not been supplied.
+`413f735ad0ab41717acb9d76e2cb664b42076f4d`. The current local aggregate and
+manifest refresh are recorded under
+`docs/compatibility/evidence/phase-19/run-local/20261026T190920Z/`. This
+document is a handoff, not owner approval or release evidence. The owner is the
+RocketMQ service owner plus the relevant network/security/operations owner;
+names and authorized resources have not been supplied.
 
 Production writes, credentials, certificate enrollment, fault injection, and
 load tests require owner-provided disposable resources and explicit
@@ -21,7 +22,7 @@ replace the owner-specific network, security, HA, or workload checks below.
 | MAN-02 | BLOCKED | Security owner must provide organization-issued CA/SNI/mTLS material, short-lived test identities, ACL policy, and disposable topic/group names. Production credentials must not be copied here. | Local `P16-V02` passed synthetic ACL and Broker-side mTLS checks on an isolated Apache 5.3.4 profile; `P3-V04` covers the separate TLS-terminating proxy path. Neither establishes the owner issuer, SNI profile, ACL policy, or endpoint behavior. Run the owner-issued profile only after the approved disposable resources are supplied; expected allowed and denied outcomes must match Java 5.5.1. | Revoke test identities, remove only owner-approved disposable ACL/topic/group resources, and archive redacted command/output plus certificate fingerprints (never keys) under `docs/compatibility/evidence/owner/MAN-02/`. |
 | MAN-03 | BLOCKED | Service/operations owner must provide the approved HA topology, maintenance window, fault-injection procedure, and rollback contact. This requires production-specific multi-zone or network-partition behavior. | No executable failover scenario is registered yet. Only after written authorization and a disposable replica of the topology exists, run the future manifest scenario command for the approved failure and recovery sequence. Expected routing, delivery/duplication, offset recovery, and service restoration must be compared with Java 5.5.1. | Restore the topology using the approved rollback procedure. Archive the authorization reference, topology/version, exact scenario command, timestamps, Java/Rust results, recovery measurements, and cleanup confirmation under `docs/compatibility/evidence/owner/MAN-03/`. |
 | MAN-04 | BLOCKED | Service/SRE owner must provide representative message sizes, concurrency, throughput shape, duration, resource quotas, success SLOs, and approved disposable capacity. | The local Broker-backed P7-V04 fixed-seed scenario now passes: Java and Rust each sent 8,192 variable-size messages with at most 32 concurrent sends, matching byte totals/checksums and contiguous offsets under a 120-second bound; both clients returned to zero tracked resources after three additional shutdown cycles. This bounded local case does not establish representative production capacity or SLOs. Run an owner-approved production-like soak only after its workload parameters and disposable capacity are supplied. | Stop load generators, verify owned clients/tasks/sockets have returned to baseline, and remove only approved test resources. Save redacted workload parameters, raw/normalized results, resource telemetry, command, revision, and cleanup evidence under `docs/compatibility/evidence/owner/MAN-04/`. |
-| MAN-05 | N/A | The source-backed client feature/API audit and Phase 19 local matrix are complete. No additional feature-specific scenario requires an owner-only service. MAN-01 through MAN-04 separately track owner-network, security, HA, and workload validation. | The pinned Java 5.5.1 source/API matrices and all 37 Phase 19 local scenarios were reviewed. The final `run-local.sh --all` replay passed all 23 gates; reconciliation verified all 37 scenarios have clean-source PASS evidence and exit status 0. Corrected P3-V04, P6-V04, and P16-V02 evidence is recorded. | Audit: [MAN-05 current-tree evidence](compatibility/evidence/owner/MAN-05/current-tree-audit-20261025.md); [final aggregate evidence](compatibility/evidence/phase-19/run-local/20261025T225807Z/). This N/A is limited to unrepresented feature-specific validation and is not owner production approval. |
+| MAN-05 | N/A | The source-backed client feature/API audit and current Phase 19 local matrix are complete. No additional feature-specific scenario requires an owner-only service. MAN-01 through MAN-04 separately track owner-network, security, HA, and workload validation. | The pinned Java 5.5.1 source/API matrices and all 37 Phase 19 local scenarios were reviewed. The `run-local.sh --all` replay on `413f735a` passed all 23 gates; reconciliation verified all 37 scenarios have current clean-source PASS evidence and exit status 0. | Audit: [MAN-05 current-tree evidence](compatibility/evidence/owner/MAN-05/current-tree-audit-20261026.md); [current aggregate evidence](compatibility/evidence/phase-19/run-local/20261026T190920Z/). This N/A is limited to unrepresented feature-specific validation and is not owner production approval. |
 
 ## MAN-01 route commands
 
@@ -52,8 +53,10 @@ authorized HA fault topology, and representative workload/SLO capacity.
 
 MAN-05 is N/A because the source-backed feature audit found no additional
 feature-specific behavior that needs an owner-only service, and all 37
-registered local scenarios have passing evidence. The full local aggregate
-passed all 23 gates, with all 37 scenarios reconciled to clean-source PASS
-evidence and exit status 0. The evidence is
-[docs/compatibility/evidence/owner/MAN-05/current-tree-audit-20261025.md](compatibility/evidence/owner/MAN-05/current-tree-audit-20261025.md).
-This does not approve production use or substitute for MAN-01 through MAN-04.
+registered local scenarios have passing evidence. The current local aggregate on `413f735a` passed all 23 gates, with all 37
+scenarios reconciled to current clean-source PASS evidence and exit status 0.
+The current-tree audit is
+[docs/compatibility/evidence/owner/MAN-05/current-tree-audit-20261026.md](compatibility/evidence/owner/MAN-05/current-tree-audit-20261026.md).
+Remote CI run `40383732405` did not start any job steps because GitHub reports
+an account payment/spending-limit block. This does not approve production use
+or substitute for MAN-01 through MAN-04.
