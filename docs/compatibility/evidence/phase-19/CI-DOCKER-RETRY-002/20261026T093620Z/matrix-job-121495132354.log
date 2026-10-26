@@ -1,0 +1,987 @@
+﻿2026-10-26T09:29:40.5685477Z Current runner version: '2.338.0'
+2026-10-26T09:29:40.5721196Z ##[group]Runner Image Provisioner
+2026-10-26T09:29:40.5722650Z Hosted Compute Agent
+2026-10-26T09:29:40.5723669Z Version: 20261021.618
+2026-10-26T09:29:40.5724687Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+2026-10-26T09:29:40.5726057Z Build Date: 2026-10-21T00:45:21Z
+2026-10-26T09:29:40.5727144Z Worker ID: {3a5f6978-9b88-4442-b311-156618418419}
+2026-10-26T09:29:40.5728433Z Region: eastus
+2026-10-26T09:29:40.5729445Z Cloud: Azure
+2026-10-26T09:29:40.5730668Z ##[endgroup]
+2026-10-26T09:29:40.5733224Z ##[group]Operating System
+2026-10-26T09:29:40.5734231Z Ubuntu
+2026-10-26T09:29:40.5735661Z 24.04.5
+2026-10-26T09:29:40.5736596Z LTS
+2026-10-26T09:29:40.5737422Z ##[endgroup]
+2026-10-26T09:29:40.5738386Z ##[group]Runner Image
+2026-10-26T09:29:40.5739371Z Image: ubuntu-24.04
+2026-10-26T09:29:40.5740781Z Version: 20261012.334.1
+2026-10-26T09:29:40.5743032Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261012.334/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-26T09:29:40.5745911Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261012.334
+2026-10-26T09:29:40.5747603Z ##[endgroup]
+2026-10-26T09:29:40.5750115Z ##[group]GITHUB_TOKEN Permissions
+2026-10-26T09:29:40.5753113Z Contents: read
+2026-10-26T09:29:40.5754135Z Metadata: read
+2026-10-26T09:29:40.5755039Z Packages: read
+2026-10-26T09:29:40.5756063Z ##[endgroup]
+2026-10-26T09:29:40.5759233Z Secret source: Actions
+2026-10-26T09:29:40.5761044Z Cache mode: write
+2026-10-26T09:29:40.5762467Z Prepare workflow directory
+2026-10-26T09:29:40.6330216Z Prepare all required actions
+2026-10-26T09:29:40.6402109Z Getting action download info
+2026-10-26T09:29:40.8566145Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-10-26T09:29:41.0256418Z Download action repository 'dtolnay/rust-toolchain@master' (SHA:683b588c487a69d01f6c6ddf40f036ff682cc2c8)
+2026-10-26T09:29:41.1232456Z Download action repository 'actions/setup-java@v4' (SHA:cf277c60eb25467037889841efdb72551f06f6c3)
+2026-10-26T09:29:41.4950872Z Complete job name: Required Docker local Phase 19 matrix
+2026-10-26T09:29:41.5823920Z ##[group]Run actions/checkout@v4
+2026-10-26T09:29:41.5824844Z with:
+2026-10-26T09:29:41.5825549Z   repository: triotous/rocketmq-classic
+2026-10-26T09:29:41.5829799Z   token: ***
+2026-10-26T09:29:41.5830270Z   ssh-strict: true
+2026-10-26T09:29:41.5830729Z   ssh-user: git
+2026-10-26T09:29:41.5831339Z   persist-credentials: true
+2026-10-26T09:29:41.5831947Z   clean: true
+2026-10-26T09:29:41.5832402Z   sparse-checkout-cone-mode: true
+2026-10-26T09:29:41.5832915Z   fetch-depth: 1
+2026-10-26T09:29:41.5833335Z   fetch-tags: false
+2026-10-26T09:29:41.5833772Z   show-progress: true
+2026-10-26T09:29:41.5834212Z   lfs: false
+2026-10-26T09:29:41.5834616Z   submodules: false
+2026-10-26T09:29:41.5835058Z   set-safe-directory: true
+2026-10-26T09:29:41.5835551Z   allow-unsafe-pr-checkout: false
+2026-10-26T09:29:41.5836405Z env:
+2026-10-26T09:29:41.5836858Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:41.5837361Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:41.5837850Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:41.5838326Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:41.5838764Z ##[endgroup]
+2026-10-26T09:29:41.7098222Z Syncing repository: triotous/rocketmq-classic
+2026-10-26T09:29:41.7107402Z ##[group]Getting Git version info
+2026-10-26T09:29:41.7112065Z Working directory is '/home/runner/work/rocketmq-classic/rocketmq-classic'
+2026-10-26T09:29:41.7120404Z [command]/usr/bin/git version
+2026-10-26T09:29:41.7275001Z git version 2.55.0
+2026-10-26T09:29:41.7290515Z ##[endgroup]
+2026-10-26T09:29:41.7299062Z Temporarily overriding HOME='/home/runner/work/_temp/016d4d52-bd1d-4f99-bf68-ad858b004a02' before making global git config changes
+2026-10-26T09:29:41.7301807Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-26T09:29:41.7304060Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/rocketmq-classic/rocketmq-classic
+2026-10-26T09:29:41.7434130Z Deleting the contents of '/home/runner/work/rocketmq-classic/rocketmq-classic'
+2026-10-26T09:29:41.7436177Z ##[group]Initializing the repository
+2026-10-26T09:29:41.7440513Z [command]/usr/bin/git init /home/runner/work/rocketmq-classic/rocketmq-classic
+2026-10-26T09:29:41.7583218Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-26T09:29:41.7611046Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-26T09:29:41.7621451Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-26T09:29:41.7622644Z hint: call:
+2026-10-26T09:29:41.7631144Z hint:
+2026-10-26T09:29:41.7632465Z hint: 	git config --global init.defaultBranch <name>
+2026-10-26T09:29:41.7634480Z hint:
+2026-10-26T09:29:41.7635643Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-26T09:29:41.7637648Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-26T09:29:41.7639004Z hint:
+2026-10-26T09:29:41.7640015Z hint: 	git branch -m <name>
+2026-10-26T09:29:41.7640855Z hint:
+2026-10-26T09:29:41.7642013Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-26T09:29:41.7759490Z Initialized empty Git repository in /home/runner/work/rocketmq-classic/rocketmq-classic/.git/
+2026-10-26T09:29:41.7790393Z [command]/usr/bin/git remote add origin https://github.com/triotous/rocketmq-classic
+2026-10-26T09:29:41.7795775Z ##[endgroup]
+2026-10-26T09:29:41.7797320Z ##[group]Disabling automatic garbage collection
+2026-10-26T09:29:41.7798994Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-26T09:29:41.7802815Z ##[endgroup]
+2026-10-26T09:29:41.7804482Z ##[group]Setting up auth
+2026-10-26T09:29:41.7805892Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-26T09:29:41.7852020Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-26T09:29:41.8338433Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-26T09:29:41.8380595Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-26T09:29:41.8628156Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-26T09:29:41.8670112Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-26T09:29:41.8917652Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-26T09:29:41.8991703Z ##[endgroup]
+2026-10-26T09:29:41.8993955Z ##[group]Fetching the repository
+2026-10-26T09:29:41.9004494Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +c24044f5376f2860121a95af032406ace41c1ab5:refs/remotes/origin/phase/19-docker-local-validation
+2026-10-26T09:29:43.2288858Z From https://github.com/triotous/rocketmq-classic
+2026-10-26T09:29:43.2292193Z  * [new ref]         c24044f5376f2860121a95af032406ace41c1ab5 -> origin/phase/19-docker-local-validation
+2026-10-26T09:29:43.2295856Z ##[endgroup]
+2026-10-26T09:29:43.2297052Z ##[group]Determining the checkout info
+2026-10-26T09:29:43.2298354Z ##[endgroup]
+2026-10-26T09:29:43.2302287Z [command]/usr/bin/git sparse-checkout disable
+2026-10-26T09:29:43.2367865Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-26T09:29:43.2408883Z ##[group]Checking out the ref
+2026-10-26T09:29:43.2414771Z [command]/usr/bin/git checkout --progress --force -B phase/19-docker-local-validation refs/remotes/origin/phase/19-docker-local-validation
+2026-10-26T09:29:43.7205780Z Switched to a new branch 'phase/19-docker-local-validation'
+2026-10-26T09:29:43.7212055Z branch 'phase/19-docker-local-validation' set up to track 'origin/phase/19-docker-local-validation'.
+2026-10-26T09:29:43.7236619Z ##[endgroup]
+2026-10-26T09:29:43.7287490Z [command]/usr/bin/git log -1 --format=%H
+2026-10-26T09:29:43.7317638Z c24044f5376f2860121a95af032406ace41c1ab5
+2026-10-26T09:29:43.7790421Z ##[group]Run dtolnay/rust-toolchain@master
+2026-10-26T09:29:43.7790863Z with:
+2026-10-26T09:29:43.7791107Z   toolchain: 1.85.0
+2026-10-26T09:29:43.7791374Z   components: rustfmt, clippy
+2026-10-26T09:29:43.7791657Z env:
+2026-10-26T09:29:43.7791897Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:43.7792190Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:43.7792474Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:43.7792734Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:43.7793004Z ##[endgroup]
+2026-10-26T09:29:43.7861701Z ##[start-action display=Parse toolchain version;id=__dtolnay_rust-toolchain.parse]
+2026-10-26T09:29:43.7920479Z ##[group]Run if [[ -z $toolchain ]]; then
+2026-10-26T09:29:43.7920998Z [36;1mif [[ -z $toolchain ]]; then[0m
+2026-10-26T09:29:43.7921589Z [36;1m  # GitHub does not enforce `required: true` inputs itself. https://github.com/actions/runner/issues/1070[0m
+2026-10-26T09:29:43.7922207Z [36;1m  echo "'toolchain' is a required input" >&2[0m
+2026-10-26T09:29:43.7922621Z [36;1m  exit 1[0m
+2026-10-26T09:29:43.7923032Z [36;1melif [[ $toolchain =~ ^stable' '[0-9]+' '(year|month|week|day)s?' 'ago$ ]]; then[0m
+2026-10-26T09:29:43.7923492Z [36;1m  if [[ Linux == macOS ]]; then[0m
+2026-10-26T09:29:43.7924069Z [36;1m    echo "toolchain=1.$((($(date -v-$(sed 's/stable \([0-9]*\) \(.\).*/\1\2/' <<< $toolchain) +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT[0m
+2026-10-26T09:29:43.7924627Z [36;1m  else[0m
+2026-10-26T09:29:43.7925100Z [36;1m    echo "toolchain=1.$((($(date --date "${toolchain#stable }" +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT[0m
+2026-10-26T09:29:43.7925623Z [36;1m  fi[0m
+2026-10-26T09:29:43.7925974Z [36;1melif [[ $toolchain =~ ^stable' 'minus' '[0-9]+' 'releases?$ ]]; then[0m
+2026-10-26T09:29:43.7926570Z [36;1m  echo "toolchain=1.$((($(date +%s)/60/60/24-16569)/7/6-${toolchain//[^0-9]/}))" >> $GITHUB_OUTPUT[0m
+2026-10-26T09:29:43.7927082Z [36;1melif [[ $toolchain =~ ^1\.[0-9]+$ ]]; then[0m
+2026-10-26T09:29:43.7927658Z [36;1m  echo "toolchain=1.$((i=${toolchain#1.}, c=($(date +%s)/60/60/24-16569)/7/6, i+9*i*(10*i<=c)+90*i*(100*i<=c)))" >> $GITHUB_OUTPUT[0m
+2026-10-26T09:29:43.7928207Z [36;1melse[0m
+2026-10-26T09:29:43.7928459Z [36;1m  delimiter=EOF[0m
+2026-10-26T09:29:43.7928811Z [36;1m  while [[ $toolchain == *$delimiter* ]]; do delimiter+=_; done[0m
+2026-10-26T09:29:43.7929359Z [36;1m  printf 'toolchain<<%s\n%s\n%s\n' "$delimiter" "$toolchain" "$delimiter" >> $GITHUB_OUTPUT[0m
+2026-10-26T09:29:43.7930323Z [36;1mfi[0m
+2026-10-26T09:29:43.8227668Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-26T09:29:43.8228198Z env:
+2026-10-26T09:29:43.8228507Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:43.8228881Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:43.8229270Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:43.8229825Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:43.8230167Z   toolchain: 1.85.0
+2026-10-26T09:29:43.8230482Z ##[endgroup]
+2026-10-26T09:29:43.8393412Z ##[end-action id=__dtolnay_rust-toolchain.parse;outcome=success;conclusion=success;duration_ms=53]
+2026-10-26T09:29:43.8398232Z ##[start-action display=Set $CARGO_HOME;id=__dtolnay_rust-toolchain.__run]
+2026-10-26T09:29:43.8436418Z ##[group]Run echo CARGO_HOME=${CARGO_HOME:-"$HOME/.cargo"} >> $GITHUB_ENV
+2026-10-26T09:29:43.8436979Z [36;1mecho CARGO_HOME=${CARGO_HOME:-"$HOME/.cargo"} >> $GITHUB_ENV[0m
+2026-10-26T09:29:43.8501342Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-26T09:29:43.8501751Z env:
+2026-10-26T09:29:43.8502006Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:43.8502309Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:43.8502589Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:43.8502846Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:43.8503092Z ##[endgroup]
+2026-10-26T09:29:43.8601142Z ##[end-action id=__dtolnay_rust-toolchain.__run;outcome=success;conclusion=success;duration_ms=20]
+2026-10-26T09:29:43.8603803Z ##[start-action display=Install rustup if needed;id=__dtolnay_rust-toolchain.__run_2]
+2026-10-26T09:29:43.8633120Z ##[group]Run if ! command -v rustup &>/dev/null; then
+2026-10-26T09:29:43.8633568Z [36;1mif ! command -v rustup &>/dev/null; then[0m
+2026-10-26T09:29:43.8634380Z [36;1m  curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused --location --silent --show-error --fail https://sh.rustup.rs | sh -s -- --default-toolchain none -y[0m
+2026-10-26T09:29:43.8635161Z [36;1m  echo "$CARGO_HOME/bin" >> $GITHUB_PATH[0m
+2026-10-26T09:29:43.8635485Z [36;1mfi[0m
+2026-10-26T09:29:43.8698510Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-26T09:29:43.8698901Z env:
+2026-10-26T09:29:43.8699142Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:43.8699772Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:43.8700202Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:43.8700507Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:43.8700784Z   CARGO_HOME: /home/runner/.cargo
+2026-10-26T09:29:43.8701077Z ##[endgroup]
+2026-10-26T09:29:43.8794149Z ##[end-action id=__dtolnay_rust-toolchain.__run_2;outcome=success;conclusion=success;duration_ms=18]
+2026-10-26T09:29:43.8796739Z ##[start-action display=Install rustup if needed on windows;id=__dtolnay_rust-toolchain.__run_3]
+2026-10-26T09:29:43.8804739Z ##[end-action id=__dtolnay_rust-toolchain.__run_3;outcome=skipped;conclusion=skipped;duration_ms=0]
+2026-10-26T09:29:43.8820489Z ##[start-action display=rustup toolchain install 1.85.0;id=__dtolnay_rust-toolchain.__run_4]
+2026-10-26T09:29:43.8841963Z ##[group]Run set -f  # split targets and components on commas and whitespace, without glob expansion
+2026-10-26T09:29:43.8842677Z [36;1mset -f  # split targets and components on commas and whitespace, without glob expansion[0m
+2026-10-26T09:29:43.8843156Z [36;1mflags=()[0m
+2026-10-26T09:29:43.8843479Z [36;1mfor t in ${targets//,/ }; do flags+=(--target "$t"); done[0m
+2026-10-26T09:29:43.8843946Z [36;1mfor c in ${components//,/ }; do flags+=(--component "$c"); done[0m
+2026-10-26T09:29:43.8844488Z [36;1mif [[ $toolchain == nightly && -n $components ]]; then flags+=(--allow-downgrade); fi[0m
+2026-10-26T09:29:43.8844975Z [36;1mlog=$(mktemp)[0m
+2026-10-26T09:29:43.8845247Z [36;1mtrap 'rm -f "$log"' EXIT[0m
+2026-10-26T09:29:43.8845549Z [36;1mfor attempt in 1 2 3 4 5; do[0m
+2026-10-26T09:29:43.8846168Z [36;1m  if rustup toolchain install "$toolchain" "${flags[@]}" --profile minimal --no-self-update --force-non-host 2>&1 | tee "$log"; then[0m
+2026-10-26T09:29:43.8846776Z [36;1m    break[0m
+2026-10-26T09:29:43.8847012Z [36;1m  else[0m
+2026-10-26T09:29:43.8847254Z [36;1m    status=$?[0m
+2026-10-26T09:29:43.8847505Z [36;1m  fi[0m
+2026-10-26T09:29:43.8847851Z [36;1m  if [[ $attempt == 5 ]] || ! grep -Fq 'checksum failed for ' "$log" \[0m
+2026-10-26T09:29:43.8848475Z [36;1m      || ! grep -Fq 'this is likely due to an ongoing update of the official release server' "$log"; then[0m
+2026-10-26T09:29:43.8848998Z [36;1m    exit "$status"[0m
+2026-10-26T09:29:43.8849268Z [36;1m  fi[0m
+2026-10-26T09:29:43.8849934Z [36;1m  echo "Retrying rustup toolchain install in 30 seconds (retry $attempt of 4)" >&2[0m
+2026-10-26T09:29:43.8850427Z [36;1m  sleep 30[0m
+2026-10-26T09:29:43.8850673Z [36;1mdone[0m
+2026-10-26T09:29:43.8913517Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-26T09:29:43.8913909Z env:
+2026-10-26T09:29:43.8914155Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:43.8914446Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:43.8914726Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:43.8914986Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:43.8915251Z   CARGO_HOME: /home/runner/.cargo
+2026-10-26T09:29:43.8915541Z   toolchain: 1.85.0
+2026-10-26T09:29:43.8915781Z   targets: 
+2026-10-26T09:29:43.8916020Z   components: rustfmt, clippy
+2026-10-26T09:29:43.8916323Z   RUSTUP_PERMIT_COPY_RENAME: 1
+2026-10-26T09:29:43.8916798Z ##[endgroup]
+2026-10-26T09:29:43.9614653Z info: syncing channel updates for 1.85.0-x86_64-unknown-linux-gnu
+2026-10-26T09:29:44.0961475Z info: latest update on 2025-02-20 for version 1.85.0 (4d91de4e4 2025-02-17)
+2026-10-26T09:29:44.0962999Z info: downloading 5 components
+2026-10-26T09:29:51.7397460Z 
+2026-10-26T09:29:51.7479911Z   1.85.0-x86_64-unknown-linux-gnu installed - rustc 1.85.0 (4d91de4e4 2025-02-17)
+2026-10-26T09:29:51.7480581Z 
+2026-10-26T09:29:51.7546673Z ##[end-action id=__dtolnay_rust-toolchain.__run_4;outcome=success;conclusion=success;duration_ms=7872]
+2026-10-26T09:29:51.7556211Z ##[start-action display=rustup default 1.85.0;id=__dtolnay_rust-toolchain.__run_5]
+2026-10-26T09:29:51.7582543Z ##[group]Run rustup default "$toolchain" --force-non-host
+2026-10-26T09:29:51.7582979Z [36;1mrustup default "$toolchain" --force-non-host[0m
+2026-10-26T09:29:51.7648119Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-26T09:29:51.7648509Z env:
+2026-10-26T09:29:51.7648749Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:51.7649026Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:51.7649296Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:51.7649716Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:51.7649985Z   CARGO_HOME: /home/runner/.cargo
+2026-10-26T09:29:51.7650280Z   toolchain: 1.85.0
+2026-10-26T09:29:51.7650546Z ##[endgroup]
+2026-10-26T09:29:51.7779241Z info: using existing install for 1.85.0-x86_64-unknown-linux-gnu
+2026-10-26T09:29:51.7788156Z info: default toolchain set to 1.85.0-x86_64-unknown-linux-gnu
+2026-10-26T09:29:51.7788658Z 
+2026-10-26T09:29:51.7860651Z   1.85.0-x86_64-unknown-linux-gnu unchanged - rustc 1.85.0 (4d91de4e4 2025-02-17)
+2026-10-26T09:29:51.7862342Z info: note that the toolchain '1.85.0-x86_64-unknown-linux-gnu' is currently in use (overridden by '/home/runner/work/rocketmq-classic/rocketmq-classic/rust-toolchain.toml')
+2026-10-26T09:29:51.7869377Z 
+2026-10-26T09:29:51.7881768Z ##[end-action id=__dtolnay_rust-toolchain.__run_5;outcome=success;conclusion=success;duration_ms=32]
+2026-10-26T09:29:51.7885966Z ##[start-action display=Create cachekey;id=__dtolnay_rust-toolchain.rustc-version]
+2026-10-26T09:29:51.7908674Z ##[group]Run DATE=$(rustc +"$toolchain" --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')
+2026-10-26T09:29:51.7909879Z [36;1mDATE=$(rustc +"$toolchain" --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')[0m
+2026-10-26T09:29:51.7910684Z [36;1mHASH=$(rustc +"$toolchain" --version --verbose | sed -ne 's/^commit-hash: //p')[0m
+2026-10-26T09:29:51.7911254Z [36;1mecho "cachekey=$(echo $DATE$HASH | head -c12)" >> $GITHUB_OUTPUT[0m
+2026-10-26T09:29:51.7977037Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-26T09:29:51.7977458Z env:
+2026-10-26T09:29:51.7977698Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:51.7977978Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:51.7978249Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:51.7978493Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:51.7978788Z   CARGO_HOME: /home/runner/.cargo
+2026-10-26T09:29:51.7979083Z   toolchain: 1.85.0
+2026-10-26T09:29:51.7979311Z ##[endgroup]
+2026-10-26T09:29:51.8344541Z ##[end-action id=__dtolnay_rust-toolchain.rustc-version;outcome=success;conclusion=success;duration_ms=45]
+2026-10-26T09:29:51.8347412Z ##[start-action display=Disable incremental compilation;id=__dtolnay_rust-toolchain.__run_6]
+2026-10-26T09:29:51.8394460Z ##[group]Run if [ -z "${CARGO_INCREMENTAL+set}" ]; then
+2026-10-26T09:29:51.8394879Z [36;1mif [ -z "${CARGO_INCREMENTAL+set}" ]; then[0m
+2026-10-26T09:29:51.8395238Z [36;1m  echo CARGO_INCREMENTAL=0 >> $GITHUB_ENV[0m
+2026-10-26T09:29:51.8395517Z [36;1mfi[0m
+2026-10-26T09:29:51.8464292Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-26T09:29:51.8464691Z env:
+2026-10-26T09:29:51.8464916Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:51.8465198Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:51.8465466Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:51.8465903Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:51.8466153Z   CARGO_HOME: /home/runner/.cargo
+2026-10-26T09:29:51.8466431Z ##[endgroup]
+2026-10-26T09:29:51.8563448Z ##[end-action id=__dtolnay_rust-toolchain.__run_6;outcome=success;conclusion=success;duration_ms=21]
+2026-10-26T09:29:51.8565985Z ##[start-action display=Enable colors in Cargo output;id=__dtolnay_rust-toolchain.__run_7]
+2026-10-26T09:29:51.8587047Z ##[group]Run if [ -z "${CARGO_TERM_COLOR+set}" ]; then
+2026-10-26T09:29:51.8587436Z [36;1mif [ -z "${CARGO_TERM_COLOR+set}" ]; then[0m
+2026-10-26T09:29:51.8587769Z [36;1m  echo CARGO_TERM_COLOR=always >> $GITHUB_ENV[0m
+2026-10-26T09:29:51.8588062Z [36;1mfi[0m
+2026-10-26T09:29:51.8653313Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-26T09:29:51.8653660Z env:
+2026-10-26T09:29:51.8653864Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:51.8654118Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:51.8654365Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:51.8654599Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:51.8654868Z   CARGO_HOME: /home/runner/.cargo
+2026-10-26T09:29:51.8655119Z ##[endgroup]
+2026-10-26T09:29:51.8748293Z ##[end-action id=__dtolnay_rust-toolchain.__run_7;outcome=success;conclusion=success;duration_ms=18]
+2026-10-26T09:29:51.8752686Z ##[start-action display=Enable Cargo sparse registry;id=__dtolnay_rust-toolchain.__run_8]
+2026-10-26T09:29:51.8774995Z ##[group]Run # implemented in 1.66, stabilized in 1.68, made default in 1.70
+2026-10-26T09:29:51.8775537Z [36;1m# implemented in 1.66, stabilized in 1.68, made default in 1.70[0m
+2026-10-26T09:29:51.8776269Z [36;1mif [ -z "${CARGO_REGISTRIES_CRATES_IO_PROTOCOL+set}" -o -f "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol ]; then[0m
+2026-10-26T09:29:51.8777036Z [36;1m  if rustc +"$toolchain" --version --verbose | grep -q '^release: 1\.6[89]\.'; then[0m
+2026-10-26T09:29:51.8777650Z [36;1m    touch "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol || true[0m
+2026-10-26T09:29:51.8778228Z [36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse >> $GITHUB_ENV[0m
+2026-10-26T09:29:51.8778752Z [36;1m  elif rustc +"$toolchain" --version --verbose | grep -q '^release: 1\.6[67]\.'; then[0m
+2026-10-26T09:29:51.8779349Z [36;1m    touch "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol || true[0m
+2026-10-26T09:29:51.8780336Z [36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=git >> $GITHUB_ENV[0m
+2026-10-26T09:29:51.8780699Z [36;1m  fi[0m
+2026-10-26T09:29:51.8780897Z [36;1mfi[0m
+2026-10-26T09:29:51.8842764Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-26T09:29:51.8843120Z env:
+2026-10-26T09:29:51.8843331Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:51.8843587Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:51.8843824Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:51.8844037Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:51.8844269Z   CARGO_HOME: /home/runner/.cargo
+2026-10-26T09:29:51.8844529Z   CARGO_TERM_COLOR: always
+2026-10-26T09:29:51.8844758Z   toolchain: 1.85.0
+2026-10-26T09:29:51.8844972Z ##[endgroup]
+2026-10-26T09:29:51.9180545Z ##[end-action id=__dtolnay_rust-toolchain.__run_8;outcome=success;conclusion=success;duration_ms=42]
+2026-10-26T09:29:51.9184908Z ##[start-action display=Work around spurious network errors in curl 8.0;id=__dtolnay_rust-toolchain.__run_9]
+2026-10-26T09:29:51.9206429Z ##[group]Run # https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation
+2026-10-26T09:29:51.9207209Z [36;1m# https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation[0m
+2026-10-26T09:29:51.9207848Z [36;1mif rustc +"$toolchain" --version --verbose | grep -q '^release: 1\.7[01]\.'; then[0m
+2026-10-26T09:29:51.9208335Z [36;1m  echo CARGO_HTTP_MULTIPLEXING=false >> $GITHUB_ENV[0m
+2026-10-26T09:29:51.9208652Z [36;1mfi[0m
+2026-10-26T09:29:51.9277047Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-26T09:29:51.9277408Z env:
+2026-10-26T09:29:51.9277612Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:51.9278057Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:51.9278300Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:51.9278554Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:51.9278774Z   CARGO_HOME: /home/runner/.cargo
+2026-10-26T09:29:51.9279028Z   CARGO_TERM_COLOR: always
+2026-10-26T09:29:51.9279396Z   toolchain: 1.85.0
+2026-10-26T09:29:51.9279768Z ##[endgroup]
+2026-10-26T09:29:51.9495298Z ##[end-action id=__dtolnay_rust-toolchain.__run_9;outcome=success;conclusion=success;duration_ms=30]
+2026-10-26T09:29:51.9501095Z ##[start-action display=rustc +1.85.0 --version --verbose;id=__dtolnay_rust-toolchain.__run_10]
+2026-10-26T09:29:51.9521899Z ##[group]Run rustc +"$toolchain" --version --verbose
+2026-10-26T09:29:51.9522288Z [36;1mrustc +"$toolchain" --version --verbose[0m
+2026-10-26T09:29:51.9589283Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-26T09:29:51.9589983Z env:
+2026-10-26T09:29:51.9590206Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:51.9590472Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:51.9590748Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:51.9590967Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:51.9591194Z   CARGO_HOME: /home/runner/.cargo
+2026-10-26T09:29:51.9591474Z   CARGO_TERM_COLOR: always
+2026-10-26T09:29:51.9591705Z   toolchain: 1.85.0
+2026-10-26T09:29:51.9591925Z ##[endgroup]
+2026-10-26T09:29:51.9790813Z rustc 1.85.0 (4d91de4e4 2025-02-17)
+2026-10-26T09:29:51.9797796Z binary: rustc
+2026-10-26T09:29:51.9800924Z commit-hash: 4d91de4e48198da2e33413efdcd9cd2cc0c46688
+2026-10-26T09:29:51.9801511Z commit-date: 2025-02-17
+2026-10-26T09:29:51.9801817Z host: x86_64-unknown-linux-gnu
+2026-10-26T09:29:51.9802086Z release: 1.85.0
+2026-10-26T09:29:51.9802658Z LLVM version: 19.1.7
+2026-10-26T09:29:51.9810826Z ##[end-action id=__dtolnay_rust-toolchain.__run_10;outcome=success;conclusion=success;duration_ms=30]
+2026-10-26T09:29:51.9947507Z ##[group]Run actions/setup-java@v4
+2026-10-26T09:29:51.9947813Z with:
+2026-10-26T09:29:51.9948015Z   distribution: temurin
+2026-10-26T09:29:51.9948273Z   java-version: 27
+2026-10-26T09:29:51.9948489Z   cache: maven
+2026-10-26T09:29:51.9948751Z   cache-dependency-path: compat/java-reference/pom.xml
+2026-10-26T09:29:51.9949075Z   java-package: jdk
+2026-10-26T09:29:51.9949293Z   check-latest: false
+2026-10-26T09:29:51.9949509Z   server-id: github
+2026-10-26T09:29:51.9949924Z   server-username: GITHUB_ACTOR
+2026-10-26T09:29:51.9950184Z   server-password: GITHUB_TOKEN
+2026-10-26T09:29:51.9950435Z   overwrite-settings: true
+2026-10-26T09:29:51.9950669Z   job-status: success
+2026-10-26T09:29:51.9953379Z   token: ***
+2026-10-26T09:29:51.9953582Z env:
+2026-10-26T09:29:51.9953781Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:51.9954038Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:51.9954285Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:51.9954504Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:51.9954760Z   CARGO_HOME: /home/runner/.cargo
+2026-10-26T09:29:51.9955016Z   CARGO_TERM_COLOR: always
+2026-10-26T09:29:51.9955244Z ##[endgroup]
+2026-10-26T09:29:52.1938766Z ##[warning]setup-java v4 is deprecated and will no longer receive updates. Please migrate to actions/setup-java@v5.
+2026-10-26T09:29:52.1951596Z ##[group]Installed distributions
+2026-10-26T09:29:52.1997639Z Trying to resolve the latest version from remote
+2026-10-26T09:29:52.2110141Z (node:2127) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-26T09:29:52.2111947Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-26T09:29:52.4139271Z Resolved latest version as 27.0.1+0
+2026-10-26T09:29:52.4154255Z Trying to download...
+2026-10-26T09:29:52.4162349Z Downloading Java 27.0.1+0 (Temurin-Hotspot) from https://github.com/adoptium/temurin27-binaries/releases/download/jdk-27.0.1.0.2%2B1/OpenJDK27U-jdk_x64_linux_hotspot_27.0.1.0.2_1.tar.gz ...
+2026-10-26T09:29:53.4630947Z Extracting Java archive...
+2026-10-26T09:29:53.5038015Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/19349874-3874-46f4-95b6-6f15f714423b -f /home/runner/work/_temp/459937e2-e525-4cb2-867a-47be5f59a283
+2026-10-26T09:29:57.0116984Z Java 27.0.1+0 was downloaded
+2026-10-26T09:29:57.0117911Z Setting Java 27.0.1+0 as the default
+2026-10-26T09:29:57.0130432Z Creating toolchains.xml for JDK version 27 from temurin
+2026-10-26T09:29:57.0232101Z Writing to /home/runner/.m2/toolchains.xml
+2026-10-26T09:29:57.0232963Z 
+2026-10-26T09:29:57.0233674Z Java configuration:
+2026-10-26T09:29:57.0234346Z   Distribution: temurin
+2026-10-26T09:29:57.0235055Z   Version: 27.0.1+0
+2026-10-26T09:29:57.0235930Z   Path: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+2026-10-26T09:29:57.0236699Z 
+2026-10-26T09:29:57.0237520Z ##[endgroup]
+2026-10-26T09:29:57.0255063Z Creating settings.xml with server-id: github
+2026-10-26T09:29:57.0265802Z Writing to /home/runner/.m2/settings.xml
+2026-10-26T09:29:57.7444852Z Cache hit for: setup-java-Linux-x64-maven-3d3cb87b79dab5a5ce18e0a7e9347354c4626d1df60eac6073ff90fe9cf6917f
+2026-10-26T09:29:57.7576715Z (node:2127) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-26T09:29:58.4721609Z Received 117776349 of 117776349 (100.0%), 168.1 MBs/sec
+2026-10-26T09:29:58.4730436Z Cache Size: ~112 MB (117776349 B)
+2026-10-26T09:29:58.4781260Z [command]/usr/bin/tar -xf /home/runner/work/_temp/7bae3584-3dd9-4426-ba3a-0c938363dc5d/cache.tzst -P -C /home/runner/work/rocketmq-classic/rocketmq-classic --use-compress-program unzstd
+2026-10-26T09:29:58.7850733Z Cache restored successfully
+2026-10-26T09:29:58.7931150Z Cache restored from key: setup-java-Linux-x64-maven-3d3cb87b79dab5a5ce18e0a7e9347354c4626d1df60eac6073ff90fe9cf6917f
+2026-10-26T09:29:58.9529351Z ##[group]Run cargo fetch --locked
+2026-10-26T09:29:58.9530043Z [36;1mcargo fetch --locked[0m
+2026-10-26T09:29:58.9595275Z shell: /usr/bin/bash -e {0}
+2026-10-26T09:29:58.9595569Z env:
+2026-10-26T09:29:58.9595820Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:29:58.9596151Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:29:58.9596830Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:29:58.9597222Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:29:58.9597637Z   CARGO_HOME: /home/runner/.cargo
+2026-10-26T09:29:58.9598051Z   CARGO_TERM_COLOR: always
+2026-10-26T09:29:58.9598588Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+2026-10-26T09:29:58.9599397Z   JAVA_HOME_27_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+2026-10-26T09:29:58.9600340Z ##[endgroup]
+2026-10-26T09:29:59.3101029Z [1m[32m    Updating[0m crates.io index
+2026-10-26T09:29:59.7449256Z [1m[32m Downloading[0m crates ...
+2026-10-26T09:29:59.8028430Z [1m[32m  Downloaded[0m futures-core v0.3.34
+2026-10-26T09:29:59.8070966Z [1m[32m  Downloaded[0m proc-macro2 v1.0.107
+2026-10-26T09:29:59.8116180Z [1m[32m  Downloaded[0m atomic-waker v1.1.2
+2026-10-26T09:29:59.8142092Z [1m[32m  Downloaded[0m hostname v0.4.2
+2026-10-26T09:29:59.8174760Z [1m[32m  Downloaded[0m zerofrom-derive v0.1.8
+2026-10-26T09:29:59.8197861Z [1m[32m  Downloaded[0m mach2 v0.7.0
+2026-10-26T09:29:59.8260933Z [1m[32m  Downloaded[0m hmac v0.12.1
+2026-10-26T09:29:59.8293862Z [1m[32m  Downloaded[0m json5 v0.4.1
+2026-10-26T09:29:59.8327516Z [1m[32m  Downloaded[0m cbc v0.1.2
+2026-10-26T09:29:59.8356450Z [1m[32m  Downloaded[0m pkcs5 v0.7.1
+2026-10-26T09:29:59.8414921Z [1m[32m  Downloaded[0m zerofrom v0.1.8
+2026-10-26T09:29:59.8435380Z [1m[32m  Downloaded[0m pkcs8 v0.10.2
+2026-10-26T09:29:59.8475713Z [1m[32m  Downloaded[0m tracing-attributes v0.1.31
+2026-10-26T09:29:59.8523233Z [1m[32m  Downloaded[0m powerfmt v0.2.0
+2026-10-26T09:29:59.8562595Z [1m[32m  Downloaded[0m dunce v1.0.5
+2026-10-26T09:29:59.8584526Z [1m[32m  Downloaded[0m serde_urlencoded v0.7.1
+2026-10-26T09:29:59.8619135Z [1m[32m  Downloaded[0m sync_wrapper v1.0.2
+2026-10-26T09:29:59.8642957Z [1m[32m  Downloaded[0m try-lock v0.2.5
+2026-10-26T09:29:59.8664967Z [1m[32m  Downloaded[0m wasm-bindgen-macro v0.2.127
+2026-10-26T09:29:59.8686004Z [1m[32m  Downloaded[0m ipnet v2.12.2
+2026-10-26T09:29:59.8718607Z [1m[32m  Downloaded[0m displaydoc v0.2.7
+2026-10-26T09:29:59.8752255Z [1m[32m  Downloaded[0m jobserver v0.1.35
+2026-10-26T09:29:59.8786181Z [1m[32m  Downloaded[0m httparse v1.10.1
+2026-10-26T09:29:59.8826100Z [1m[32m  Downloaded[0m stable_deref_trait v1.2.1
+2026-10-26T09:29:59.8843722Z [1m[32m  Downloaded[0m wasm-bindgen-shared v0.2.127
+2026-10-26T09:29:59.8867157Z [1m[32m  Downloaded[0m want v0.3.1
+2026-10-26T09:29:59.8888208Z [1m[32m  Downloaded[0m tower-service v0.3.3
+2026-10-26T09:29:59.8906109Z [1m[32m  Downloaded[0m synstructure v0.13.2
+2026-10-26T09:29:59.8929531Z [1m[32m  Downloaded[0m cipher v0.4.4
+2026-10-26T09:29:59.8957935Z [1m[32m  Downloaded[0m zerovec-derive v0.11.6
+2026-10-26T09:29:59.8997765Z [1m[32m  Downloaded[0m hyper-util v0.1.20
+2026-10-26T09:29:59.9078903Z [1m[32m  Downloaded[0m cpufeatures v0.2.17
+2026-10-26T09:29:59.9104517Z [1m[32m  Downloaded[0m serde_json v1.0.151
+2026-10-26T09:29:59.9199040Z [1m[32m  Downloaded[0m tinystr v0.8.4
+2026-10-26T09:29:59.9235957Z [1m[32m  Downloaded[0m writeable v0.6.4
+2026-10-26T09:29:59.9270364Z [1m[32m  Downloaded[0m litemap v0.8.3
+2026-10-26T09:29:59.9310097Z [1m[32m  Downloaded[0m url v2.5.8
+2026-10-26T09:29:59.9360847Z [1m[32m  Downloaded[0m futures-channel v0.3.34
+2026-10-26T09:29:59.9392934Z [1m[32m  Downloaded[0m ucd-trie v0.1.7
+2026-10-26T09:29:59.9423433Z [1m[32m  Downloaded[0m tracing-core v0.1.36
+2026-10-26T09:29:59.9469517Z [1m[32m  Downloaded[0m icu_provider v2.1.1
+2026-10-26T09:29:59.9509222Z [1m[32m  Downloaded[0m icu_properties v2.1.2
+2026-10-26T09:29:59.9546541Z [1m[32m  Downloaded[0m syn v2.0.119
+2026-10-26T09:29:59.9685856Z [1m[32m  Downloaded[0m yaml_serde v0.10.7
+2026-10-26T09:29:59.9742498Z [1m[32m  Downloaded[0m aes v0.8.4
+2026-10-26T09:29:59.9790217Z [1m[32m  Downloaded[0m windows_aarch64_gnullvm v0.52.6
+2026-10-26T09:29:59.9902656Z [1m[32m  Downloaded[0m icu_normalizer_data v2.1.1
+2026-10-26T09:29:59.9937418Z [1m[32m  Downloaded[0m icu_collections v2.1.1
+2026-10-26T09:30:00.0020001Z [1m[32m  Downloaded[0m hashbrown v0.17.1
+2026-10-26T09:30:00.0094762Z [1m[32m  Downloaded[0m bumpalo v3.20.3
+2026-10-26T09:30:00.0139023Z [1m[32m  Downloaded[0m http v1.5.0
+2026-10-26T09:30:00.0191404Z [1m[32m  Downloaded[0m tower v0.5.3
+2026-10-26T09:30:00.0325920Z [1m[32m  Downloaded[0m zerotrie v0.2.5
+2026-10-26T09:30:00.0381955Z [1m[32m  Downloaded[0m zerovec v0.11.8
+2026-10-26T09:30:00.0467798Z [1m[32m  Downloaded[0m typenum v1.20.1
+2026-10-26T09:30:00.0525403Z [1m[32m  Downloaded[0m idna v1.1.0
+2026-10-26T09:30:00.0579247Z [1m[32m  Downloaded[0m hyper v1.11.1
+2026-10-26T09:30:00.0671291Z [1m[32m  Downloaded[0m tower-http v0.6.11
+2026-10-26T09:30:00.0788190Z [1m[32m  Downloaded[0m icu_properties_data v2.1.2
+2026-10-26T09:30:00.0912185Z [1m[32m  Downloaded[0m reqwest v0.12.28
+2026-10-26T09:30:00.0990258Z [1m[32m  Downloaded[0m pest v2.9.2
+2026-10-26T09:30:00.1057299Z [1m[32m  Downloaded[0m js-sys v0.3.104
+2026-10-26T09:30:00.1102051Z [1m[32m  Downloaded[0m windows_i686_gnullvm v0.52.6
+2026-10-26T09:30:00.1219182Z [1m[32m  Downloaded[0m windows_aarch64_msvc v0.52.6
+2026-10-26T09:30:00.1391588Z [1m[32m  Downloaded[0m wasm-bindgen-macro-support v0.2.127
+2026-10-26T09:30:00.1424907Z [1m[32m  Downloaded[0m windows_x86_64_gnullvm v0.52.6
+2026-10-26T09:30:00.1533993Z [1m[32m  Downloaded[0m icu_normalizer v2.1.1
+2026-10-26T09:30:00.1581046Z [1m[32m  Downloaded[0m zstd-sys v2.1.1+zstd.1.5.7
+2026-10-26T09:30:00.1804743Z [1m[32m  Downloaded[0m windows_x86_64_gnu v0.52.6
+2026-10-26T09:30:00.2050552Z [1m[32m  Downloaded[0m libc v0.2.189
+2026-10-26T09:30:00.2557017Z [1m[32m  Downloaded[0m windows_i686_gnu v0.52.6
+2026-10-26T09:30:00.2811874Z [1m[32m  Downloaded[0m windows_x86_64_msvc v0.52.6
+2026-10-26T09:30:00.2973069Z [1m[32m  Downloaded[0m tracing v0.1.44
+2026-10-26T09:30:00.3181945Z [1m[32m  Downloaded[0m windows_i686_msvc v0.52.6
+2026-10-26T09:30:00.3354798Z [1m[32m  Downloaded[0m icu_locale_core v2.1.1
+2026-10-26T09:30:00.3433041Z [1m[32m  Downloaded[0m wasm-bindgen v0.2.127
+2026-10-26T09:30:00.3468898Z [1m[32m  Downloaded[0m rustls v0.23.45
+2026-10-26T09:30:00.3617628Z [1m[32m  Downloaded[0m yoke v0.8.3
+2026-10-26T09:30:00.3641851Z [1m[32m  Downloaded[0m pest_generator v2.9.2
+2026-10-26T09:30:00.3659448Z [1m[32m  Downloaded[0m zerocopy v0.8.58
+2026-10-26T09:30:00.3901631Z [1m[32m  Downloaded[0m aws-lc-rs v1.18.1
+2026-10-26T09:30:00.4034623Z [1m[32m  Downloaded[0m rustversion v1.0.23
+2026-10-26T09:30:00.4068804Z [1m[32m  Downloaded[0m web-sys v0.3.104
+2026-10-26T09:30:00.5345855Z [1m[32m  Downloaded[0m sha2 v0.10.9
+2026-10-26T09:30:00.5377922Z [1m[32m  Downloaded[0m ryu v1.0.23
+2026-10-26T09:30:00.5418153Z [1m[32m  Downloaded[0m pest_meta v2.9.2
+2026-10-26T09:30:00.5445387Z [1m[32m  Downloaded[0m pest_derive v2.9.2
+2026-10-26T09:30:00.5472257Z [1m[32m  Downloaded[0m des v0.8.1
+2026-10-26T09:30:00.5494221Z [1m[32m  Downloaded[0m time v0.3.45
+2026-10-26T09:30:00.5644511Z [1m[32m  Downloaded[0m synstructure v0.14.0
+2026-10-26T09:30:00.5658870Z [1m[32m  Downloaded[0m smallvec v1.16.1
+2026-10-26T09:30:00.5677386Z [1m[32m  Downloaded[0m zlib-rs v0.6.8
+2026-10-26T09:30:00.5745592Z [1m[32m  Downloaded[0m tokio v1.53.1
+2026-10-26T09:30:00.6272986Z [1m[32m  Downloaded[0m rand_core v0.6.4
+2026-10-26T09:30:00.6289901Z [1m[32m  Downloaded[0m zerocopy-derive v0.8.58
+2026-10-26T09:30:00.6434254Z [1m[32m  Downloaded[0m yasna v0.5.2
+2026-10-26T09:30:00.6463944Z [1m[32m  Downloaded[0m rcgen v0.13.2
+2026-10-26T09:30:00.6499469Z [1m[32m  Downloaded[0m cc v1.4.7
+2026-10-26T09:30:00.6540029Z [1m[32m  Downloaded[0m mio v1.2.3
+2026-10-26T09:30:00.6614406Z [1m[32m  Downloaded[0m libyaml-rs v0.3.0
+2026-10-26T09:30:00.6656331Z [1m[32m  Downloaded[0m base64ct v1.8.3
+2026-10-26T09:30:00.6687165Z [1m[32m  Downloaded[0m wasip2 v1.0.1+wasi-0.2.4
+2026-10-26T09:30:00.6755997Z [1m[32m  Downloaded[0m rustls-webpki v0.103.15
+2026-10-26T09:30:00.6795997Z [1m[32m  Downloaded[0m rand v0.9.5
+2026-10-26T09:30:00.6843545Z [1m[32m  Downloaded[0m memchr v2.8.3
+2026-10-26T09:30:00.6909671Z [1m[32m  Downloaded[0m ring v0.17.14
+2026-10-26T09:30:00.7415473Z [1m[32m  Downloaded[0m scrypt v0.11.0
+2026-10-26T09:30:00.7436448Z [1m[32m  Downloaded[0m security-framework v3.7.0
+2026-10-26T09:30:00.7492474Z [1m[32m  Downloaded[0m miniz_oxide v0.9.1
+2026-10-26T09:30:00.7525012Z [1m[32m  Downloaded[0m r-efi v5.3.0
+2026-10-26T09:30:00.7583590Z [1m[32m  Downloaded[0m serde v1.0.229
+2026-10-26T09:30:00.7629876Z [1m[32m  Downloaded[0m serde_derive v1.0.229
+2026-10-26T09:30:00.7669231Z [1m[32m  Downloaded[0m futures-util v0.3.34
+2026-10-26T09:30:00.7822236Z [1m[32m  Downloaded[0m http-body v1.1.0
+2026-10-26T09:30:00.7836467Z [1m[32m  Downloaded[0m percent-encoding v2.3.2
+2026-10-26T09:30:00.7848095Z [1m[32m  Downloaded[0m crypto-common v0.1.7
+2026-10-26T09:30:00.7860858Z [1m[32m  Downloaded[0m flate2 v1.1.10
+2026-10-26T09:30:00.7918544Z [1m[32m  Downloaded[0m bitflags v2.13.2
+2026-10-26T09:30:00.7971263Z [1m[32m  Downloaded[0m r-efi v6.0.0
+2026-10-26T09:30:00.8029061Z [1m[32m  Downloaded[0m bytes v1.12.1
+2026-10-26T09:30:00.8072833Z [1m[32m  Downloaded[0m pbkdf2 v0.12.2
+2026-10-26T09:30:00.8089878Z [1m[32m  Downloaded[0m socket2 v0.6.5
+2026-10-26T09:30:00.8115862Z [1m[32m  Downloaded[0m yoke-derive v0.8.2
+2026-10-26T09:30:00.8131795Z [1m[32m  Downloaded[0m wasm-bindgen-futures v0.4.77
+2026-10-26T09:30:00.8145089Z [1m[32m  Downloaded[0m getrandom v0.4.3
+2026-10-26T09:30:00.8189773Z [1m[32m  Downloaded[0m rustls-pki-types v1.15.1
+2026-10-26T09:30:00.8221615Z [1m[32m  Downloaded[0m lz4_flex v0.12.2
+2026-10-26T09:30:00.8248664Z [1m[32m  Downloaded[0m wit-bindgen v0.46.0
+2026-10-26T09:30:00.8286042Z [1m[32m  Downloaded[0m thiserror-impl v1.0.69
+2026-10-26T09:30:00.8303907Z [1m[32m  Downloaded[0m pin-project-lite v0.2.17
+2026-10-26T09:30:00.8371141Z [1m[32m  Downloaded[0m getrandom v0.2.17
+2026-10-26T09:30:00.8406997Z [1m[32m  Downloaded[0m digest v0.10.7
+2026-10-26T09:30:00.8429206Z [1m[32m  Downloaded[0m pem v3.0.6
+2026-10-26T09:30:00.8448109Z [1m[32m  Downloaded[0m zstd v0.13.3
+2026-10-26T09:30:00.8484352Z [1m[32m  Downloaded[0m windows-sys v0.61.2
+2026-10-26T09:30:00.9284063Z [1m[32m  Downloaded[0m deranged v0.5.8
+2026-10-26T09:30:00.9302589Z [1m[32m  Downloaded[0m schannel v0.1.29
+2026-10-26T09:30:00.9326451Z [1m[32m  Downloaded[0m fs_extra v1.3.0
+2026-10-26T09:30:00.9347715Z [1m[32m  Downloaded[0m pkg-config v0.3.34
+2026-10-26T09:30:00.9367047Z [1m[32m  Downloaded[0m zeroize v1.9.0
+2026-10-26T09:30:00.9386936Z [1m[32m  Downloaded[0m tower-layer v0.3.3
+2026-10-26T09:30:00.9399729Z [1m[32m  Downloaded[0m form_urlencoded v1.2.2
+2026-10-26T09:30:00.9410865Z [1m[32m  Downloaded[0m idna_adapter v1.2.1
+2026-10-26T09:30:00.9423213Z [1m[32m  Downloaded[0m version_check v0.9.5
+2026-10-26T09:30:00.9439500Z [1m[32m  Downloaded[0m ppv-lite86 v0.2.21
+2026-10-26T09:30:00.9456413Z [1m[32m  Downloaded[0m core-foundation v0.10.1
+2026-10-26T09:30:00.9484263Z [1m[32m  Downloaded[0m security-framework-sys v2.17.0
+2026-10-26T09:30:00.9510329Z [1m[32m  Downloaded[0m tokio-rustls v0.26.5
+2026-10-26T09:30:00.9531692Z [1m[32m  Downloaded[0m thiserror v1.0.69
+2026-10-26T09:30:00.9594901Z [1m[32m  Downloaded[0m wasi v0.11.1+wasi-snapshot-preview1
+2026-10-26T09:30:00.9615403Z [1m[32m  Downloaded[0m inout v0.1.4
+2026-10-26T09:30:00.9629163Z [1m[32m  Downloaded[0m block-buffer v0.10.4
+2026-10-26T09:30:00.9642663Z [1m[32m  Downloaded[0m simd-adler32 v0.3.10
+2026-10-26T09:30:00.9665734Z [1m[32m  Downloaded[0m xxhash-rust v0.8.18
+2026-10-26T09:30:00.9687987Z [1m[32m  Downloaded[0m zstd-safe v7.3.0
+2026-10-26T09:30:00.9706844Z [1m[32m  Downloaded[0m zmij v1.0.23
+2026-10-26T09:30:00.9729421Z [1m[32m  Downloaded[0m find-msvc-tools v0.1.13
+2026-10-26T09:30:00.9749914Z [1m[32m  Downloaded[0m slab v0.4.12
+2026-10-26T09:30:00.9766410Z [1m[32m  Downloaded[0m utf8_iter v1.0.4
+2026-10-26T09:30:00.9780000Z [1m[32m  Downloaded[0m md-5 v0.10.6
+2026-10-26T09:30:00.9799505Z [1m[32m  Downloaded[0m generic-array v0.14.7
+2026-10-26T09:30:00.9817716Z [1m[32m  Downloaded[0m shlex v2.0.1
+2026-10-26T09:30:00.9834128Z [1m[32m  Downloaded[0m windows-sys v0.52.0
+2026-10-26T09:30:01.0710076Z [1m[32m  Downloaded[0m windows-targets v0.52.6
+2026-10-26T09:30:01.0721248Z [1m[32m  Downloaded[0m tokio-socks v0.5.3
+2026-10-26T09:30:01.0754546Z [1m[32m  Downloaded[0m salsa20 v0.10.2
+2026-10-26T09:30:01.0769256Z [1m[32m  Downloaded[0m rand_chacha v0.9.0
+2026-10-26T09:30:01.0784939Z [1m[32m  Downloaded[0m rand_core v0.9.5
+2026-10-26T09:30:01.0801445Z [1m[32m  Downloaded[0m thiserror-impl v2.0.21
+2026-10-26T09:30:01.0819757Z [1m[32m  Downloaded[0m untrusted v0.9.0
+2026-10-26T09:30:01.0839319Z [1m[32m  Downloaded[0m potential_utf v0.1.6
+2026-10-26T09:30:01.0853144Z [1m[32m  Downloaded[0m pem-rfc7468 v0.7.0
+2026-10-26T09:30:01.0877368Z [1m[32m  Downloaded[0m num-conv v0.1.0
+2026-10-26T09:30:01.0895356Z [1m[32m  Downloaded[0m cfg-if v1.0.5
+2026-10-26T09:30:01.0911289Z [1m[32m  Downloaded[0m subtle v2.6.1
+2026-10-26T09:30:01.0925649Z [1m[32m  Downloaded[0m futures-task v0.3.34
+2026-10-26T09:30:01.0940130Z [1m[32m  Downloaded[0m time-core v0.1.7
+2026-10-26T09:30:01.0954356Z [1m[32m  Downloaded[0m openssl-probe v0.2.1
+2026-10-26T09:30:01.0968407Z [1m[32m  Downloaded[0m getrandom v0.3.4
+2026-10-26T09:30:01.1009856Z [1m[32m  Downloaded[0m rustls-native-certs v0.8.4
+2026-10-26T09:30:01.1027218Z [1m[32m  Downloaded[0m equivalent v1.0.2
+2026-10-26T09:30:01.1039303Z [1m[32m  Downloaded[0m core-foundation-sys v0.8.7
+2026-10-26T09:30:01.1075898Z [1m[32m  Downloaded[0m log v0.4.34
+2026-10-26T09:30:01.1106055Z [1m[32m  Downloaded[0m block-padding v0.3.3
+2026-10-26T09:30:01.1116799Z [1m[32m  Downloaded[0m sha1 v0.10.7
+2026-10-26T09:30:01.1135744Z [1m[32m  Downloaded[0m spki v0.7.3
+2026-10-26T09:30:01.1156837Z [1m[32m  Downloaded[0m indexmap v2.14.2
+2026-10-26T09:30:01.1211018Z [1m[32m  Downloaded[0m rustls-pemfile v2.2.0
+2026-10-26T09:30:01.1238189Z [1m[32m  Downloaded[0m serde_core v1.0.229
+2026-10-26T09:30:01.1271555Z [1m[32m  Downloaded[0m either v1.18.0
+2026-10-26T09:30:01.1289725Z [1m[32m  Downloaded[0m once_cell v1.21.4
+2026-10-26T09:30:01.1320743Z [1m[32m  Downloaded[0m der v0.7.10
+2026-10-26T09:30:01.1382526Z [1m[32m  Downloaded[0m num_threads v0.1.7
+2026-10-26T09:30:01.1394879Z [1m[32m  Downloaded[0m itoa v1.0.18
+2026-10-26T09:30:01.1419191Z [1m[32m  Downloaded[0m syn v3.0.6
+2026-10-26T09:30:01.1546275Z [1m[32m  Downloaded[0m const-oid v0.9.6
+2026-10-26T09:30:01.1569794Z [1m[32m  Downloaded[0m crc32fast v1.5.2
+2026-10-26T09:30:01.1595439Z [1m[32m  Downloaded[0m thiserror v2.0.21
+2026-10-26T09:30:01.1671730Z [1m[32m  Downloaded[0m cmake v0.1.58
+2026-10-26T09:30:01.1688926Z [1m[32m  Downloaded[0m windows-link v0.2.1
+2026-10-26T09:30:01.1699106Z [1m[32m  Downloaded[0m http-body-util v0.1.5
+2026-10-26T09:30:01.1722179Z [1m[32m  Downloaded[0m base64 v0.22.1
+2026-10-26T09:30:01.1769395Z [1m[32m  Downloaded[0m hyper-rustls v0.27.9
+2026-10-26T09:30:01.1787078Z [1m[32m  Downloaded[0m quote v1.0.47
+2026-10-26T09:30:01.1818880Z [1m[32m  Downloaded[0m tokio-macros v2.7.2
+2026-10-26T09:30:01.1832538Z [1m[32m  Downloaded[0m adler2 v2.0.1
+2026-10-26T09:30:01.1847742Z [1m[32m  Downloaded[0m unicode-ident v1.0.26
+2026-10-26T09:30:01.2038261Z [1m[32m  Downloaded[0m aws-lc-sys v0.45.0
+2026-10-26T09:30:01.8995484Z ##[group]Run mvn -q -f compat/java-reference/pom.xml verify
+2026-10-26T09:30:01.8996323Z [36;1mmvn -q -f compat/java-reference/pom.xml verify[0m
+2026-10-26T09:30:01.9059831Z shell: /usr/bin/bash -e {0}
+2026-10-26T09:30:01.9060135Z env:
+2026-10-26T09:30:01.9060343Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:30:01.9060611Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:30:01.9060877Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:30:01.9061092Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:30:01.9061313Z   CARGO_HOME: /home/runner/.cargo
+2026-10-26T09:30:01.9061575Z   CARGO_TERM_COLOR: always
+2026-10-26T09:30:01.9061918Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+2026-10-26T09:30:01.9062418Z   JAVA_HOME_27_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+2026-10-26T09:30:01.9062802Z ##[endgroup]
+2026-10-26T09:30:19.0840866Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+2026-10-26T09:30:19.0861285Z WARNING: sun.misc.Unsafe::arrayBaseOffset has been called by com.alibaba.fastjson2.util.JDKUtils (file:/home/runner/.m2/repository/com/alibaba/fastjson2/fastjson2/2.0.63/fastjson2-2.0.63.jar)
+2026-10-26T09:30:19.0880557Z WARNING: Please consider reporting this to the maintainers of class com.alibaba.fastjson2.util.JDKUtils
+2026-10-26T09:30:19.0881752Z WARNING: sun.misc.Unsafe::arrayBaseOffset will be removed in a future release
+2026-10-26T09:30:19.3590965Z Java reference self-test passed
+2026-10-26T09:30:19.5470070Z Invoked Java 5.5.1 MQClientAPIImpl: send/pull including async callbacks, offset, route, consumer list, assignment, lock/unlock, send-back, request mode, POP/Lite/ACK/change dispatch and callbacks (mock transport)
+2026-10-26T09:30:19.6361191Z Validated 37 scenarios
+2026-10-26T09:30:20.8085741Z Runtime inbound routing invoked cases verified: 17
+2026-10-26T09:30:24.1294961Z Runtime remoting shutdown cases verified: 4
+2026-10-26T09:30:26.4350955Z Runtime scheduled-executor shutdown cases verified: 2
+2026-10-26T09:30:28.7471302Z Runtime discovery invoked cases verified: 21
+2026-10-26T09:30:31.2912309Z WARNING: Final field mQClientAPIImpl in class org.apache.rocketmq.client.impl.factory.MQClientInstance has been mutated reflectively by class compat.RuntimeHeartbeatFixtures in unnamed module @2f32179 (file:/home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/target/classes/)
+2026-10-26T09:30:31.2950184Z WARNING: Use --enable-final-field-mutation=ALL-UNNAMED to avoid a warning
+2026-10-26T09:30:31.2975678Z WARNING: Mutating final fields will be blocked in a future release unless final field mutation is enabled
+2026-10-26T09:30:31.3564171Z Runtime heartbeat invoked cases verified: 7; null-element cases: 3; multiplicity cases: 5
+2026-10-26T09:30:37.2975887Z Runtime route/VIP invoked cases verified: 36
+2026-10-26T09:31:03.6150746Z ClientConfig identities/defaults/clone verified: 73
+2026-10-26T09:31:06.7860980Z PullMessageRequestHeader fast/reflection decoder fixtures verified
+2026-10-26T09:31:06.9821369Z PullMessageResponseHeader fast/reflection decoder fixtures verified
+2026-10-26T09:31:07.1584523Z SendMessageResponseHeader fast/reflection decoder fixtures verified
+2026-10-26T09:31:07.3295324Z SendMessageRequestHeaderV2 fast/reflection decoder fixtures verified
+2026-10-26T09:31:07.5456318Z Consumer offset request/response decode fixtures verified
+2026-10-26T09:31:07.7215768Z Create-topic header decode fixtures verified
+2026-10-26T09:31:07.8977767Z End-transaction header decode fixtures verified
+2026-10-26T09:31:08.1490801Z Query admin header decode fixtures verified
+2026-10-26T09:31:08.3517823Z Offset-boundary request/response-header decode fixtures verified
+2026-10-26T09:31:08.5511001Z Optional numeric header decode fixtures verified
+2026-10-26T09:31:08.7403096Z Change-invisibility request header decode fixtures verified
+2026-10-26T09:31:09.4835151Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+2026-10-26T09:31:09.4837501Z WARNING: sun.misc.Unsafe::arrayBaseOffset has been called by com.alibaba.fastjson2.util.JDKUtils (file:/home/runner/.m2/repository/com/alibaba/fastjson2/fastjson2/2.0.63/fastjson2-2.0.63.jar)
+2026-10-26T09:31:09.4859000Z WARNING: Please consider reporting this to the maintainers of class com.alibaba.fastjson2.util.JDKUtils
+2026-10-26T09:31:09.4861351Z WARNING: sun.misc.Unsafe::arrayBaseOffset will be removed in a future release
+2026-10-26T09:31:09.5889926Z ClientConfig TLS mode property probe verified
+2026-10-26T09:31:10.1641724Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+2026-10-26T09:31:10.1645793Z WARNING: sun.misc.Unsafe::arrayBaseOffset has been called by com.alibaba.fastjson2.util.JDKUtils (file:/home/runner/.m2/repository/com/alibaba/fastjson2/fastjson2/2.0.63/fastjson2-2.0.63.jar)
+2026-10-26T09:31:10.1651431Z WARNING: Please consider reporting this to the maintainers of class com.alibaba.fastjson2.util.JDKUtils
+2026-10-26T09:31:10.1652565Z WARNING: sun.misc.Unsafe::arrayBaseOffset will be removed in a future release
+2026-10-26T09:31:10.2757059Z ClientConfig system-property inputs verified
+2026-10-26T09:31:11.5390255Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+2026-10-26T09:31:11.5434678Z WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/home/runner/.m2/repository/io/netty/netty-common/4.1.130.Final/netty-common-4.1.130.Final.jar)
+2026-10-26T09:31:11.5436279Z WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+2026-10-26T09:31:11.5437349Z WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+2026-10-26T09:31:12.3530022Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+2026-10-26T09:31:12.3533439Z WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/home/runner/.m2/repository/io/netty/netty-common/4.1.130.Final/netty-common-4.1.130.Final.jar)
+2026-10-26T09:31:12.3536245Z WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+2026-10-26T09:31:12.3537718Z WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+2026-10-26T09:31:45.7330343Z Remoting live config mutation verified
+2026-10-26T09:31:48.1524034Z Runtime hook invoked cases verified: 36
+2026-10-26T09:31:48.7985790Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+2026-10-26T09:31:48.8001597Z WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/home/runner/.m2/repository/io/netty/netty-common/4.1.130.Final/netty-common-4.1.130.Final.jar)
+2026-10-26T09:31:48.8050883Z WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+2026-10-26T09:31:48.8061014Z WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+2026-10-26T09:31:49.8464680Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+2026-10-26T09:31:49.8486980Z WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/home/runner/.m2/repository/io/netty/netty-common/4.1.130.Final/netty-common-4.1.130.Final.jar)
+2026-10-26T09:31:49.8489487Z WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+2026-10-26T09:31:49.8491284Z WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+2026-10-26T09:31:51.2112469Z Runtime address helpers verified: 42; named IPv6 scopes verified: 1; Java client endpoint splits verified: 49; Java BMP port-digit code units verified: 370; Java BMP host code units verified: 65536; Java Unicode host code points verified: 1112064
+2026-10-26T09:31:53.8088112Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+2026-10-26T09:31:53.8099919Z WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/home/runner/.m2/repository/io/netty/netty-common/4.1.130.Final/netty-common-4.1.130.Final.jar)
+2026-10-26T09:31:53.8110831Z WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+2026-10-26T09:31:53.8112157Z WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+2026-10-26T09:31:54.0097480Z WARNING: Final field mQClientAPIImpl in class org.apache.rocketmq.client.impl.factory.MQClientInstance has been mutated reflectively by class compat.RuntimeStartMutationProbe in unnamed module @cd2dae5 (file:/home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/target/classes/)
+2026-10-26T09:31:54.0130187Z WARNING: Use --enable-final-field-mutation=ALL-UNNAMED to avoid a warning
+2026-10-26T09:31:54.0153185Z WARNING: Mutating final fields will be blocked in a future release unless final field mutation is enabled
+2026-10-26T09:31:54.0676391Z Runtime start mutation probe verified
+2026-10-26T09:31:54.9267628Z Runtime broker lookup verified: 14
+2026-10-26T09:31:57.8130194Z verified Java 5.5.1 MqClientAdmin fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/admin/query-consume-time-span.json
+2026-10-26T09:31:58.1717255Z Runtime client check verified: 17
+2026-10-26T09:32:02.4775612Z Direct runtime consumer operations verified: 9 Running Info, 29 direct-consume, 15 reset cases
+2026-10-26T09:32:05.6606542Z Runtime offset conversion verified: 10; nullable cases: 7
+2026-10-26T09:32:25.9615218Z Runtime MQClientAPIFactory invoked cases verified
+2026-10-26T09:32:29.2572339Z verified Java 5.5.1 request/response code registry at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/protocol/request-response-codes.json
+2026-10-26T09:32:29.9217070Z verified Java 5.5.1 allocation fixtures at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/rebalance/allocation.json
+2026-10-26T09:32:30.1848904Z verified Java 5.5.1 initial-offset fixtures at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/rebalance/initial-offsets.json
+2026-10-26T09:32:33.8958714Z Pull implementation accessor verified
+2026-10-26T09:32:34.3068868Z Push implementation accessor verified
+2026-10-26T09:32:38.8224324Z verified Java 5.5.1 QueryResult fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/admin/query-result.json
+2026-10-26T09:32:38.9431671Z verified Java 5.5.1 TopicList fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/admin/topic-list.json
+2026-10-26T09:32:39.0551649Z verified Java 5.5.1 query subscription body fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/admin/query-subscription-response-body.json
+2026-10-26T09:32:39.1432785Z verified Java 5.5.1 GroupList fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/admin/group-list.json
+2026-10-26T09:32:39.2504129Z verified Java 5.5.1 TopicStatsTable fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/admin/topic-stats-table.json
+2026-10-26T09:33:14.5141675Z verified 11 Java message decode fixtures at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/messages/records.json
+2026-10-26T09:33:29.7331705Z verified Java 5.5.1 MessageUtils fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/messages/message-utils.json
+2026-10-26T09:33:31.0317531Z Java decoded 2 Rust-generated fixture(s)
+2026-10-26T09:33:31.3493175Z    Compiling libc v0.2.189
+2026-10-26T09:33:31.3530429Z    Compiling find-msvc-tools v0.1.13
+2026-10-26T09:33:31.7600747Z    Compiling shlex v2.0.1
+2026-10-26T09:33:32.0139463Z    Compiling version_check v0.9.5
+2026-10-26T09:33:32.5850707Z    Compiling generic-array v0.14.7
+2026-10-26T09:33:32.8786978Z    Compiling proc-macro2 v1.0.107
+2026-10-26T09:33:33.5241065Z    Compiling typenum v1.20.1
+2026-10-26T09:33:34.0562240Z    Compiling jobserver v0.1.35
+2026-10-26T09:33:34.6450622Z    Compiling cc v1.4.7
+2026-10-26T09:33:34.9450690Z    Compiling unicode-ident v1.0.26
+2026-10-26T09:33:35.0580551Z    Compiling quote v1.0.47
+2026-10-26T09:33:37.6710575Z    Compiling zeroize v1.9.0
+2026-10-26T09:33:37.9072969Z    Compiling cfg-if v1.0.5
+2026-10-26T09:33:37.9630608Z    Compiling pkg-config v0.3.34
+2026-10-26T09:33:38.3311060Z    Compiling crypto-common v0.1.7
+2026-10-26T09:33:38.4300713Z    Compiling syn v3.0.6
+2026-10-26T09:33:38.9175661Z    Compiling subtle v2.6.1
+2026-10-26T09:33:39.0702016Z    Compiling block-buffer v0.10.4
+2026-10-26T09:33:39.2060729Z    Compiling block-padding v0.3.3
+2026-10-26T09:33:39.3231477Z    Compiling cmake v0.1.58
+2026-10-26T09:33:40.0090883Z    Compiling fs_extra v1.3.0
+2026-10-26T09:33:40.4676511Z    Compiling dunce v1.0.5
+2026-10-26T09:33:40.5290599Z    Compiling aws-lc-sys v0.45.0
+2026-10-26T09:33:42.7281536Z    Compiling inout v0.1.4
+2026-10-26T09:33:42.8642310Z    Compiling digest v0.10.7
+2026-10-26T09:33:43.1739158Z    Compiling memchr v2.8.3
+2026-10-26T09:33:44.4580649Z    Compiling serde_core v1.0.229
+2026-10-26T09:33:44.8550838Z    Compiling cipher v0.4.4
+2026-10-26T09:33:46.3356119Z    Compiling zstd-sys v2.1.1+zstd.1.5.7
+2026-10-26T09:33:47.0420451Z    Compiling getrandom v0.3.4
+2026-10-26T09:33:47.4940778Z    Compiling zerocopy v0.8.58
+2026-10-26T09:34:15.8180619Z    Compiling syn v2.0.119
+2026-10-26T09:34:20.3041061Z    Compiling rustls-pki-types v1.15.1
+2026-10-26T09:34:21.0771140Z    Compiling cpufeatures v0.2.17
+2026-10-26T09:34:21.1350595Z    Compiling aws-lc-rs v1.18.1
+2026-10-26T09:34:28.4211460Z    Compiling crc32fast v1.5.2
+2026-10-26T09:34:28.8380898Z    Compiling ucd-trie v0.1.7
+2026-10-26T09:34:29.1483110Z    Compiling serde v1.0.229
+2026-10-26T09:34:29.5760696Z    Compiling untrusted v0.9.0
+2026-10-26T09:34:29.6480676Z    Compiling zstd-safe v7.3.0
+2026-10-26T09:34:29.7980668Z    Compiling zmij v1.0.23
+2026-10-26T09:34:30.1968415Z    Compiling base64ct v1.8.3
+2026-10-26T09:34:30.5872875Z    Compiling powerfmt v0.2.0
+2026-10-26T09:34:30.8170976Z    Compiling deranged v0.5.8
+2026-10-26T09:34:33.0143814Z    Compiling pem-rfc7468 v0.7.0
+2026-10-26T09:34:33.5735978Z    Compiling pest v2.9.2
+2026-10-26T09:34:36.1491507Z    Compiling ppv-lite86 v0.2.21
+2026-10-26T09:34:36.7665128Z    Compiling rand_core v0.9.5
+2026-10-26T09:34:37.1411248Z    Compiling serde_derive v1.0.229
+2026-10-26T09:34:42.6010617Z    Compiling hmac v0.12.1
+2026-10-26T09:34:42.7590119Z    Compiling adler2 v2.0.1
+2026-10-26T09:34:42.8170748Z    Compiling time-core v0.1.7
+2026-10-26T09:34:43.0122317Z    Compiling simd-adler32 v0.3.10
+2026-10-26T09:34:43.2679973Z    Compiling serde_json v1.0.151
+2026-10-26T09:34:43.4460812Z    Compiling num-conv v0.1.0
+2026-10-26T09:34:43.6140683Z    Compiling pin-project-lite v0.2.17
+2026-10-26T09:34:43.6920610Z    Compiling thiserror v2.0.21
+2026-10-26T09:34:44.2181069Z    Compiling const-oid v0.9.6
+2026-10-26T09:34:44.3530721Z    Compiling num_threads v0.1.7
+2026-10-26T09:34:44.4130984Z    Compiling time v0.3.45
+2026-10-26T09:34:45.3271345Z    Compiling der v0.7.10
+2026-10-26T09:34:47.3240499Z    Compiling miniz_oxide v0.9.1
+2026-10-26T09:34:48.4958865Z    Compiling pbkdf2 v0.12.2
+2026-10-26T09:34:49.8270736Z    Compiling rand_chacha v0.9.0
+2026-10-26T09:34:50.6890710Z    Compiling pest_meta v2.9.2
+2026-10-26T09:34:54.2101122Z    Compiling sha2 v0.10.9
+2026-10-26T09:34:54.8360650Z    Compiling thiserror-impl v2.0.21
+2026-10-26T09:34:57.1500539Z    Compiling tokio-macros v2.7.2
+2026-10-26T09:34:58.3644260Z    Compiling salsa20 v0.10.2
+2026-10-26T09:34:58.5066453Z    Compiling mio v1.2.3
+2026-10-26T09:34:59.2030938Z    Compiling socket2 v0.6.5
+2026-10-26T09:34:59.8981036Z    Compiling thiserror v1.0.69
+2026-10-26T09:35:00.2440910Z    Compiling bytes v1.12.1
+2026-10-26T09:35:01.2230810Z    Compiling itoa v1.0.18
+2026-10-26T09:35:01.4817595Z    Compiling rustls v0.23.45
+2026-10-26T09:35:01.6320539Z    Compiling base64 v0.22.1
+2026-10-26T09:35:04.4610620Z    Compiling tokio v1.53.1
+2026-10-26T09:35:12.2691270Z    Compiling scrypt v0.11.0
+2026-10-26T09:35:12.6791129Z    Compiling pest_generator v2.9.2
+2026-10-26T09:35:14.0300586Z    Compiling flate2 v1.1.10
+2026-10-26T09:35:14.7480568Z    Compiling rand v0.9.5
+2026-10-26T09:35:15.7436167Z    Compiling zstd v0.13.3
+2026-10-26T09:35:16.1390900Z    Compiling spki v0.7.3
+2026-10-26T09:35:16.3490875Z    Compiling sha1 v0.10.7
+2026-10-26T09:35:16.6330736Z    Compiling aes v0.8.4
+2026-10-26T09:35:17.6790846Z    Compiling thiserror-impl v1.0.69
+2026-10-26T09:35:19.5720717Z    Compiling des v0.8.1
+2026-10-26T09:35:19.8540092Z    Compiling cbc v0.1.2
+2026-10-26T09:35:19.9901158Z    Compiling ring v0.17.14
+2026-10-26T09:35:20.9497846Z    Compiling hashbrown v0.17.1
+2026-10-26T09:35:21.8241053Z    Compiling equivalent v1.0.2
+2026-10-26T09:35:21.8705552Z    Compiling futures-core v0.3.34
+2026-10-26T09:35:21.9720603Z    Compiling futures-task v0.3.34
+2026-10-26T09:35:22.0760563Z    Compiling log v0.4.34
+2026-10-26T09:35:22.2816661Z    Compiling once_cell v1.21.4
+2026-10-26T09:35:22.5446128Z    Compiling xxhash-rust v0.8.18
+2026-10-26T09:35:22.6680827Z    Compiling lz4_flex v0.12.2
+2026-10-26T09:35:22.9741059Z    Compiling rocketmq-classic-common v0.1.0 (/home/runner/work/rocketmq-classic/rocketmq-classic/crates/rocketmq-classic-common)
+2026-10-26T09:35:26.2771633Z    Compiling futures-util v0.3.34
+2026-10-26T09:35:28.1901254Z    Compiling indexmap v2.14.2
+2026-10-26T09:35:36.2081403Z    Compiling rustls-webpki v0.103.15
+2026-10-26T09:35:36.4588805Z    Compiling pkcs5 v0.7.1
+2026-10-26T09:35:38.2462357Z    Compiling pest_derive v2.9.2
+2026-10-26T09:35:38.9971502Z    Compiling getrandom v0.2.17
+2026-10-26T09:35:39.2550611Z    Compiling either v1.18.0
+2026-10-26T09:35:39.5892312Z    Compiling rand_core v0.6.4
+2026-10-26T09:35:39.7883999Z    Compiling rocketmq-classic-remoting v0.1.0 (/home/runner/work/rocketmq-classic/rocketmq-classic/crates/rocketmq-classic-remoting)
+2026-10-26T09:35:39.9951221Z    Compiling openssl-probe v0.2.1
+2026-10-26T09:35:40.1930934Z    Compiling rustls-native-certs v0.8.4
+2026-10-26T09:35:40.5753542Z    Compiling pkcs8 v0.10.2
+2026-10-26T09:35:41.0252717Z    Compiling tokio-socks v0.5.3
+2026-10-26T09:35:45.5350556Z    Compiling tokio-rustls v0.26.5
+2026-10-26T09:35:45.9650600Z    Compiling json5 v0.4.1
+2026-10-26T09:35:47.5901599Z    Compiling rocketmq-classic-protocol v0.1.0 (/home/runner/work/rocketmq-classic/rocketmq-classic/crates/rocketmq-classic-protocol)
+2026-10-26T09:35:49.5530609Z    Compiling pem v3.0.6
+2026-10-26T09:35:50.0200299Z    Compiling yasna v0.5.2
+2026-10-26T09:35:51.2430787Z    Compiling rustls-pemfile v2.2.0
+2026-10-26T09:35:51.5190761Z    Compiling md-5 v0.10.6
+2026-10-26T09:35:51.6890712Z    Compiling rcgen v0.13.2
+2026-10-26T09:36:16.4745630Z     Finished `dev` profile [unoptimized] target(s) in 2m 45s
+2026-10-26T09:36:16.4980106Z      Running `target/debug/examples/generate_fixtures p4-headers /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/target/p4-rust-header-fixtures`
+2026-10-26T09:36:17.5294869Z Generated typed Java header fixtures in /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/remoting
+2026-10-26T09:36:18.7152923Z Java decoded 106 Rust-generated fixture(s)
+2026-10-26T09:36:19.2058803Z     Finished `dev` profile [unoptimized] target(s) in 0.36s
+2026-10-26T09:36:19.2263224Z      Running `target/debug/examples/generate_fixtures p4-bodies /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/target/p4-rust-body-fixtures`
+2026-10-26T09:36:20.3413629Z Java decoded 19 Rust typed body fixture(s)
+2026-10-26T09:36:20.6965884Z Linux Java IPv6 loopback candidates verified: 1
+2026-10-26T09:36:20.7674053Z ##[group]Run bash integration-tests/run-local.sh --all
+2026-10-26T09:36:20.7674500Z [36;1mbash integration-tests/run-local.sh --all[0m
+2026-10-26T09:36:20.7798195Z shell: /usr/bin/bash -e {0}
+2026-10-26T09:36:20.7798508Z env:
+2026-10-26T09:36:20.7798757Z   CARGO_PROFILE_DEV_DEBUG: 0
+2026-10-26T09:36:20.7799082Z   CARGO_PROFILE_TEST_DEBUG: 0
+2026-10-26T09:36:20.7799399Z   CARGO_INCREMENTAL: 0
+2026-10-26T09:36:20.7799807Z   CARGO_BUILD_JOBS: 2
+2026-10-26T09:36:20.7800074Z   CARGO_HOME: /home/runner/.cargo
+2026-10-26T09:36:20.7800380Z   CARGO_TERM_COLOR: always
+2026-10-26T09:36:20.7800787Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+2026-10-26T09:36:20.7801401Z   JAVA_HOME_27_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+2026-10-26T09:36:20.7801903Z   ROCKETMQ_CLASSIC_TEST_ENV: local-disposable
+2026-10-26T09:36:20.7802244Z ##[endgroup]
+2026-10-26T09:36:22.4482148Z Running cargo-format
+2026-10-26T09:36:25.3793189Z PASS cargo-format
+2026-10-26T09:36:25.3794346Z Running diff-check
+2026-10-26T09:36:27.1646697Z PASS diff-check
+2026-10-26T09:36:27.1651951Z Running workspace-tests-default
+2026-10-26T09:57:36.1788378Z PASS workspace-tests-default
+2026-10-26T09:57:36.1789462Z Running workspace-tests-all-features
+2026-10-26T10:00:53.7706332Z FAIL workspace-tests-all-features (exit=101)
+2026-10-26T10:00:53.7730044Z test push::consumer::tests::orderly_reset_commits_then_unlocks_and_removes_when_the_gate_is_available ... ok
+2026-10-26T10:00:53.7731533Z test push::consumer::tests::orderly_reset_waits_java_lock_window_then_removes_the_dropped_queue ... ok
+2026-10-26T10:00:53.7733139Z test push::consumer::tests::orderly_retry_limit_publishes_retry_topic_and_failed_publish_requeues ... ok
+2026-10-26T10:00:53.7734733Z test push::consumer::tests::orderly_shutdown_persists_offsets_and_reports_unconfirmed_unlock ... ok
+2026-10-26T10:00:53.7736120Z test push::consumer::tests::orderly_success_holds_until_commit_and_rollback_replays_in_order ... ok
+2026-10-26T10:00:53.7737502Z test push::consumer::tests::orderly_timeout_preserves_java_null_and_exception_priority ... ok
+2026-10-26T10:00:53.7738758Z test push::consumer::tests::pop_batch_expiry_uses_receipt_invisibility_boundary_and_rejects_invalid_receipts ... ok
+2026-10-26T10:00:53.7740689Z test push::consumer::tests::pop_consume_dispatches_ack_redelivery_and_replacement_receipt ... ok
+2026-10-26T10:00:53.7742268Z test push::consumer::tests::pop_orderly_consumption_does_not_record_concurrent_service_stats ... ok
+2026-10-26T10:00:53.7743704Z test push::consumer::tests::pop_to_pull_transition_uses_the_java_retry_topic_and_retains_its_route ... ok
+2026-10-26T10:00:53.7745091Z test push::consumer::tests::private_fixed_assignment_retries_java_fixture_with_broker_limit ... ok
+2026-10-26T10:00:53.7747053Z test push::consumer::tests::public_send_back_overloads_use_message_and_explicit_broker_names ... ok
+2026-10-26T10:00:53.7748304Z test push::consumer::tests::pull_result_stats_use_the_request_group_snapshot ... ok
+2026-10-26T10:00:53.7751574Z test push::consumer::tests::push_adjust_thread_pool_matches_java_default_service_noop ... ok
+2026-10-26T10:00:53.7759011Z test push::consumer::tests::push_consume_message_context_preserves_a_live_null_group ... ok
+2026-10-26T10:00:53.7760642Z test push::consumer::tests::push_consumers_sharing_one_runtime_share_consumer_stats_manager_identity ... ok
+2026-10-26T10:00:53.7762084Z test push::consumer::tests::push_facade_group_getter_and_heartbeat_follow_live_java_group ... ok
+2026-10-26T10:00:53.7763461Z test push::consumer::tests::push_live_runtime_settings_drive_owner_flow_helpers ... ok
+2026-10-26T10:00:53.7764820Z test push::consumer::tests::push_pull_outcomes_insert_found_messages_and_correct_only_drained_offsets ... ok
+2026-10-26T10:00:53.7766281Z test push::consumer::tests::push_pull_rejects_stale_results_and_fences_offset_illegal_recovery ... ok
+2026-10-26T10:00:53.7767555Z test push::consumer::tests::push_pull_request_uses_live_batch_settings_from_consumer_config ... ok
+2026-10-26T10:00:53.7769094Z test push::consumer::tests::push_raw_consume_hook_entrypoints_match_java ... ok
+2026-10-26T10:00:53.7770564Z test push::consumer::tests::push_raw_consumer_inner_accessors_match_java ... ok
+2026-10-26T10:00:53.7771662Z test push::consumer::tests::push_raw_filter_hook_and_topic_helpers_match_java ... ok
+2026-10-26T10:00:53.7772956Z test push::consumer::tests::push_raw_offset_entrypoints_match_java_and_persist_only_active_pull_queue ... ok
+2026-10-26T10:00:53.7774330Z test push::consumer::tests::push_raw_offset_store_accessors_match_java_null_and_identity ... ok
+2026-10-26T10:00:53.7775538Z test push::consumer::tests::push_raw_rebalance_route_entrypoints_match_java ... ok
+2026-10-26T10:00:53.7776776Z test push::consumer::tests::push_rebalance_consume_init_mode_matches_java_for_every_policy ... ok
+2026-10-26T10:00:53.7778111Z test push::consumer::tests::push_service_state_accessors_match_java_null_and_start_guard ... ok
+2026-10-26T10:00:53.7779336Z test push::consumer::tests::push_shutdown_unregisters_the_current_java_group ... ok
+2026-10-26T10:00:53.7781077Z test push::consumer::tests::push_start_namespaces_and_retains_group_before_consumer_validation ... ok
+2026-10-26T10:00:53.7782646Z test push::consumer::tests::push_topic_thresholds_match_java_global_process_queue_count ... ok
+2026-10-26T10:00:53.7784545Z test push::consumer::tests::query_consume_time_span_queries_fresh_route_in_order_and_uses_vip_addresses ... ok
+2026-10-26T10:00:53.7785884Z test push::consumer::tests::queue_removal_fences_a_listener_already_in_flight ... ok
+2026-10-26T10:00:53.7787017Z test push::consumer::tests::queue_removal_fences_a_pull_response_already_in_flight ... ok
+2026-10-26T10:00:53.7788179Z test push::consumer::tests::raw_push_implementation_accessor_retains_identity ... ok
+2026-10-26T10:00:53.7788919Z test push::consumer::tests::raw_push_listener_accessors_match_java_registration_flow ... ok
+2026-10-26T10:00:53.7789968Z test push::consumer::tests::raw_task_entrypoints_use_the_owner_runtime_and_lifecycle ... ok
+2026-10-26T10:00:53.7791230Z test push::consumer::tests::rebalance_client_factory_setter_replaces_nullable_runtime_reference ... ok
+2026-10-26T10:00:53.7792460Z test push::consumer::tests::rebalance_switch_to_pull_removes_pop_queue_and_retires_inflight_worker ... ok
+2026-10-26T10:00:53.7793621Z test push::consumer::tests::rebalance_truncates_unsubscribed_pop_queue_and_retires_inflight_worker ... ok
+2026-10-26T10:00:53.7794861Z test push::consumer::tests::rebalance_truncates_unsubscribed_queues_without_store_side_effects ... ok
+2026-10-26T10:00:53.7795598Z test push::consumer::tests::removed_pop_queue_finishes_inflight_found_callback_before_retiring ... ok
+2026-10-26T10:00:53.7796614Z test push::consumer::tests::replacement_consume_service_receives_push_work_but_not_pop_work ... ok
+2026-10-26T10:00:53.7798202Z test push::consumer::tests::reset_finally_preserves_a_rebalance_callback_suspend_without_holding_state ... ok
+2026-10-26T10:00:53.7799478Z test push::consumer::tests::reset_offset_fences_a_late_pull_response_before_persisting_the_new_value ... ok
+2026-10-26T10:00:53.7800977Z test push::consumer::tests::reset_offset_fences_a_slow_callback_and_persists_only_the_new_value ... ok
+2026-10-26T10:00:53.7802161Z test push::consumer::tests::reset_offset_ignores_queues_without_an_active_process_queue ... ok
+2026-10-26T10:00:53.7803379Z test push::consumer::tests::reset_offset_with_null_value_retains_offset_through_unsubscribed_truncation ... ok
+2026-10-26T10:00:53.7804654Z test push::consumer::tests::reset_store_handoff_uses_live_fields_and_calls_remove_outside_queue_lock ... ok
+2026-10-26T10:00:53.7805871Z test push::consumer::tests::resume_completes_each_target_round_without_rebalancing_siblings ... ok
+2026-10-26T10:00:53.7810386Z test push::consumer::tests::retry_and_dlq_messages_restore_logical_topics_for_orderly_and_pop ... ok
+2026-10-26T10:00:53.7811064Z test push::consumer::tests::retry_publish_queue_avoids_last_broker_until_it_must_fallback ... ok
+2026-10-26T10:00:53.7811957Z test push::consumer::tests::running_info_returns_queue_snapshot_and_java_config_properties ... ok
+2026-10-26T10:00:53.7812642Z test push::consumer::tests::runtime_reset_matches_java_live_maps_nulls_and_per_queue_failures ... ok
+2026-10-26T10:00:53.7813858Z test push::consumer::tests::send_back_uses_live_facade_group_and_namespaced_retry_topic ... ok
+2026-10-26T10:00:53.7815020Z test push::consumer::tests::shutdown_aborts_a_slow_listener_without_committing_its_batch ... ok
+2026-10-26T10:00:53.7816144Z test push::consumer::tests::shutdown_with_explicit_wait_overrides_configured_wait ... ok
+2026-10-26T10:00:53.7817373Z test push::consumer::tests::startup_registers_push_consumer_and_shutdown_releases_it ... ok
+2026-10-26T10:00:53.7818504Z test push::consumer::tests::startup_rejects_missing_listener_and_starts_orderly_listener ... ok
+2026-10-26T10:00:53.7819129Z test push::consumer::tests::startup_rolls_back_each_runtime_registration_and_route_stage ... ok
+2026-10-26T10:00:53.7820117Z test push::consumer::tests::startup_snapshots_the_current_rebalance_settings ... ok
+2026-10-26T10:00:53.7820759Z test push::consumer::tests::trace_dispatcher_accessor_is_empty_before_start ... ok
+2026-10-26T10:00:53.7821444Z test push::consumer::tests::unavailable_membership_keeps_the_previous_queue_assignment ... ok
+2026-10-26T10:00:53.7822659Z test push::consumer::tests::update_core_pool_size_matches_java_void_and_lifecycle_semantics ... ok
+2026-10-26T10:00:53.7823750Z test push::pull_service::tests::active_pull_keeps_one_follow_up_and_cancellation_rejects_stale_work ... ok
+2026-10-26T10:00:53.7824410Z test push::pull_service::tests::global_suspend_holds_pending_requests_and_resume_wakes_them ... ok
+2026-10-26T10:00:53.7825011Z test push::pull_service::tests::pause_holds_due_and_follow_up_pulls_until_resume ... ok
+2026-10-26T10:00:53.7825606Z test push::pull_service::tests::pull_rpc_workers_have_a_fixed_owned_set_and_join_on_stop ... ok
+2026-10-26T10:00:53.7826201Z test push::pull_service::tests::scheduler_coalesces_one_due_pull_per_queue_generation ... ok
+2026-10-26T10:00:53.7827125Z test push::pull_service::tests::scheduler_start_and_stop_owns_a_single_worker ... ok
+2026-10-26T10:00:53.7828333Z test push::pull_service::tests::topic_thresholds_scale_to_process_queues_and_queue_backlog_includes_in_flight ... ok
+2026-10-26T10:00:53.7829808Z test rebalance::service::tests::concurrent_rebalance_triggers_run_one_at_a_time ... ok
+2026-10-26T10:00:53.7830471Z test stack::linux::tests::signal_candidate_falls_back_to_sigchld_when_common_signals_are_blocked ... ok
+2026-10-26T10:00:53.7831125Z test stack::linux::tests::signal_candidate_falls_back_to_sigio_when_other_candidates_are_blocked ... ok
+2026-10-26T10:00:53.7831770Z test stack::linux::tests::signal_candidate_selection_rejects_when_every_candidate_is_blocked ... ok
+2026-10-26T10:00:53.7832895Z test stack::linux::tests::task_disappearance_errors_are_recognized ... ok
+2026-10-26T10:00:53.7833639Z test stack::tests::concurrent_jstack_captures_are_serialized_without_losing_threads ... FAILED
+2026-10-26T10:00:53.7834197Z test stack::tests::jstack_includes_current_and_other_named_threads ... FAILED
+2026-10-26T10:00:53.7834499Z 
+2026-10-26T10:00:53.7834585Z failures:
+2026-10-26T10:00:53.7834690Z 
+2026-10-26T10:00:53.7834965Z ---- stack::tests::concurrent_jstack_captures_are_serialized_without_losing_threads stdout ----
+2026-10-26T10:00:53.7835350Z 
+2026-10-26T10:00:53.7835937Z thread 'stack::tests::concurrent_jstack_captures_are_serialized_without_losing_threads' panicked at crates/rocketmq-classic-consumer/src/stack.rs:1352:43:
+2026-10-26T10:00:53.7836850Z called `Result::unwrap()` on an `Err` value: "no unused, unblocked default-ignore signal is available for stack capture"
+2026-10-26T10:00:53.7837269Z 
+2026-10-26T10:00:53.7837480Z ---- stack::tests::jstack_includes_current_and_other_named_threads stdout ----
+2026-10-26T10:00:53.7837779Z 
+2026-10-26T10:00:53.7838281Z thread 'stack::tests::jstack_includes_current_and_other_named_threads' panicked at crates/rocketmq-classic-consumer/src/stack.rs:1383:37:
+2026-10-26T10:00:53.7840213Z Linux all-thread stack capture failed: no unused, unblocked default-ignore signal is available for stack capture
+2026-10-26T10:00:53.7840679Z 
+2026-10-26T10:00:53.7840683Z 
+2026-10-26T10:00:53.7840771Z failures:
+2026-10-26T10:00:53.7841108Z     stack::tests::concurrent_jstack_captures_are_serialized_without_losing_threads
+2026-10-26T10:00:53.7841588Z     stack::tests::jstack_includes_current_and_other_named_threads
+2026-10-26T10:00:53.7841841Z 
+2026-10-26T10:00:53.7842118Z test result: FAILED. 273 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 196.95s
+2026-10-26T10:00:53.7842498Z 
+2026-10-26T10:00:53.7843036Z [1m[31merror[0m[1m:[0m test failed, to rerun pass `-p rocketmq-classic-consumer --lib`
+2026-10-26T10:00:53.8366972Z Local validation failed. Evidence: docs/compatibility/evidence/phase-19/run-local/20261026T093620Z
+2026-10-26T10:00:53.8382319Z ##[error]Process completed with exit code 101.
+2026-10-26T10:00:53.8503310Z Post job cleanup.
+2026-10-26T10:00:54.2793367Z (node:17924) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-26T10:00:54.2807467Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-26T10:00:54.2990736Z Post job cleanup.
+2026-10-26T10:00:54.4381137Z [command]/usr/bin/git version
+2026-10-26T10:00:54.4452899Z git version 2.55.0
+2026-10-26T10:00:54.4523877Z Temporarily overriding HOME='/home/runner/work/_temp/0d15e018-dbe7-45ce-b8ce-1d9ddee3e9a4' before making global git config changes
+2026-10-26T10:00:54.4559832Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-26T10:00:54.4565768Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/rocketmq-classic/rocketmq-classic
+2026-10-26T10:00:54.4620401Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-26T10:00:54.4665247Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-26T10:00:54.5044326Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-26T10:00:54.5110420Z http.https://github.com/.extraheader
+2026-10-26T10:00:54.5170591Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-10-26T10:00:54.5232284Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-26T10:00:54.5751595Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-26T10:00:54.5820813Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-26T10:00:54.6445999Z Cleaning up orphan processes
+2026-10-26T10:00:54.6859826Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-java@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

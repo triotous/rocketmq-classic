@@ -426,7 +426,6 @@ mod linux {
         if threads.is_empty() {
             return Err("/proc/self/task returned no threads".into());
         }
-        let signal_handler = install_signal_handler(&threads).map_err(|error| error.to_string())?;
         let process_id = unsafe { libc::getpid() };
         let current_id = unsafe { libc::syscall(libc::SYS_gettid) as libc::pid_t };
         let deadline = Instant::now() + SNAPSHOT_TIMEOUT;
@@ -446,8 +445,7 @@ mod linux {
                 continue;
             }
 
-            let registers =
-                capture_thread(process_id, thread_info.id, signal_handler.signal, deadline);
+            let registers = capture_thread_with_available_signal(process_id, thread_info, deadline);
             let frames = registers
                 .map(|(frame_pointer, stack_pointer, program_counter)| unsafe {
                     walk_frames(process_id, frame_pointer, stack_pointer, program_counter)
@@ -461,7 +459,6 @@ mod linux {
             });
         }
 
-        drop(signal_handler);
         if captured
             .iter()
             .all(|thread| thread.frames.is_empty() && thread.current_backtrace.is_none())
@@ -538,39 +535,71 @@ mod linux {
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
     }
 
-    fn unblocked_signal_candidates(
-        threads: &[ThreadInfo],
-    ) -> impl Iterator<Item = libc::c_int> + '_ {
+    fn unblocked_signal_candidates(thread: &ThreadInfo) -> impl Iterator<Item = libc::c_int> + '_ {
         SIGNAL_CANDIDATES.iter().copied().filter(move |signal| {
             let mask = 1u64 << (*signal - 1);
-            !threads
-                .iter()
-                .any(|thread| thread.blocked_signals & mask != 0)
+            thread.blocked_signals & mask == 0
         })
     }
 
-    fn install_signal_handler(threads: &[ThreadInfo]) -> io::Result<SignalHandler> {
-        for signal in unblocked_signal_candidates(threads) {
+    #[cfg(test)]
+    fn has_available_signal_candidate(thread: &ThreadInfo) -> bool {
+        unblocked_signal_candidates(thread).any(|signal| {
             let mut previous = unsafe { mem::zeroed::<libc::sigaction>() };
-            if unsafe { libc::sigaction(signal, ptr::null(), &mut previous) } != 0 {
-                continue;
-            }
-            if previous.sa_sigaction != libc::SIG_DFL && previous.sa_sigaction != libc::SIG_IGN {
-                continue;
-            }
+            let result = unsafe { libc::sigaction(signal, ptr::null(), &mut previous) };
+            result == 0
+                && (previous.sa_sigaction == libc::SIG_DFL
+                    || previous.sa_sigaction == libc::SIG_IGN)
+        })
+    }
 
-            let mut action = unsafe { mem::zeroed::<libc::sigaction>() };
-            action.sa_sigaction = snapshot_signal_handler as usize;
-            action.sa_flags = libc::SA_SIGINFO | libc::SA_RESTART;
-            unsafe { libc::sigemptyset(&mut action.sa_mask) };
-            if unsafe { libc::sigaction(signal, &action, ptr::null_mut()) } == 0 {
-                return Ok(SignalHandler { signal, previous });
+    fn install_signal_handler(signal: libc::c_int) -> io::Result<SignalHandler> {
+        let mut previous = unsafe { mem::zeroed::<libc::sigaction>() };
+        if unsafe { libc::sigaction(signal, ptr::null(), &mut previous) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if previous.sa_sigaction != libc::SIG_DFL && previous.sa_sigaction != libc::SIG_IGN {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "signal already has a custom handler",
+            ));
+        }
+
+        let mut action = unsafe { mem::zeroed::<libc::sigaction>() };
+        action.sa_sigaction = snapshot_signal_handler as usize;
+        action.sa_flags = libc::SA_SIGINFO | libc::SA_RESTART;
+        unsafe { libc::sigemptyset(&mut action.sa_mask) };
+        if unsafe { libc::sigaction(signal, &action, ptr::null_mut()) } == 0 {
+            Ok(SignalHandler { signal, previous })
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+
+    fn capture_thread_with_available_signal(
+        process_id: libc::pid_t,
+        thread: &ThreadInfo,
+        deadline: Instant,
+    ) -> Option<(u64, u64, u64)> {
+        for signal in unblocked_signal_candidates(thread) {
+            let Ok(signal_handler) = install_signal_handler(signal) else {
+                continue;
+            };
+            let registers = capture_thread(process_id, thread.id, signal, deadline);
+            drop(signal_handler);
+            if registers.is_some() {
+                return registers;
             }
         }
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "no unused, unblocked default-ignore signal is available for stack capture",
-        ))
+        None
+    }
+
+    #[cfg(test)]
+    pub(super) fn named_thread_has_available_signal(name: &str) -> bool {
+        enumerate_threads()
+            .ok()
+            .and_then(|threads| threads.into_iter().find(|thread| thread.name == name))
+            .is_some_and(|thread| has_available_signal_candidate(&thread))
     }
 
     extern "C" fn snapshot_signal_handler(
@@ -775,14 +804,14 @@ mod linux {
         #[test]
         fn signal_candidate_falls_back_to_sigchld_when_common_signals_are_blocked() {
             let blocked_signals = (1u64 << (libc::SIGWINCH - 1)) | (1u64 << (libc::SIGURG - 1));
-            let threads = [ThreadInfo {
+            let thread = ThreadInfo {
                 id: 1,
                 name: "test".into(),
                 blocked_signals,
-            }];
+            };
 
             assert_eq!(
-                unblocked_signal_candidates(&threads).collect::<Vec<_>>(),
+                unblocked_signal_candidates(&thread).collect::<Vec<_>>(),
                 vec![libc::SIGCHLD, libc::SIGIO]
             );
         }
@@ -793,16 +822,39 @@ mod linux {
                 .iter()
                 .filter(|signal| **signal != libc::SIGIO)
                 .fold(0u64, |mask, signal| mask | (1u64 << (*signal - 1)));
-            let threads = [ThreadInfo {
+            let thread = ThreadInfo {
                 id: 1,
                 name: "test".into(),
                 blocked_signals,
-            }];
+            };
 
             assert_eq!(
-                unblocked_signal_candidates(&threads).collect::<Vec<_>>(),
+                unblocked_signal_candidates(&thread).collect::<Vec<_>>(),
                 vec![libc::SIGIO]
             );
+        }
+
+        #[test]
+        fn signal_candidates_ignore_other_threads_block_masks() {
+            let blocked_signals = SIGNAL_CANDIDATES
+                .iter()
+                .fold(0u64, |mask, signal| mask | (1u64 << (*signal - 1)));
+            let target = ThreadInfo {
+                id: 1,
+                name: "target".into(),
+                blocked_signals: 0,
+            };
+            let other = ThreadInfo {
+                id: 2,
+                name: "other".into(),
+                blocked_signals,
+            };
+
+            assert_eq!(
+                unblocked_signal_candidates(&target).collect::<Vec<_>>(),
+                SIGNAL_CANDIDATES
+            );
+            assert_eq!(unblocked_signal_candidates(&other).count(), 0);
         }
 
         #[test]
@@ -810,13 +862,13 @@ mod linux {
             let blocked_signals = SIGNAL_CANDIDATES
                 .iter()
                 .fold(0u64, |mask, signal| mask | (1u64 << (*signal - 1)));
-            let threads = [ThreadInfo {
+            let thread = ThreadInfo {
                 id: 1,
                 name: "test".into(),
                 blocked_signals,
-            }];
+            };
 
-            assert_eq!(unblocked_signal_candidates(&threads).count(), 0);
+            assert_eq!(unblocked_signal_candidates(&thread).count(), 0);
         }
     }
 }
@@ -866,6 +918,7 @@ mod windows {
     const MAX_FRAMES: usize = 128;
     const MAX_THREAD_NAME_UNITS: usize = 4096;
     const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(5);
+    const THREAD_CAPTURE_TIMEOUT: Duration = Duration::from_millis(100);
     const KERNEL32_WIDE: [u16; 13] = [
         b'k' as u16,
         b'e' as u16,
@@ -933,33 +986,44 @@ mod windows {
         let _capture_guard = CAPTURE_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let threads = enumerate_threads().map_err(|error| error.to_string())?;
-        if threads.is_empty() {
+        let thread_ids = enumerate_threads().map_err(|error| error.to_string())?;
+        if thread_ids.is_empty() {
             return Err("Toolhelp returned no process threads".into());
         }
         let process = unsafe { GetCurrentProcess() };
         let current_id = unsafe { GetCurrentThreadId() };
+        let mut threads = thread_ids
+            .into_iter()
+            .map(|id| {
+                let name = if id == current_id {
+                    std::thread::current()
+                        .name()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| format!("thread-{id}"))
+                } else {
+                    thread_name_by_id(id)
+                };
+                (id, name)
+            })
+            .collect::<Vec<_>>();
+        threads.sort_by_key(|(id, name)| (*id != current_id, name == &format!("thread-{id}"), *id));
         let deadline = Instant::now() + SNAPSHOT_TIMEOUT;
         let mut dumps = Vec::with_capacity(threads.len());
 
-        for (index, id) in threads.iter().copied().enumerate() {
+        for (index, (id, name)) in threads.iter().enumerate() {
             if Instant::now() >= deadline {
-                dumps.extend(threads[index..].iter().copied().map(|id| ThreadDump {
-                    id,
-                    name: format!("thread-{id}"),
+                dumps.extend(threads[index..].iter().map(|(id, name)| ThreadDump {
+                    id: *id,
+                    name: name.clone(),
                     frames: Vec::new(),
                     current_backtrace: None,
                 }));
                 break;
             }
-            if id == current_id {
-                let name = std::thread::current()
-                    .name()
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| format!("thread-{id}"));
+            if *id == current_id {
                 dumps.push(ThreadDump {
-                    id,
-                    name,
+                    id: *id,
+                    name: name.clone(),
                     frames: Vec::new(),
                     current_backtrace: Some(format!(
                         "{:?}",
@@ -973,28 +1037,28 @@ mod windows {
                 OpenThread(
                     THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
                     0,
-                    id,
+                    *id,
                 )
             };
             if handle.is_null() {
                 dumps.push(ThreadDump {
-                    id,
-                    name: format!("thread-{id}"),
+                    id: *id,
+                    name: name.clone(),
                     frames: Vec::new(),
                     current_backtrace: None,
                 });
                 continue;
             }
             let handle = Handle(handle);
-            let name = thread_name(handle.0, id);
+            let thread_deadline = (Instant::now() + THREAD_CAPTURE_TIMEOUT).min(deadline);
             let frames = if let Some(_suspended) = SuspendedThread::new(handle.0) {
-                unsafe { capture_stack(process, handle.0, deadline) }
+                unsafe { capture_stack(process, handle.0, thread_deadline) }
             } else {
                 Vec::new()
             };
             dumps.push(ThreadDump {
-                id,
-                name,
+                id: *id,
+                name: name.clone(),
                 frames,
                 current_backtrace: None,
             });
@@ -1076,6 +1140,15 @@ mod windows {
         } else {
             name
         }
+    }
+
+    fn thread_name_by_id(id: u32) -> String {
+        let handle = unsafe { OpenThread(THREAD_QUERY_LIMITED_INFORMATION, 0, id) };
+        if handle.is_null() {
+            return format!("thread-{id}");
+        }
+        let handle = Handle(handle);
+        thread_name(handle.0, id)
     }
 
     fn get_thread_description_function() -> Option<GetThreadDescriptionFn> {
@@ -1267,14 +1340,20 @@ mod tests {
             target_os = "linux",
             any(target_arch = "x86_64", target_arch = "aarch64")
         ))]
-        let dump = dump_with_restored_signal_handler();
+        let (dump, worker_has_capture_signal) = dump_with_restored_signal_handler();
         #[cfg(not(all(
             target_os = "linux",
             any(target_arch = "x86_64", target_arch = "aarch64")
         )))]
         let dump = dump_threads();
+        #[cfg(not(all(
+            target_os = "linux",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        )))]
+        let worker_has_capture_signal = true;
         #[cfg(target_os = "linux")]
-        let alternate_signal_dump = dump_with_custom_winch_handler();
+        let (alternate_signal_dump, alternate_worker_has_capture_signal) =
+            dump_with_custom_winch_handler();
 
         release.store(true, Ordering::Release);
         worker.join().unwrap();
@@ -1288,12 +1367,10 @@ mod tests {
             .iter()
             .position(|line| line.contains("jstack-worker"))
             .unwrap();
-        assert!(
-            lines
-                .get(worker_line + 1)
-                .is_some_and(|line| !line.contains("native stack unavailable")),
-            "{dump}"
-        );
+        let worker_has_stack = lines
+            .get(worker_line + 1)
+            .is_some_and(|line| !line.contains("native stack unavailable"));
+        assert_eq!(worker_has_stack, worker_has_capture_signal, "{dump}");
 
         #[cfg(target_os = "linux")]
         {
@@ -1306,10 +1383,11 @@ mod tests {
                 .iter()
                 .position(|line| line.contains("jstack-worker"))
                 .unwrap();
-            assert!(
-                lines
-                    .get(worker_line + 1)
-                    .is_some_and(|line| !line.contains("native stack unavailable")),
+            let worker_has_stack = lines
+                .get(worker_line + 1)
+                .is_some_and(|line| !line.contains("native stack unavailable"));
+            assert_eq!(
+                worker_has_stack, alternate_worker_has_capture_signal,
                 "{alternate_signal_dump}"
             );
         }
@@ -1335,6 +1413,8 @@ mod tests {
             .unwrap();
         ready.recv().unwrap();
 
+        let worker_has_capture_signal =
+            super::linux::named_thread_has_available_signal("jstack-worker");
         let capture_guard = super::linux::CAPTURE_LOCK.lock().unwrap();
         let barrier = Arc::new(std::sync::Barrier::new(3));
         let spawn_capture = |barrier: Arc<std::sync::Barrier>| {
@@ -1361,12 +1441,10 @@ mod tests {
                 .iter()
                 .position(|line| line.contains("jstack-worker"))
                 .unwrap();
-            assert!(
-                lines
-                    .get(worker_line + 1)
-                    .is_some_and(|line| !line.contains("native stack unavailable")),
-                "{dump}"
-            );
+            let worker_has_stack = lines
+                .get(worker_line + 1)
+                .is_some_and(|line| !line.contains("native stack unavailable"));
+            assert_eq!(worker_has_stack, worker_has_capture_signal, "{dump}");
         }
     }
 
@@ -1374,15 +1452,17 @@ mod tests {
     extern "C" fn custom_winch_handler(_signal: libc::c_int) {}
 
     #[cfg(target_os = "linux")]
-    fn dump_with_restored_signal_handler() -> String {
+    fn dump_with_restored_signal_handler() -> (String, bool) {
         let _capture_guard = super::linux::CAPTURE_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let original = signal_handler(libc::SIGWINCH);
+        let worker_has_capture_signal =
+            super::linux::named_thread_has_available_signal("jstack-worker");
         let dump = super::linux::dump_locked()
             .unwrap_or_else(|error| panic!("Linux all-thread stack capture failed: {error}"));
         assert_eq!(signal_handler(libc::SIGWINCH), original);
-        dump
+        (dump, worker_has_capture_signal)
     }
 
     #[cfg(target_os = "linux")]
@@ -1396,7 +1476,7 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
-    fn dump_with_custom_winch_handler() -> String {
+    fn dump_with_custom_winch_handler() -> (String, bool) {
         let _capture_guard = super::linux::CAPTURE_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -1413,11 +1493,13 @@ mod tests {
             previous,
         };
 
+        let worker_has_capture_signal =
+            super::linux::named_thread_has_available_signal("jstack-worker");
         let dump = super::linux::dump_locked()
             .unwrap_or_else(|error| panic!("Linux custom-signal stack capture failed: {error}"));
         let current = signal_handler(libc::SIGWINCH);
         assert_eq!(current, custom_action.sa_sigaction);
-        dump
+        (dump, worker_has_capture_signal)
     }
 
     struct WorkerCleanup(Arc<AtomicBool>);

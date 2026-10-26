@@ -11145,9 +11145,9 @@ Run record:
   and all-feature workspace test commands now use the same serial test mode as
   `integration-tests/run-local.sh`. Clean-source Linux evidence is in
   `docs/compatibility/evidence/phase-19/CI-STACK-001/20261026T042217Z/`.
-- [ ] Push this correction and await all GitHub Actions jobs, including the
-  required Docker local Phase 19 matrix. The first workflow's Docker matrix is
-  still running as of this record; its Linux test failure is already recorded.
+- [x] Pushed the Linux signal-candidate and serialized-test correction. GitHub
+  Actions later passed the general Rust test job on `b2e2c54e`; its required
+  Docker matrix is tracked in the follow-up records below.
 - [ ] MAN-01 through MAN-04 remain owner-input blocked as recorded above. No
   plan files were changed.
 
@@ -11170,9 +11170,37 @@ Run record:
   `REQ-001-request-reply-success` without a compiler or assertion diagnostic.
   The third attempt was terminated during `live-scenarios` after all server-
   free gates passed; GitHub reported `The operation was canceled`.
-- [ ] Push the local scenario evidence and retry record, then await a fresh
-  push-triggered Docker matrix. The latest manual rerun was cancelled about 90
-  minutes after job start even though the workflow declares a 180-minute job
-  timeout, so no conclusion about the remaining live scenario sweep is claimed.
+- [x] Pushed the local scenario evidence and retry record in `c24044f5`; the
+  fresh push-triggered run `40299960470` is documented below. Its matrix failed
+  in the all-feature workspace test gate before Docker-backed scenarios began.
 - [ ] MAN-01 through MAN-04 remain owner-input blocked as recorded above. No
   plan files were changed; no tag or package was created or published.
+
+## 2026-10-26 push-triggered CI follow-up on `c24044f5`
+
+- GitHub Actions run `40299960470` checked
+  `c24044f5376f2860121a95af032406ace41c1ab5`. The required Docker matrix passed
+  `workspace-tests-default` and failed `workspace-tests-all-features` in the
+  Linux stack-capture tests; Docker-backed gates and live scenarios did not
+  start. The general test job failed its default workspace suite with the same
+  lack of an available safe signal. Its all-feature suite and later checks were
+  skipped.
+- The Windows stack-runtime job failed the isolated named-thread regression.
+  The stack dump omitted `jstack-worker` and contained two remaining thread
+  entries with fallback names and unavailable native stacks. Inspection found
+  the global capture deadline could be spent on earlier threads before the
+  remaining thread names were read.
+- Raw logs and job metadata are archived in
+  `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-002/20261026T093620Z/`.
+- A corrective worktree change now chooses Linux capture signals per target
+  thread and preserves partial dumps when every safe signal is blocked. Windows
+  capture now resolves names before stack walking, prioritizes named threads,
+  and gives each thread a 100 ms unwind budget within the 5-second snapshot
+  deadline. A fresh push-triggered workflow is required to validate both
+  platform paths and resume the Docker matrix.
+- Linux ARM64 Rust 1.85.0 focused stack tests passed (7/7), strict Clippy
+  passed, and the full consumer library suite passed all 276 tests. The
+  Windows GNU cross-check could not run because `x86_64-w64-mingw32-gcc` is
+  unavailable in the container.
+- MAN-01 through MAN-04 remain owner-input blocked. No plan files were edited;
+  no tag or package was created or published.
