@@ -1,0 +1,21 @@
+workflow=phase/19-docker-local-validation Rust checks
+workflow_run_id=40269062847
+source_revision=b2e2c54e90f922c6b28960c42b608d49a22e3801
+workflow_url=https://github.com/triotous/rocketmq-classic/actions/runs/40269062847
+attempt1_job=121397722605
+attempt1_conclusion=failure
+attempt1_failure=P5-V02-extensions during live-scenarios after all 23 server-free gates passed
+attempt2_job=121429283601
+attempt2_conclusion=failure
+attempt2_failure=REQ-001-request-reply-success during live-scenarios after all 23 server-free gates passed; no compiler or assertion diagnostic in job log
+attempt3_job=121459038369
+attempt3_conclusion=cancelled
+attempt3_gate_started=2026-10-26T08:03:18Z
+attempt3_gate_completed=2026-10-26T09:26:15Z
+attempt3_gate_duration_seconds=4977
+attempt3_result=external cancellation during live-scenarios; log says Terminated and The operation was canceled
+server_free_gates=23 passed on every attempt that reached them
+live_scenario_inventory=37 selected rows
+workflow_timeout_minutes=180
+local_reproduction_P5-V02-extensions=PASS twice at docs/compatibility/evidence/phase-19/P5-V02-extensions/20261026T061536Z and docs/compatibility/evidence/phase-19/P5-V02-extensions/20261026T061937Z
+local_reproduction_REQ-001-request-reply-success=PASS at docs/compatibility/evidence/phase-19/REQ-001-request-reply-success/20261026T075406Z; duration_seconds=103; source_code_dirty=false

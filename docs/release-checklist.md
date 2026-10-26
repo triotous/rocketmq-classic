@@ -11153,3 +11153,26 @@ Run record:
 
 Run record:
 `rlogs/2026/10/26-phase-19-ci-stack-signal-recovery__20261026T042217Z.rlog`.
+
+## P19 required Docker matrix follow-up — 2026-10-26 (`b2e2c54e`)
+
+- [x] On source revision `b2e2c54e90f922c6b28960c42b608d49a22e3801`, the
+  Windows stack-runtime and general Rust test jobs passed. All 23 server-free
+  gates passed on each Docker matrix attempt that reached the aggregate step.
+- [x] The two live-scenario failures were locally reproduced successfully:
+  `P5-V02-extensions` passed twice, and
+  `REQ-001-request-reply-success` passed in 103 seconds with clean source.
+  Evidence is archived under the scenario directories and manifest pointers
+  refer to the latest local passes.
+- [x] Archived all three GitHub job logs at
+  `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-001/20261026T042612Z/`.
+  The first matrix attempt failed at `P5-V02-extensions`; the second stopped at
+  `REQ-001-request-reply-success` without a compiler or assertion diagnostic.
+  The third attempt was terminated during `live-scenarios` after all server-
+  free gates passed; GitHub reported `The operation was canceled`.
+- [ ] Push the local scenario evidence and retry record, then await a fresh
+  push-triggered Docker matrix. The latest manual rerun was cancelled about 90
+  minutes after job start even though the workflow declares a 180-minute job
+  timeout, so no conclusion about the remaining live scenario sweep is claimed.
+- [ ] MAN-01 through MAN-04 remain owner-input blocked as recorded above. No
+  plan files were changed; no tag or package was created or published.

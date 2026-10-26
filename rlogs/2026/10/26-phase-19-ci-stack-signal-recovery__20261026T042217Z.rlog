@@ -67,3 +67,32 @@
 - `cargo fmt --all -- --check` and `git diff --check` pass. No plan files were
   changed. The correction has not yet been pushed; GitHub Actions must validate
   the final pushed candidate.
+
+## 2026-10-26 GitHub revalidation of `b2e2c54e`
+
+- GitHub Actions run `40269062847` checked source revision
+  `b2e2c54e90f922c6b28960c42b608d49a22e3801`. Its Windows stack-runtime and
+  general Rust test jobs passed. The 23 server-free gates passed on all three
+  Docker-matrix attempts.
+- Initial matrix job `121397722605` failed during
+  `P5-V02-extensions` after beginning live scenarios. The completed job log
+  did not contain a useful assertion or probe diagnostic.
+- Manual rerun job `121429283601` failed during
+  `REQ-001-request-reply-success` after probe compilation began, again without
+  a compiler or assertion diagnostic. Focused local runs of
+  `P5-V02-extensions` passed twice at `20261026T061536Z` and
+  `20261026T061937Z`; a focused clean-source run of
+  `REQ-001-request-reply-success` passed in 103 seconds at `20261026T075406Z`.
+- Manual rerun job `121459038369` completed as cancelled. It ran from
+  `2026-10-26T07:56:32Z` to `2026-10-26T09:26:17Z`; its aggregate gate ran
+  from `08:03:18Z` to `09:26:15Z` and ended with `Terminated` and
+  `The operation was canceled` while `live-scenarios` was active. All
+  server-free gates had passed. This was not a scenario assertion failure.
+- The full logs for all three matrix jobs are archived in
+  `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-001/20261026T042612Z/`.
+  The manual rerun cancellation occurred about 90 minutes after job start even
+  though `.github/workflows/ci.yml` declares `timeout-minutes: 180`.
+- Pending: push this retry evidence and the two local scenario evidence
+  directories, then await the fresh push-triggered workflow on that final
+  source revision. No plan files were edited. MAN-01 through MAN-04 remain
+  blocked on owner input; no tag or package was created or published.
