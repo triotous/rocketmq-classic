@@ -1,0 +1,1024 @@
+Required Docker local Phase 19 matrix	Set up job	﻿2026-10-26T13:35:48.2661226Z Current runner version: '2.338.0'
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2698297Z ##[group]Runner Image Provisioner
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2699862Z Hosted Compute Agent
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2700937Z Version: 20261021.618
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2702054Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2703534Z Build Date: 2026-10-21T00:45:21Z
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2705206Z Worker ID: {4bc8b9ea-035a-4b03-a0e7-86929ff1e31f}
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2706804Z Region: southcentralus
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2707906Z Cloud: Azure
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2708835Z ##[endgroup]
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2711397Z ##[group]Operating System
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2712542Z Ubuntu
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2713589Z 24.04.5
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2715008Z LTS
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2715977Z ##[endgroup]
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2717133Z ##[group]Runner Image
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2718176Z Image: ubuntu-24.04
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2719813Z Version: 20261012.334.1
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2721778Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261012.334/images/ubuntu/Ubuntu2404-Readme.md
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2725401Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261012.334
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2727312Z ##[endgroup]
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2729610Z ##[group]GITHUB_TOKEN Permissions
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2732721Z Contents: read
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2733892Z Metadata: read
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2735348Z Packages: read
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2736398Z ##[endgroup]
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2739470Z Secret source: Actions
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2741052Z Cache mode: write
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.2742697Z Prepare workflow directory
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.3340647Z Prepare all required actions
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.3413093Z Getting action download info
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.6995102Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:48.8599168Z Download action repository 'dtolnay/rust-toolchain@master' (SHA:683b588c487a69d01f6c6ddf40f036ff682cc2c8)
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:49.1188217Z Download action repository 'actions/setup-java@v4' (SHA:cf277c60eb25467037889841efdb72551f06f6c3)
+Required Docker local Phase 19 matrix	Set up job	2026-10-26T13:35:49.8967600Z Complete job name: Required Docker local Phase 19 matrix
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	﻿2026-10-26T13:35:49.9896965Z ##[group]Run actions/checkout@v4
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9897939Z with:
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9898468Z   repository: triotous/rocketmq-classic
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9902327Z   token: ***
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9902822Z   ssh-strict: true
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9903307Z   ssh-user: git
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9903802Z   persist-credentials: true
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9904543Z   clean: true
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9905057Z   sparse-checkout-cone-mode: true
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9905642Z   fetch-depth: 1
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9906125Z   fetch-tags: false
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9906621Z   show-progress: true
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9907115Z   lfs: false
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9907608Z   submodules: false
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9908138Z   set-safe-directory: true
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9908706Z   allow-unsafe-pr-checkout: false
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9909604Z env:
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9910144Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9910737Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9911301Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9911812Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:49.9912373Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1156885Z Syncing repository: triotous/rocketmq-classic
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1160545Z ##[group]Getting Git version info
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1162877Z Working directory is '/home/runner/work/rocketmq-classic/rocketmq-classic'
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1166517Z [command]/usr/bin/git version
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1381551Z git version 2.55.0
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1419072Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1429840Z Temporarily overriding HOME='/home/runner/work/_temp/5b700990-af66-4dfa-9a5a-4979ac543313' before making global git config changes
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1432567Z Adding repository directory to the temporary git global config as a safe directory
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1439233Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/rocketmq-classic/rocketmq-classic
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1535459Z Deleting the contents of '/home/runner/work/rocketmq-classic/rocketmq-classic'
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1541004Z ##[group]Initializing the repository
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1544666Z [command]/usr/bin/git init /home/runner/work/rocketmq-classic/rocketmq-classic
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1655539Z hint: Using 'master' as the name for the initial branch. This default branch name
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1659391Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1662037Z hint: to use in all of your new repositories, which will suppress this warning,
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1665740Z hint: call:
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1667340Z hint:
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1669417Z hint: 	git config --global init.defaultBranch <name>
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1673570Z hint:
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1675036Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1676815Z hint: 'development'. The just-created branch can be renamed via this command:
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1678352Z hint:
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1679227Z hint: 	git branch -m <name>
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1680189Z hint:
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1681453Z hint: Disable this message with "git config set advice.defaultBranchName false"
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1683759Z Initialized empty Git repository in /home/runner/work/rocketmq-classic/rocketmq-classic/.git/
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1687413Z [command]/usr/bin/git remote add origin https://github.com/triotous/rocketmq-classic
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1733601Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1735816Z ##[group]Disabling automatic garbage collection
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1737787Z [command]/usr/bin/git config --local gc.auto 0
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1819526Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1821366Z ##[group]Setting up auth
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1826627Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.1982751Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.2536359Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.2546444Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.2732856Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.2775774Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.3772136Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.3777950Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.3780348Z ##[group]Fetching the repository
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:50.3783880Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +485fb99a43b739e5d936bd472efdee8b0ba40313:refs/remotes/origin/phase/19-docker-local-validation
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:51.8975146Z From https://github.com/triotous/rocketmq-classic
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:51.8988345Z  * [new ref]         485fb99a43b739e5d936bd472efdee8b0ba40313 -> origin/phase/19-docker-local-validation
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:51.8992185Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:51.9003441Z ##[group]Determining the checkout info
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:51.9005056Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:51.9006123Z [command]/usr/bin/git sparse-checkout disable
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:51.9062423Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:51.9095224Z ##[group]Checking out the ref
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:51.9096705Z [command]/usr/bin/git checkout --progress --force -B phase/19-docker-local-validation refs/remotes/origin/phase/19-docker-local-validation
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:52.3776349Z Switched to a new branch 'phase/19-docker-local-validation'
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:52.3785703Z branch 'phase/19-docker-local-validation' set up to track 'origin/phase/19-docker-local-validation'.
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:52.3799246Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:52.3850984Z [command]/usr/bin/git log -1 --format=%H
+Required Docker local Phase 19 matrix	Run actions/checkout@v4	2026-10-26T13:35:52.3882087Z 485fb99a43b739e5d936bd472efdee8b0ba40313
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	﻿2026-10-26T13:35:52.4333142Z ##[group]Run dtolnay/rust-toolchain@master
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4333526Z with:
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4333742Z   toolchain: 1.85.0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4333981Z   components: rustfmt, clippy
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4334233Z env:
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4334657Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4334917Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4335167Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4335393Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4335610Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4402461Z ##[start-action display=Parse toolchain version;id=__dtolnay_rust-toolchain.parse]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4461722Z ##[group]Run if [[ -z $toolchain ]]; then
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4462186Z ^[[36;1mif [[ -z $toolchain ]]; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4462739Z ^[[36;1m  # GitHub does not enforce `required: true` inputs itself. https://github.com/actions/runner/issues/1070^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4463325Z ^[[36;1m  echo "'toolchain' is a required input" >&2^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4463651Z ^[[36;1m  exit 1^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4464059Z ^[[36;1melif [[ $toolchain =~ ^stable' '[0-9]+' '(year|month|week|day)s?' 'ago$ ]]; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4464948Z ^[[36;1m  if [[ Linux == macOS ]]; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4465532Z ^[[36;1m    echo "toolchain=1.$((($(date -v-$(sed 's/stable \([0-9]*\) \(.\).*/\1\2/' <<< $toolchain) +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4466081Z ^[[36;1m  else^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4466500Z ^[[36;1m    echo "toolchain=1.$((($(date --date "${toolchain#stable }" +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4466964Z ^[[36;1m  fi^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4467277Z ^[[36;1melif [[ $toolchain =~ ^stable' 'minus' '[0-9]+' 'releases?$ ]]; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4467845Z ^[[36;1m  echo "toolchain=1.$((($(date +%s)/60/60/24-16569)/7/6-${toolchain//[^0-9]/}))" >> $GITHUB_OUTPUT^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4468318Z ^[[36;1melif [[ $toolchain =~ ^1\.[0-9]+$ ]]; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4468850Z ^[[36;1m  echo "toolchain=1.$((i=${toolchain#1.}, c=($(date +%s)/60/60/24-16569)/7/6, i+9*i*(10*i<=c)+90*i*(100*i<=c)))" >> $GITHUB_OUTPUT^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4469368Z ^[[36;1melse^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4469583Z ^[[36;1m  delimiter=EOF^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4469894Z ^[[36;1m  while [[ $toolchain == *$delimiter* ]]; do delimiter+=_; done^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4470409Z ^[[36;1m  printf 'toolchain<<%s\n%s\n%s\n' "$delimiter" "$toolchain" "$delimiter" >> $GITHUB_OUTPUT^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4470833Z ^[[36;1mfi^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4731264Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4731659Z env:
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4731877Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4732136Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4732493Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4732880Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4733234Z   toolchain: 1.85.0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4733534Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4884078Z ##[end-action id=__dtolnay_rust-toolchain.parse;outcome=success;conclusion=success;duration_ms=48]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4889288Z ##[start-action display=Set $CARGO_HOME;id=__dtolnay_rust-toolchain.__run]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4925991Z ##[group]Run echo CARGO_HOME=${CARGO_HOME:-"$HOME/.cargo"} >> $GITHUB_ENV
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4926502Z ^[[36;1mecho CARGO_HOME=${CARGO_HOME:-"$HOME/.cargo"} >> $GITHUB_ENV^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4989017Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4989389Z env:
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4989609Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4989873Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4990123Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4990350Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.4990731Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5107841Z ##[end-action id=__dtolnay_rust-toolchain.__run;outcome=success;conclusion=success;duration_ms=21]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5110362Z ##[start-action display=Install rustup if needed;id=__dtolnay_rust-toolchain.__run_2]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5138877Z ##[group]Run if ! command -v rustup &>/dev/null; then
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5139465Z ^[[36;1mif ! command -v rustup &>/dev/null; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5140260Z ^[[36;1m  curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused --location --silent --show-error --fail https://sh.rustup.rs | sh -s -- --default-toolchain none -y^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5141053Z ^[[36;1m  echo "$CARGO_HOME/bin" >> $GITHUB_PATH^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5141351Z ^[[36;1mfi^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5206222Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5206708Z env:
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5206933Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5207197Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5207578Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5207864Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5208098Z   CARGO_HOME: /home/runner/.cargo
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5208362Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5332095Z ##[end-action id=__dtolnay_rust-toolchain.__run_2;outcome=success;conclusion=success;duration_ms=22]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5334667Z ##[start-action display=Install rustup if needed on windows;id=__dtolnay_rust-toolchain.__run_3]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5341981Z ##[end-action id=__dtolnay_rust-toolchain.__run_3;outcome=skipped;conclusion=skipped;duration_ms=0]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5357716Z ##[start-action display=rustup toolchain install 1.85.0;id=__dtolnay_rust-toolchain.__run_4]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5380293Z ##[group]Run set -f  # split targets and components on commas and whitespace, without glob expansion
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5380989Z ^[[36;1mset -f  # split targets and components on commas and whitespace, without glob expansion^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5381441Z ^[[36;1mflags=()^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5381728Z ^[[36;1mfor t in ${targets//,/ }; do flags+=(--target "$t"); done^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5382160Z ^[[36;1mfor c in ${components//,/ }; do flags+=(--component "$c"); done^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5382674Z ^[[36;1mif [[ $toolchain == nightly && -n $components ]]; then flags+=(--allow-downgrade); fi^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5383137Z ^[[36;1mlog=$(mktemp)^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5383430Z ^[[36;1mtrap 'rm -f "$log"' EXIT^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5383697Z ^[[36;1mfor attempt in 1 2 3 4 5; do^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5384276Z ^[[36;1m  if rustup toolchain install "$toolchain" "${flags[@]}" --profile minimal --no-self-update --force-non-host 2>&1 | tee "$log"; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5385124Z ^[[36;1m    break^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5385337Z ^[[36;1m  else^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5385553Z ^[[36;1m    status=$?^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5385774Z ^[[36;1m  fi^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5386068Z ^[[36;1m  if [[ $attempt == 5 ]] || ! grep -Fq 'checksum failed for ' "$log" \^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5386633Z ^[[36;1m      || ! grep -Fq 'this is likely due to an ongoing update of the official release server' "$log"; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5387115Z ^[[36;1m    exit "$status"^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5387346Z ^[[36;1m  fi^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5387704Z ^[[36;1m  echo "Retrying rustup toolchain install in 30 seconds (retry $attempt of 4)" >&2^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5388141Z ^[[36;1m  sleep 30^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5388366Z ^[[36;1mdone^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5459775Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5460162Z env:
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5460374Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5460793Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5461050Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5461271Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5461499Z   CARGO_HOME: /home/runner/.cargo
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5461868Z   toolchain: 1.85.0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5462118Z   targets: 
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5462327Z   components: rustfmt, clippy
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5462592Z   RUSTUP_PERMIT_COPY_RENAME: 1
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.5463185Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:52.6723131Z info: syncing channel updates for 1.85.0-x86_64-unknown-linux-gnu
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:53.0611162Z info: latest update on 2025-02-20 for version 1.85.0 (4d91de4e4 2025-02-17)
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:35:53.0633080Z info: downloading 5 components
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6246911Z 
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6322593Z   1.85.0-x86_64-unknown-linux-gnu installed - rustc 1.85.0 (4d91de4e4 2025-02-17)
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6323571Z 
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6394109Z ##[end-action id=__dtolnay_rust-toolchain.__run_4;outcome=success;conclusion=success;duration_ms=8103]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6401567Z ##[start-action display=rustup default 1.85.0;id=__dtolnay_rust-toolchain.__run_5]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6420548Z ##[group]Run rustup default "$toolchain" --force-non-host
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6420971Z ^[[36;1mrustup default "$toolchain" --force-non-host^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6482893Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6483248Z env:
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6483459Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6483707Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6483960Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6484174Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6484727Z   CARGO_HOME: /home/runner/.cargo
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6485003Z   toolchain: 1.85.0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6485206Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6603628Z info: using existing install for 1.85.0-x86_64-unknown-linux-gnu
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6610122Z info: default toolchain set to 1.85.0-x86_64-unknown-linux-gnu
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6610702Z 
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6681949Z   1.85.0-x86_64-unknown-linux-gnu unchanged - rustc 1.85.0 (4d91de4e4 2025-02-17)
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6683505Z info: note that the toolchain '1.85.0-x86_64-unknown-linux-gnu' is currently in use (overridden by '/home/runner/work/rocketmq-classic/rocketmq-classic/rust-toolchain.toml')
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6685300Z 
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6701299Z ##[end-action id=__dtolnay_rust-toolchain.__run_5;outcome=success;conclusion=success;duration_ms=29]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6705352Z ##[start-action display=Create cachekey;id=__dtolnay_rust-toolchain.rustc-version]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6723493Z ##[group]Run DATE=$(rustc +"$toolchain" --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6725041Z ^[[36;1mDATE=$(rustc +"$toolchain" --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6725834Z ^[[36;1mHASH=$(rustc +"$toolchain" --version --verbose | sed -ne 's/^commit-hash: //p')^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6726365Z ^[[36;1mecho "cachekey=$(echo $DATE$HASH | head -c12)" >> $GITHUB_OUTPUT^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6786834Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6787190Z env:
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6787394Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6787653Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6787908Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6788143Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6788372Z   CARGO_HOME: /home/runner/.cargo
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6788626Z   toolchain: 1.85.0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.6788838Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7152550Z ##[end-action id=__dtolnay_rust-toolchain.rustc-version;outcome=success;conclusion=success;duration_ms=44]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7155747Z ##[start-action display=Disable incremental compilation;id=__dtolnay_rust-toolchain.__run_6]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7197278Z ##[group]Run if [ -z "${CARGO_INCREMENTAL+set}" ]; then
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7197695Z ^[[36;1mif [ -z "${CARGO_INCREMENTAL+set}" ]; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7198047Z ^[[36;1m  echo CARGO_INCREMENTAL=0 >> $GITHUB_ENV^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7198331Z ^[[36;1mfi^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7259858Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7260205Z env:
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7260403Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7260659Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7260906Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7261381Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7261604Z   CARGO_HOME: /home/runner/.cargo
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7261859Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7348118Z ##[end-action id=__dtolnay_rust-toolchain.__run_6;outcome=success;conclusion=success;duration_ms=19]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7350306Z ##[start-action display=Enable colors in Cargo output;id=__dtolnay_rust-toolchain.__run_7]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7368147Z ##[group]Run if [ -z "${CARGO_TERM_COLOR+set}" ]; then
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7368523Z ^[[36;1mif [ -z "${CARGO_TERM_COLOR+set}" ]; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7368871Z ^[[36;1m  echo CARGO_TERM_COLOR=always >> $GITHUB_ENV^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7369175Z ^[[36;1mfi^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7424059Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7424767Z env:
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7424974Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7425233Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7425478Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7425694Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7425930Z   CARGO_HOME: /home/runner/.cargo
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7426180Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7508839Z ##[end-action id=__dtolnay_rust-toolchain.__run_7;outcome=success;conclusion=success;duration_ms=15]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7512267Z ##[start-action display=Enable Cargo sparse registry;id=__dtolnay_rust-toolchain.__run_8]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7531182Z ##[group]Run # implemented in 1.66, stabilized in 1.68, made default in 1.70
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7531730Z ^[[36;1m# implemented in 1.66, stabilized in 1.68, made default in 1.70^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7532458Z ^[[36;1mif [ -z "${CARGO_REGISTRIES_CRATES_IO_PROTOCOL+set}" -o -f "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol ]; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7533212Z ^[[36;1m  if rustc +"$toolchain" --version --verbose | grep -q '^release: 1\.6[89]\.'; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7533815Z ^[[36;1m    touch "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol || true^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7534761Z ^[[36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse >> $GITHUB_ENV^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7535389Z ^[[36;1m  elif rustc +"$toolchain" --version --verbose | grep -q '^release: 1\.6[67]\.'; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7535988Z ^[[36;1m    touch "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol || true^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7536574Z ^[[36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=git >> $GITHUB_ENV^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7536948Z ^[[36;1m  fi^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7537151Z ^[[36;1mfi^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7592296Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7592652Z env:
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7592851Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7593099Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7593336Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7593547Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7593775Z   CARGO_HOME: /home/runner/.cargo
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7594049Z   CARGO_TERM_COLOR: always
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7594500Z   toolchain: 1.85.0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7594762Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7932915Z ##[end-action id=__dtolnay_rust-toolchain.__run_8;outcome=success;conclusion=success;duration_ms=41]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7937361Z ##[start-action display=Work around spurious network errors in curl 8.0;id=__dtolnay_rust-toolchain.__run_9]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7955886Z ##[group]Run # https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7956699Z ^[[36;1m# https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7957360Z ^[[36;1mif rustc +"$toolchain" --version --verbose | grep -q '^release: 1\.7[01]\.'; then^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7957855Z ^[[36;1m  echo CARGO_HTTP_MULTIPLEXING=false >> $GITHUB_ENV^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.7958175Z ^[[36;1mfi^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8019399Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8019749Z env:
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8019952Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8020374Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8020615Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8020830Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8021075Z   CARGO_HOME: /home/runner/.cargo
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8021332Z   CARGO_TERM_COLOR: always
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8021560Z   toolchain: 1.85.0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8021898Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8226678Z ##[end-action id=__dtolnay_rust-toolchain.__run_9;outcome=success;conclusion=success;duration_ms=28]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8231395Z ##[start-action display=rustc +1.85.0 --version --verbose;id=__dtolnay_rust-toolchain.__run_10]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8249976Z ##[group]Run rustc +"$toolchain" --version --verbose
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8250364Z ^[[36;1mrustc +"$toolchain" --version --verbose^[[0m
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8310201Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8310558Z env:
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8310768Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8311028Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8311289Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8311517Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8311747Z   CARGO_HOME: /home/runner/.cargo
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8311999Z   CARGO_TERM_COLOR: always
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8312227Z   toolchain: 1.85.0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8312451Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8495452Z rustc 1.85.0 (4d91de4e4 2025-02-17)
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8496211Z binary: rustc
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8496896Z commit-hash: 4d91de4e48198da2e33413efdcd9cd2cc0c46688
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8503571Z commit-date: 2025-02-17
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8503868Z host: x86_64-unknown-linux-gnu
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8504119Z release: 1.85.0
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8504583Z LLVM version: 19.1.7
+Required Docker local Phase 19 matrix	Run dtolnay/rust-toolchain@master	2026-10-26T13:36:00.8513400Z ##[end-action id=__dtolnay_rust-toolchain.__run_10;outcome=success;conclusion=success;duration_ms=28]
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	﻿2026-10-26T13:36:00.8640534Z ##[group]Run actions/setup-java@v4
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8640826Z with:
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8641026Z   distribution: temurin
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8641260Z   java-version: 27
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8641473Z   cache: maven
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8641743Z   cache-dependency-path: compat/java-reference/pom.xml
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8642069Z   java-package: jdk
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8642281Z   check-latest: false
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8642499Z   server-id: github
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8642722Z   server-username: GITHUB_ACTOR
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8642983Z   server-password: GITHUB_TOKEN
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8643240Z   overwrite-settings: true
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8643477Z   job-status: success
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8646288Z   token: ***
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8646602Z env:
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8646800Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8647051Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8647291Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8647505Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8647728Z   CARGO_HOME: /home/runner/.cargo
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8648018Z   CARGO_TERM_COLOR: always
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:00.8648243Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:01.0492160Z ##[warning]setup-java v4 is deprecated and will no longer receive updates. Please migrate to actions/setup-java@v5.
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:01.0505155Z ##[group]Installed distributions
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:01.0557295Z Trying to resolve the latest version from remote
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:01.0743169Z (node:2125) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:01.0745426Z (Use `node --trace-deprecation ...` to show where the warning was created)
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:01.5496725Z Resolved latest version as 27.0.1+0
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:01.5537558Z Trying to download...
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:01.5539211Z Downloading Java 27.0.1+0 (Temurin-Hotspot) from https://github.com/adoptium/temurin27-binaries/releases/download/jdk-27.0.1.0.2%2B1/OpenJDK27U-jdk_x64_linux_hotspot_27.0.1.0.2_1.tar.gz ...
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:02.4984948Z Extracting Java archive...
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:02.5125921Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/9386cc64-6557-4d16-881a-0630f350bef1 -f /home/runner/work/_temp/1383cf2c-ed2d-4135-bd2c-d7c38a9277a3
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:06.9067967Z Java 27.0.1+0 was downloaded
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:06.9068992Z Setting Java 27.0.1+0 as the default
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:06.9079030Z Creating toolchains.xml for JDK version 27 from temurin
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:06.9162375Z Writing to /home/runner/.m2/toolchains.xml
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:06.9163018Z 
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:06.9163481Z Java configuration:
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:06.9164262Z   Distribution: temurin
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:06.9165357Z   Version: 27.0.1+0
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:06.9166144Z   Path: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:06.9166984Z 
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:06.9167782Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:06.9184823Z Creating settings.xml with server-id: github
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:06.9194984Z Writing to /home/runner/.m2/settings.xml
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:07.7344888Z Cache hit for: setup-java-Linux-x64-maven-3d3cb87b79dab5a5ce18e0a7e9347354c4626d1df60eac6073ff90fe9cf6917f
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:07.7539438Z (node:2125) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:08.8935919Z Received 83886080 of 117776349 (71.2%), 80.0 MBs/sec
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:09.1287951Z Received 117776349 of 117776349 (100.0%), 90.7 MBs/sec
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:09.1288999Z Cache Size: ~112 MB (117776349 B)
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:09.1333463Z [command]/usr/bin/tar -xf /home/runner/work/_temp/6794eae0-8b9a-4b7b-9805-cd6a3c9aa154/cache.tzst -P -C /home/runner/work/rocketmq-classic/rocketmq-classic --use-compress-program unzstd
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:09.4218879Z Cache restored successfully
+Required Docker local Phase 19 matrix	Run actions/setup-java@v4	2026-10-26T13:36:09.4289563Z Cache restored from key: setup-java-Linux-x64-maven-3d3cb87b79dab5a5ce18e0a7e9347354c4626d1df60eac6073ff90fe9cf6917f
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	﻿2026-10-26T13:36:09.4509081Z ##[group]Run cargo fetch --locked
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:09.4509452Z ^[[36;1mcargo fetch --locked^[[0m
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:09.4576181Z shell: /usr/bin/bash -e {0}
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:09.4576457Z env:
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:09.4576737Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:09.4577165Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:09.4577514Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:09.4577753Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:09.4577987Z   CARGO_HOME: /home/runner/.cargo
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:09.4578263Z   CARGO_TERM_COLOR: always
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:09.4578639Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:09.4579399Z   JAVA_HOME_27_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:09.4579928Z ##[endgroup]
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:09.5063044Z ^[[1m^[[32m    Updating^[[0m crates.io index
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.2608096Z ^[[1m^[[32m Downloading^[[0m crates ...
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.3647385Z ^[[1m^[[32m  Downloaded^[[0m windows-link v0.2.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.3648285Z ^[[1m^[[32m  Downloaded^[[0m tokio-macros v2.7.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.3685805Z ^[[1m^[[32m  Downloaded^[[0m untrusted v0.9.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.3702801Z ^[[1m^[[32m  Downloaded^[[0m quote v1.0.47
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.3737994Z ^[[1m^[[32m  Downloaded^[[0m subtle v2.6.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.3755727Z ^[[1m^[[32m  Downloaded^[[0m futures-task v0.3.34
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.3775819Z ^[[1m^[[32m  Downloaded^[[0m openssl-probe v0.2.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.3871248Z ^[[1m^[[32m  Downloaded^[[0m pkg-config v0.3.34
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.3891962Z ^[[1m^[[32m  Downloaded^[[0m zmij v1.0.23
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.3916939Z ^[[1m^[[32m  Downloaded^[[0m hostname v0.4.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.3942978Z ^[[1m^[[32m  Downloaded^[[0m atomic-waker v1.1.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.3972024Z ^[[1m^[[32m  Downloaded^[[0m deranged v0.5.8
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.3990497Z ^[[1m^[[32m  Downloaded^[[0m cmake v0.1.58
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4225432Z ^[[1m^[[32m  Downloaded^[[0m core-foundation v0.10.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4226735Z ^[[1m^[[32m  Downloaded^[[0m serde_urlencoded v0.7.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4388358Z ^[[1m^[[32m  Downloaded^[[0m proc-macro2 v1.0.107
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4405019Z ^[[1m^[[32m  Downloaded^[[0m adler2 v2.0.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4562145Z ^[[1m^[[32m  Downloaded^[[0m equivalent v1.0.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4575184Z ^[[1m^[[32m  Downloaded^[[0m time-core v0.1.7
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4725661Z ^[[1m^[[32m  Downloaded^[[0m num_threads v0.1.7
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4738209Z ^[[1m^[[32m  Downloaded^[[0m powerfmt v0.2.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4866853Z ^[[1m^[[32m  Downloaded^[[0m inout v0.1.4
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4867925Z ^[[1m^[[32m  Downloaded^[[0m http-body-util v0.1.5
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4869324Z ^[[1m^[[32m  Downloaded^[[0m futures-core v0.3.34
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4870459Z ^[[1m^[[32m  Downloaded^[[0m try-lock v0.2.5
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4871828Z ^[[1m^[[32m  Downloaded^[[0m zstd-safe v7.3.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4872800Z ^[[1m^[[32m  Downloaded^[[0m zstd v0.13.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4874099Z ^[[1m^[[32m  Downloaded^[[0m ipnet v2.12.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4875526Z ^[[1m^[[32m  Downloaded^[[0m lz4_flex v0.12.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4876955Z ^[[1m^[[32m  Downloaded^[[0m futures-channel v0.3.34
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4878053Z ^[[1m^[[32m  Downloaded^[[0m httparse v1.10.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4882008Z ^[[1m^[[32m  Downloaded^[[0m http-body v1.1.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4883073Z ^[[1m^[[32m  Downloaded^[[0m rustls-webpki v0.103.15
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4888284Z ^[[1m^[[32m  Downloaded^[[0m hyper-util v0.1.20
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.4979403Z ^[[1m^[[32m  Downloaded^[[0m mach2 v0.7.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5039346Z ^[[1m^[[32m  Downloaded^[[0m zerocopy-derive v0.8.58
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5200319Z ^[[1m^[[32m  Downloaded^[[0m potential_utf v0.1.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5220115Z ^[[1m^[[32m  Downloaded^[[0m hyper v1.11.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5330301Z ^[[1m^[[32m  Downloaded^[[0m zlib-rs v0.6.8
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5421630Z ^[[1m^[[32m  Downloaded^[[0m yoke-derive v0.8.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5445954Z ^[[1m^[[32m  Downloaded^[[0m sync_wrapper v1.0.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5472018Z ^[[1m^[[32m  Downloaded^[[0m form_urlencoded v1.2.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5488994Z ^[[1m^[[32m  Downloaded^[[0m digest v0.10.7
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5512789Z ^[[1m^[[32m  Downloaded^[[0m base64ct v1.8.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5555937Z ^[[1m^[[32m  Downloaded^[[0m rand_core v0.6.4
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5580404Z ^[[1m^[[32m  Downloaded^[[0m displaydoc v0.2.7
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5616552Z ^[[1m^[[32m  Downloaded^[[0m tower-layer v0.3.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5639482Z ^[[1m^[[32m  Downloaded^[[0m syn v2.0.119
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5791408Z ^[[1m^[[32m  Downloaded^[[0m synstructure v0.13.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5808295Z ^[[1m^[[32m  Downloaded^[[0m des v0.8.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5830988Z ^[[1m^[[32m  Downloaded^[[0m windows_aarch64_gnullvm v0.52.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5953649Z ^[[1m^[[32m  Downloaded^[[0m litemap v0.8.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.5983862Z ^[[1m^[[32m  Downloaded^[[0m tracing-core v0.1.36
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.6018955Z ^[[1m^[[32m  Downloaded^[[0m pest_meta v2.9.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.6060048Z ^[[1m^[[32m  Downloaded^[[0m windows_i686_gnullvm v0.52.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.6184907Z ^[[1m^[[32m  Downloaded^[[0m icu_provider v2.1.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.6226972Z ^[[1m^[[32m  Downloaded^[[0m icu_locale_core v2.1.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.6316771Z ^[[1m^[[32m  Downloaded^[[0m icu_normalizer_data v2.1.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.6353444Z ^[[1m^[[32m  Downloaded^[[0m icu_collections v2.1.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.6434149Z ^[[1m^[[32m  Downloaded^[[0m tower v0.5.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.6558607Z ^[[1m^[[32m  Downloaded^[[0m http v1.5.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.6611009Z ^[[1m^[[32m  Downloaded^[[0m zerovec v0.11.8
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.6688529Z ^[[1m^[[32m  Downloaded^[[0m idna v1.1.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.6738765Z ^[[1m^[[32m  Downloaded^[[0m tower-http v0.6.11
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.6853687Z ^[[1m^[[32m  Downloaded^[[0m icu_properties_data v2.1.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.6974550Z ^[[1m^[[32m  Downloaded^[[0m pest v2.9.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.7035525Z ^[[1m^[[32m  Downloaded^[[0m hashbrown v0.17.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.7108288Z ^[[1m^[[32m  Downloaded^[[0m reqwest v0.12.28
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.7179697Z ^[[1m^[[32m  Downloaded^[[0m zstd-sys v2.1.1+zstd.1.5.7
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.7402719Z ^[[1m^[[32m  Downloaded^[[0m aes v0.8.4
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.7445375Z ^[[1m^[[32m  Downloaded^[[0m tokio v1.53.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.7973939Z ^[[1m^[[32m  Downloaded^[[0m js-sys v0.3.104
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.8014860Z ^[[1m^[[32m  Downloaded^[[0m typenum v1.20.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.8059961Z ^[[1m^[[32m  Downloaded^[[0m bumpalo v3.20.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.8098763Z ^[[1m^[[32m  Downloaded^[[0m windows_aarch64_msvc v0.52.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.8263195Z ^[[1m^[[32m  Downloaded^[[0m windows_x86_64_msvc v0.52.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.8423769Z ^[[1m^[[32m  Downloaded^[[0m windows_i686_gnu v0.52.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.8679008Z ^[[1m^[[32m  Downloaded^[[0m windows_x86_64_gnu v0.52.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.8919064Z ^[[1m^[[32m  Downloaded^[[0m libc v0.2.189
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.9419296Z ^[[1m^[[32m  Downloaded^[[0m der v0.7.10
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.9481646Z ^[[1m^[[32m  Downloaded^[[0m tracing v0.1.44
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.9691864Z ^[[1m^[[32m  Downloaded^[[0m windows_i686_msvc v0.52.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.9862573Z ^[[1m^[[32m  Downloaded^[[0m indexmap v2.14.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.9914539Z ^[[1m^[[32m  Downloaded^[[0m zerotrie v0.2.5
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:10.9962997Z ^[[1m^[[32m  Downloaded^[[0m url v2.5.8
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.0005814Z ^[[1m^[[32m  Downloaded^[[0m wasm-bindgen-macro-support v0.2.127
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.0034143Z ^[[1m^[[32m  Downloaded^[[0m wasm-bindgen v0.2.127
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.0078243Z ^[[1m^[[32m  Downloaded^[[0m yaml_serde v0.10.7
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.0142088Z ^[[1m^[[32m  Downloaded^[[0m icu_normalizer v2.1.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.0192507Z ^[[1m^[[32m  Downloaded^[[0m libyaml-rs v0.3.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.0243083Z ^[[1m^[[32m  Downloaded^[[0m rcgen v0.13.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.0288765Z ^[[1m^[[32m  Downloaded^[[0m web-sys v0.3.104
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.1576527Z ^[[1m^[[32m  Downloaded^[[0m icu_properties v2.1.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.1603604Z ^[[1m^[[32m  Downloaded^[[0m ryu v1.0.23
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.1641402Z ^[[1m^[[32m  Downloaded^[[0m tinystr v0.8.4
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.1665783Z ^[[1m^[[32m  Downloaded^[[0m yoke v0.8.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.1687695Z ^[[1m^[[32m  Downloaded^[[0m synstructure v0.14.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.1702140Z ^[[1m^[[32m  Downloaded^[[0m smallvec v1.16.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.1719261Z ^[[1m^[[32m  Downloaded^[[0m cbc v0.1.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.1736672Z ^[[1m^[[32m  Downloaded^[[0m windows_x86_64_gnullvm v0.52.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.1841492Z ^[[1m^[[32m  Downloaded^[[0m rustls v0.23.45
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.1996665Z ^[[1m^[[32m  Downloaded^[[0m cipher v0.4.4
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2011350Z ^[[1m^[[32m  Downloaded^[[0m pkcs5 v0.7.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2062134Z ^[[1m^[[32m  Downloaded^[[0m const-oid v0.9.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2085079Z ^[[1m^[[32m  Downloaded^[[0m yasna v0.5.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2109762Z ^[[1m^[[32m  Downloaded^[[0m base64 v0.22.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2163643Z ^[[1m^[[32m  Downloaded^[[0m zerovec-derive v0.11.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2184676Z ^[[1m^[[32m  Downloaded^[[0m rustversion v1.0.23
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2219961Z ^[[1m^[[32m  Downloaded^[[0m tracing-attributes v0.1.31
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2250032Z ^[[1m^[[32m  Downloaded^[[0m ucd-trie v0.1.7
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2267897Z ^[[1m^[[32m  Downloaded^[[0m ring v0.17.14
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2773402Z ^[[1m^[[32m  Downloaded^[[0m pest_derive v2.9.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2797417Z ^[[1m^[[32m  Downloaded^[[0m hmac v0.12.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2820100Z ^[[1m^[[32m  Downloaded^[[0m writeable v0.6.4
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2845073Z ^[[1m^[[32m  Downloaded^[[0m spki v0.7.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2865509Z ^[[1m^[[32m  Downloaded^[[0m crc32fast v1.5.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2889845Z ^[[1m^[[32m  Downloaded^[[0m sha2 v0.10.9
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.2921066Z ^[[1m^[[32m  Downloaded^[[0m zerocopy v0.8.58
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3176525Z ^[[1m^[[32m  Downloaded^[[0m pem-rfc7468 v0.7.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3186438Z ^[[1m^[[32m  Downloaded^[[0m pkcs8 v0.10.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3227947Z ^[[1m^[[32m  Downloaded^[[0m syn v3.0.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3360632Z ^[[1m^[[32m  Downloaded^[[0m idna_adapter v1.2.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3371836Z ^[[1m^[[32m  Downloaded^[[0m percent-encoding v2.3.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3382774Z ^[[1m^[[32m  Downloaded^[[0m wasm-bindgen-macro v0.2.127
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3394235Z ^[[1m^[[32m  Downloaded^[[0m wasm-bindgen-shared v0.2.127
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3408090Z ^[[1m^[[32m  Downloaded^[[0m md-5 v0.10.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3425840Z ^[[1m^[[32m  Downloaded^[[0m block-padding v0.3.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3436077Z ^[[1m^[[32m  Downloaded^[[0m cpufeatures v0.2.17
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3452873Z ^[[1m^[[32m  Downloaded^[[0m generic-array v0.14.7
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3471419Z ^[[1m^[[32m  Downloaded^[[0m tower-service v0.3.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3481200Z ^[[1m^[[32m  Downloaded^[[0m aws-lc-rs v1.18.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3613598Z ^[[1m^[[32m  Downloaded^[[0m sha1 v0.10.7
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3632033Z ^[[1m^[[32m  Downloaded^[[0m version_check v0.9.5
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3647327Z ^[[1m^[[32m  Downloaded^[[0m crypto-common v0.1.7
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3658292Z ^[[1m^[[32m  Downloaded^[[0m time v0.3.45
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3805666Z ^[[1m^[[32m  Downloaded^[[0m futures-util v0.3.34
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3957856Z ^[[1m^[[32m  Downloaded^[[0m zerofrom-derive v0.1.8
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3970535Z ^[[1m^[[32m  Downloaded^[[0m utf8_iter v1.0.4
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.3982782Z ^[[1m^[[32m  Downloaded^[[0m wasm-bindgen-futures v0.4.77
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4016889Z ^[[1m^[[32m  Downloaded^[[0m json5 v0.4.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4022077Z ^[[1m^[[32m  Downloaded^[[0m wasip2 v1.0.1+wasi-0.2.4
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4090309Z ^[[1m^[[32m  Downloaded^[[0m serde_json v1.0.151
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4177095Z ^[[1m^[[32m  Downloaded^[[0m mio v1.2.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4248871Z ^[[1m^[[32m  Downloaded^[[0m rand v0.9.5
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4294819Z ^[[1m^[[32m  Downloaded^[[0m stable_deref_trait v1.2.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4305605Z ^[[1m^[[32m  Downloaded^[[0m pest_generator v2.9.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4321716Z ^[[1m^[[32m  Downloaded^[[0m pem v3.0.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4338280Z ^[[1m^[[32m  Downloaded^[[0m memchr v2.8.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4404258Z ^[[1m^[[32m  Downloaded^[[0m cc v1.4.7
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4442944Z ^[[1m^[[32m  Downloaded^[[0m block-buffer v0.10.4
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4455704Z ^[[1m^[[32m  Downloaded^[[0m miniz_oxide v0.9.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4491487Z ^[[1m^[[32m  Downloaded^[[0m flate2 v1.1.10
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4548767Z ^[[1m^[[32m  Downloaded^[[0m wit-bindgen v0.46.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.4585439Z ^[[1m^[[32m  Downloaded^[[0m windows-sys v0.61.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5435863Z ^[[1m^[[32m  Downloaded^[[0m getrandom v0.3.4
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5476224Z ^[[1m^[[32m  Downloaded^[[0m serde_derive v1.0.229
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5515231Z ^[[1m^[[32m  Downloaded^[[0m bytes v1.12.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5557750Z ^[[1m^[[32m  Downloaded^[[0m zerofrom v0.1.8
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5570699Z ^[[1m^[[32m  Downloaded^[[0m pbkdf2 v0.12.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5587113Z ^[[1m^[[32m  Downloaded^[[0m r-efi v5.3.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5643073Z ^[[1m^[[32m  Downloaded^[[0m bitflags v2.13.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5695252Z ^[[1m^[[32m  Downloaded^[[0m security-framework v3.7.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5747272Z ^[[1m^[[32m  Downloaded^[[0m serde_core v1.0.229
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5780463Z ^[[1m^[[32m  Downloaded^[[0m log v0.4.34
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5811165Z ^[[1m^[[32m  Downloaded^[[0m r-efi v6.0.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5867214Z ^[[1m^[[32m  Downloaded^[[0m pin-project-lite v0.2.17
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5936609Z ^[[1m^[[32m  Downloaded^[[0m schannel v0.1.29
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.5958950Z ^[[1m^[[32m  Downloaded^[[0m serde v1.0.229
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6000768Z ^[[1m^[[32m  Downloaded^[[0m once_cell v1.21.4
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6031004Z ^[[1m^[[32m  Downloaded^[[0m rustls-pki-types v1.15.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6061318Z ^[[1m^[[32m  Downloaded^[[0m thiserror v1.0.69
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6124115Z ^[[1m^[[32m  Downloaded^[[0m scrypt v0.11.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6141212Z ^[[1m^[[32m  Downloaded^[[0m rand_chacha v0.9.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6156536Z ^[[1m^[[32m  Downloaded^[[0m xxhash-rust v0.8.18
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6179084Z ^[[1m^[[32m  Downloaded^[[0m core-foundation-sys v0.8.7
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6215534Z ^[[1m^[[32m  Downloaded^[[0m cfg-if v1.0.5
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6231628Z ^[[1m^[[32m  Downloaded^[[0m getrandom v0.2.17
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6267233Z ^[[1m^[[32m  Downloaded^[[0m zeroize v1.9.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6286382Z ^[[1m^[[32m  Downloaded^[[0m slab v0.4.12
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6303300Z ^[[1m^[[32m  Downloaded^[[0m thiserror-impl v1.0.69
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6320365Z ^[[1m^[[32m  Downloaded^[[0m wasi v0.11.1+wasi-snapshot-preview1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6340979Z ^[[1m^[[32m  Downloaded^[[0m want v0.3.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6352425Z ^[[1m^[[32m  Downloaded^[[0m salsa20 v0.10.2
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6367252Z ^[[1m^[[32m  Downloaded^[[0m hyper-rustls v0.27.9
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.6384663Z ^[[1m^[[32m  Downloaded^[[0m windows-sys v0.52.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7198325Z ^[[1m^[[32m  Downloaded^[[0m simd-adler32 v0.3.10
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7221491Z ^[[1m^[[32m  Downloaded^[[0m ppv-lite86 v0.2.21
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7245329Z ^[[1m^[[32m  Downloaded^[[0m rand_core v0.9.5
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7285053Z ^[[1m^[[32m  Downloaded^[[0m num-conv v0.1.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7305217Z ^[[1m^[[32m  Downloaded^[[0m security-framework-sys v2.17.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7325111Z ^[[1m^[[32m  Downloaded^[[0m rustls-native-certs v0.8.4
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7335162Z ^[[1m^[[32m  Downloaded^[[0m itoa v1.0.18
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7351987Z ^[[1m^[[32m  Downloaded^[[0m thiserror-impl v2.0.21
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7370250Z ^[[1m^[[32m  Downloaded^[[0m fs_extra v1.3.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7391386Z ^[[1m^[[32m  Downloaded^[[0m jobserver v0.1.35
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7413962Z ^[[1m^[[32m  Downloaded^[[0m shlex v2.0.1
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7430067Z ^[[1m^[[32m  Downloaded^[[0m either v1.18.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7447798Z ^[[1m^[[32m  Downloaded^[[0m unicode-ident v1.0.26
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7481825Z ^[[1m^[[32m  Downloaded^[[0m socket2 v0.6.5
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7526659Z ^[[1m^[[32m  Downloaded^[[0m thiserror v2.0.21
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7582640Z ^[[1m^[[32m  Downloaded^[[0m getrandom v0.4.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7625942Z ^[[1m^[[32m  Downloaded^[[0m dunce v1.0.5
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7637133Z ^[[1m^[[32m  Downloaded^[[0m windows-targets v0.52.6
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7647854Z ^[[1m^[[32m  Downloaded^[[0m tokio-rustls v0.26.5
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7668146Z ^[[1m^[[32m  Downloaded^[[0m tokio-socks v0.5.3
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7700730Z ^[[1m^[[32m  Downloaded^[[0m rustls-pemfile v2.2.0
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7728549Z ^[[1m^[[32m  Downloaded^[[0m find-msvc-tools v0.1.13
+Required Docker local Phase 19 matrix	Download locked Rust dependencies for offline gates	2026-10-26T13:36:11.7981099Z ^[[1m^[[32m  Downloaded^[[0m aws-lc-sys v0.45.0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	﻿2026-10-26T13:36:12.1722889Z ##[group]Run mvn -q -f compat/java-reference/pom.xml verify
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:12.1723728Z ^[[36;1mmvn -q -f compat/java-reference/pom.xml verify^[[0m
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:12.1786720Z shell: /usr/bin/bash -e {0}
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:12.1787030Z env:
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:12.1787253Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:12.1787520Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:12.1787780Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:12.1788002Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:12.1788236Z   CARGO_HOME: /home/runner/.cargo
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:12.1788506Z   CARGO_TERM_COLOR: always
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:12.1788874Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:12.1789380Z   JAVA_HOME_27_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:12.1789766Z ##[endgroup]
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:30.7425980Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:30.7446365Z WARNING: sun.misc.Unsafe::arrayBaseOffset has been called by com.alibaba.fastjson2.util.JDKUtils (file:/home/runner/.m2/repository/com/alibaba/fastjson2/fastjson2/2.0.63/fastjson2-2.0.63.jar)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:30.7465434Z WARNING: Please consider reporting this to the maintainers of class com.alibaba.fastjson2.util.JDKUtils
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:30.7467015Z WARNING: sun.misc.Unsafe::arrayBaseOffset will be removed in a future release
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:31.1483013Z Java reference self-test passed
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:31.3226868Z Invoked Java 5.5.1 MQClientAPIImpl: send/pull including async callbacks, offset, route, consumer list, assignment, lock/unlock, send-back, request mode, POP/Lite/ACK/change dispatch and callbacks (mock transport)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:31.3925779Z Validated 37 scenarios
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:32.4108585Z Runtime inbound routing invoked cases verified: 17
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:35.7195626Z Runtime remoting shutdown cases verified: 4
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:38.0405581Z Runtime scheduled-executor shutdown cases verified: 2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:40.4784764Z Runtime discovery invoked cases verified: 21
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:42.9991204Z WARNING: Final field mQClientAPIImpl in class org.apache.rocketmq.client.impl.factory.MQClientInstance has been mutated reflectively by class compat.RuntimeHeartbeatFixtures in unnamed module @6b663175 (file:/home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/target/classes/)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:43.0015445Z WARNING: Use --enable-final-field-mutation=ALL-UNNAMED to avoid a warning
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:43.0039765Z WARNING: Mutating final fields will be blocked in a future release unless final field mutation is enabled
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:43.0675861Z Runtime heartbeat invoked cases verified: 7; null-element cases: 3; multiplicity cases: 5
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:36:48.7683984Z Runtime route/VIP invoked cases verified: 36
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:15.2965614Z ClientConfig identities/defaults/clone verified: 73
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:18.4834081Z PullMessageRequestHeader fast/reflection decoder fixtures verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:18.6706680Z PullMessageResponseHeader fast/reflection decoder fixtures verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:18.8656898Z SendMessageResponseHeader fast/reflection decoder fixtures verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:19.0615914Z SendMessageRequestHeaderV2 fast/reflection decoder fixtures verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:19.2705107Z Consumer offset request/response decode fixtures verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:19.4400286Z Create-topic header decode fixtures verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:19.6165670Z End-transaction header decode fixtures verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:19.8553535Z Query admin header decode fixtures verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:20.0711274Z Offset-boundary request/response-header decode fixtures verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:20.2585495Z Optional numeric header decode fixtures verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:20.4458735Z Change-invisibility request header decode fixtures verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:21.1669187Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:21.1676428Z WARNING: sun.misc.Unsafe::arrayBaseOffset has been called by com.alibaba.fastjson2.util.JDKUtils (file:/home/runner/.m2/repository/com/alibaba/fastjson2/fastjson2/2.0.63/fastjson2-2.0.63.jar)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:21.1682742Z WARNING: Please consider reporting this to the maintainers of class com.alibaba.fastjson2.util.JDKUtils
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:21.1684258Z WARNING: sun.misc.Unsafe::arrayBaseOffset will be removed in a future release
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:21.2712001Z ClientConfig TLS mode property probe verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:21.8583362Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:21.8595948Z WARNING: sun.misc.Unsafe::arrayBaseOffset has been called by com.alibaba.fastjson2.util.JDKUtils (file:/home/runner/.m2/repository/com/alibaba/fastjson2/fastjson2/2.0.63/fastjson2-2.0.63.jar)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:21.8597924Z WARNING: Please consider reporting this to the maintainers of class com.alibaba.fastjson2.util.JDKUtils
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:21.8599108Z WARNING: sun.misc.Unsafe::arrayBaseOffset will be removed in a future release
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:21.9682798Z ClientConfig system-property inputs verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:23.2156010Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:23.2158474Z WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/home/runner/.m2/repository/io/netty/netty-common/4.1.130.Final/netty-common-4.1.130.Final.jar)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:23.2160785Z WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:23.2162185Z WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:23.9960445Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:23.9976508Z WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/home/runner/.m2/repository/io/netty/netty-common/4.1.130.Final/netty-common-4.1.130.Final.jar)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:23.9978844Z WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:23.9980449Z WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:57.3877404Z Remoting live config mutation verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:37:59.8274130Z Runtime hook invoked cases verified: 36
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:00.4215432Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:00.4226117Z WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/home/runner/.m2/repository/io/netty/netty-common/4.1.130.Final/netty-common-4.1.130.Final.jar)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:00.4238898Z WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:00.4246646Z WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:01.4431715Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:01.4434070Z WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/home/runner/.m2/repository/io/netty/netty-common/4.1.130.Final/netty-common-4.1.130.Final.jar)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:01.4436765Z WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:01.4438426Z WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:02.5878396Z Runtime address helpers verified: 42; named IPv6 scopes verified: 1; Java client endpoint splits verified: 49; Java BMP port-digit code units verified: 370; Java BMP host code units verified: 65536; Java Unicode host code points verified: 1112064
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:05.1562013Z WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:05.1575282Z WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/home/runner/.m2/repository/io/netty/netty-common/4.1.130.Final/netty-common-4.1.130.Final.jar)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:05.1578266Z WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:05.1579848Z WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:05.3747385Z WARNING: Final field mQClientAPIImpl in class org.apache.rocketmq.client.impl.factory.MQClientInstance has been mutated reflectively by class compat.RuntimeStartMutationProbe in unnamed module @cd2dae5 (file:/home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/target/classes/)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:05.3795583Z WARNING: Use --enable-final-field-mutation=ALL-UNNAMED to avoid a warning
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:05.3799840Z WARNING: Mutating final fields will be blocked in a future release unless final field mutation is enabled
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:05.4324803Z Runtime start mutation probe verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:06.2953031Z Runtime broker lookup verified: 14
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:09.2236474Z verified Java 5.5.1 MqClientAdmin fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/admin/query-consume-time-span.json
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:09.5533990Z Runtime client check verified: 17
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:13.9137180Z Direct runtime consumer operations verified: 9 Running Info, 29 direct-consume, 15 reset cases
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:17.0775558Z Runtime offset conversion verified: 10; nullable cases: 7
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:37.3018837Z Runtime MQClientAPIFactory invoked cases verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:40.6128258Z verified Java 5.5.1 request/response code registry at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/protocol/request-response-codes.json
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:41.4420406Z verified Java 5.5.1 allocation fixtures at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/rebalance/allocation.json
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:41.7325083Z verified Java 5.5.1 initial-offset fixtures at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/rebalance/initial-offsets.json
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:45.1891510Z Pull implementation accessor verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:45.4886625Z Push implementation accessor verified
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:49.9636132Z verified Java 5.5.1 QueryResult fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/admin/query-result.json
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:50.0603820Z verified Java 5.5.1 TopicList fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/admin/topic-list.json
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:50.2036431Z verified Java 5.5.1 query subscription body fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/admin/query-subscription-response-body.json
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:50.3215930Z verified Java 5.5.1 GroupList fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/admin/group-list.json
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:38:50.4636109Z verified Java 5.5.1 TopicStatsTable fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/admin/topic-stats-table.json
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:25.5096274Z verified 11 Java message decode fixtures at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/messages/records.json
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:40.7152005Z verified Java 5.5.1 MessageUtils fixture at /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/messages/message-utils.json
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:42.1237512Z Java decoded 2 Rust-generated fixture(s)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:42.3853738Z    Compiling libc v0.2.189
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:42.3885029Z    Compiling find-msvc-tools v0.1.13
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:42.7632125Z    Compiling shlex v2.0.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:42.9855334Z    Compiling version_check v0.9.5
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:43.4415352Z    Compiling generic-array v0.14.7
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:43.6823211Z    Compiling proc-macro2 v1.0.107
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:44.3825627Z    Compiling typenum v1.20.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:45.4024891Z    Compiling jobserver v0.1.35
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:45.6555452Z    Compiling quote v1.0.47
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:46.0055247Z    Compiling cc v1.4.7
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:46.0725385Z    Compiling unicode-ident v1.0.26
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:48.2033009Z    Compiling zeroize v1.9.0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:48.4135245Z    Compiling cfg-if v1.0.5
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:48.9574732Z    Compiling pkg-config v0.3.34
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:49.3745352Z    Compiling crypto-common v0.1.7
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:49.4851804Z    Compiling syn v3.0.6
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:49.9005260Z    Compiling subtle v2.6.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:50.0807259Z    Compiling block-padding v0.3.3
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:50.2005349Z    Compiling block-buffer v0.10.4
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:50.3470588Z    Compiling cmake v0.1.58
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:51.0015642Z    Compiling fs_extra v1.3.0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:51.3415303Z    Compiling dunce v1.0.5
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:51.3975326Z    Compiling aws-lc-sys v0.45.0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:54.1085255Z    Compiling digest v0.10.7
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:54.3983250Z    Compiling inout v0.1.4
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:54.5495491Z    Compiling memchr v2.8.3
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:55.4545688Z    Compiling serde_core v1.0.229
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:55.9595340Z    Compiling cipher v0.4.4
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:57.0604165Z    Compiling zstd-sys v2.1.1+zstd.1.5.7
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:57.8402668Z    Compiling getrandom v0.3.4
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:39:58.2685682Z    Compiling zerocopy v0.8.58
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:27.4718733Z    Compiling syn v2.0.119
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:31.5182824Z    Compiling rustls-pki-types v1.15.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:32.2636755Z    Compiling cpufeatures v0.2.17
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:32.3135327Z    Compiling aws-lc-rs v1.18.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:40.7686186Z    Compiling powerfmt v0.2.0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:40.9906322Z    Compiling base64ct v1.8.3
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:41.3225387Z    Compiling serde v1.0.229
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:41.6215216Z    Compiling zstd-safe v7.3.0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:41.8855521Z    Compiling ucd-trie v0.1.7
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:42.2235503Z    Compiling untrusted v0.9.0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:42.3155640Z    Compiling zmij v1.0.23
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:42.7201722Z    Compiling crc32fast v1.5.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:43.1635918Z    Compiling pest v2.9.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:45.9162750Z    Compiling pem-rfc7468 v0.7.0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:46.3155343Z    Compiling deranged v0.5.8
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:47.8445332Z    Compiling ppv-lite86 v0.2.21
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:48.4424177Z    Compiling rand_core v0.9.5
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:48.8456121Z    Compiling serde_derive v1.0.229
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:54.2517169Z    Compiling hmac v0.12.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:54.3765301Z    Compiling thiserror v2.0.21
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:54.8411872Z    Compiling serde_json v1.0.151
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:55.0730783Z    Compiling time-core v0.1.7
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:55.2545462Z    Compiling const-oid v0.9.6
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:55.4405436Z    Compiling num-conv v0.1.0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:55.5675373Z    Compiling pin-project-lite v0.2.17
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:55.6585352Z    Compiling simd-adler32 v0.3.10
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:55.8925246Z    Compiling adler2 v2.0.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:55.9955336Z    Compiling num_threads v0.1.7
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:56.1105387Z    Compiling time v0.3.45
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:57.0752512Z    Compiling miniz_oxide v0.9.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:40:58.1485938Z    Compiling der v0.7.10
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:00.0485657Z    Compiling pbkdf2 v0.12.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:01.1031641Z    Compiling rand_chacha v0.9.0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:01.7977630Z    Compiling pest_meta v2.9.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:05.6481158Z    Compiling sha2 v0.10.9
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:06.2365346Z    Compiling tokio-macros v2.7.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:07.4195288Z    Compiling thiserror-impl v2.0.21
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:09.6405834Z    Compiling salsa20 v0.10.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:09.7701566Z    Compiling mio v1.2.3
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:10.2977795Z    Compiling socket2 v0.6.5
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:11.1078221Z    Compiling itoa v1.0.18
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:11.3342872Z    Compiling rustls v0.23.45
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:11.5727563Z    Compiling base64 v0.22.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:12.0821858Z    Compiling thiserror v1.0.69
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:12.4686154Z    Compiling bytes v1.12.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:13.3445287Z    Compiling tokio v1.53.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:23.2260746Z    Compiling scrypt v0.11.0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:23.6297652Z    Compiling flate2 v1.1.10
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:24.3312554Z    Compiling pest_generator v2.9.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:25.7656268Z    Compiling rand v0.9.5
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:26.6995451Z    Compiling zstd v0.13.3
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:26.9835289Z    Compiling spki v0.7.3
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:27.1965286Z    Compiling aes v0.8.4
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:27.9931909Z    Compiling sha1 v0.10.7
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:28.2755708Z    Compiling thiserror-impl v1.0.69
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:30.2965360Z    Compiling cbc v0.1.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:30.4295298Z    Compiling des v0.8.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:30.6552816Z    Compiling ring v0.17.14
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:31.4755272Z    Compiling equivalent v1.0.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:31.5345327Z    Compiling once_cell v1.21.4
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:31.7902810Z    Compiling futures-core v0.3.34
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:31.9095087Z    Compiling xxhash-rust v0.8.18
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:32.0095338Z    Compiling lz4_flex v0.12.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:32.4075176Z    Compiling log v0.4.34
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:32.5993702Z    Compiling hashbrown v0.17.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:33.3463777Z    Compiling futures-task v0.3.34
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:33.4445435Z    Compiling futures-util v0.3.34
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:35.3720212Z    Compiling indexmap v2.14.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:36.1226132Z    Compiling rocketmq-classic-common v0.1.0 (/home/runner/work/rocketmq-classic/rocketmq-classic/crates/rocketmq-classic-common)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:47.1337749Z    Compiling pkcs5 v0.7.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:48.2595279Z    Compiling rustls-webpki v0.103.15
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:48.5595290Z    Compiling pest_derive v2.9.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:50.0015283Z    Compiling getrandom v0.2.17
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:50.2323157Z    Compiling either v1.18.0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:50.5097487Z    Compiling rand_core v0.6.4
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:50.7326140Z    Compiling rocketmq-classic-remoting v0.1.0 (/home/runner/work/rocketmq-classic/rocketmq-classic/crates/rocketmq-classic-remoting)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:50.9805400Z    Compiling openssl-probe v0.2.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:51.1533642Z    Compiling rustls-native-certs v0.8.4
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:51.5665426Z    Compiling pkcs8 v0.10.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:51.9822921Z    Compiling tokio-socks v0.5.3
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:55.9545389Z    Compiling tokio-rustls v0.26.5
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:56.3072824Z    Compiling json5 v0.4.1
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:41:57.9476148Z    Compiling rocketmq-classic-protocol v0.1.0 (/home/runner/work/rocketmq-classic/rocketmq-classic/crates/rocketmq-classic-protocol)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:42:00.0531735Z    Compiling pem v3.0.6
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:42:00.5173082Z    Compiling yasna v0.5.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:42:01.9025004Z    Compiling rustls-pemfile v2.2.0
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:42:02.1532793Z    Compiling md-5 v0.10.6
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:42:02.3105885Z    Compiling rcgen v0.13.2
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:42:26.1975360Z     Finished `dev` profile [unoptimized] target(s) in 2m 43s
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:42:26.2226429Z      Running `target/debug/examples/generate_fixtures p4-headers /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/target/p4-rust-header-fixtures`
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:42:27.3965352Z Generated typed Java header fixtures in /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/../../fixtures/remoting
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:42:28.8156457Z Java decoded 106 Rust-generated fixture(s)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:42:29.2295407Z     Finished `dev` profile [unoptimized] target(s) in 0.32s
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:42:29.2496268Z      Running `target/debug/examples/generate_fixtures p4-bodies /home/runner/work/rocketmq-classic/rocketmq-classic/compat/java-reference/target/p4-rust-body-fixtures`
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:42:29.8263295Z Java decoded 19 Rust typed body fixture(s)
+Required Docker local Phase 19 matrix	Warm pinned Java oracle dependencies for offline gates	2026-10-26T13:42:30.1565670Z Linux Java IPv6 loopback candidates verified: 1
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	﻿2026-10-26T13:42:30.2229744Z ##[group]Run bash integration-tests/run-local.sh --all
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:30.2230215Z ^[[36;1mbash integration-tests/run-local.sh --all^[[0m
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:30.2333034Z shell: /usr/bin/bash -e {0}
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:30.2333300Z env:
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:30.2333508Z   CARGO_PROFILE_DEV_DEBUG: 0
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:30.2333774Z   CARGO_PROFILE_TEST_DEBUG: 0
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:30.2334025Z   CARGO_INCREMENTAL: 0
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:30.2334249Z   CARGO_BUILD_JOBS: 2
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:30.2334627Z   CARGO_HOME: /home/runner/.cargo
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:30.2334903Z   CARGO_TERM_COLOR: always
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:30.2335284Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:30.2335778Z   JAVA_HOME_27_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/27.0.1-0/x64
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:30.2336195Z   ROCKETMQ_CLASSIC_TEST_ENV: local-disposable
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:30.2336481Z ##[endgroup]
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:33.9361840Z Running cargo-format
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:36.8335645Z PASS cargo-format
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:36.8336384Z Running diff-check
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:38.5071102Z PASS diff-check
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T13:42:38.5072035Z Running workspace-tests-default
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:03:51.6843874Z PASS workspace-tests-default
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:03:51.6856485Z Running workspace-tests-all-features
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:20:52.5150722Z PASS workspace-tests-all-features
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:20:52.5151812Z Running workspace-check
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:22:07.6981825Z PASS workspace-check
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:22:07.6982891Z Running workspace-clippy
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:23:21.0185966Z PASS workspace-clippy
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:23:21.0186817Z Running java-verify
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:26:40.5777873Z PASS java-verify
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:26:40.5778717Z Running differential-self-test
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:26:40.7286966Z PASS differential-self-test
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:26:40.7287960Z Running differential-manifest
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:26:40.7815688Z PASS differential-manifest
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:26:40.7817009Z Running race-leak-smoke
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:27:18.5455605Z PASS race-leak-smoke
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:27:18.5456845Z Running fuzz-smoke
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:27:19.8435162Z PASS fuzz-smoke
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:27:19.8435948Z Running release-examples
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:33:13.4998572Z PASS release-examples
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:33:13.4999367Z Running benchmark-build
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:21.8944754Z PASS benchmark-build
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:21.8945826Z Running benchmark-run
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:29.7675313Z PASS benchmark-run
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:29.7676219Z Running cargo-metadata
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:29.8025908Z PASS cargo-metadata
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:29.8027277Z Running workspace-metadata
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:29.8738765Z PASS workspace-metadata
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:29.8739657Z Running package-content
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:30.6399199Z PASS package-content
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:30.6400111Z Running unique-id-utc
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:36.6705662Z PASS unique-id-utc
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:36.6706746Z Running unique-id-taipei
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:36.9508319Z PASS unique-id-taipei
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:36.9509301Z Running differential-live-coverage
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:36.9971097Z Every selected live scenario has a local runner (37 rows); no Docker resources were started.
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:36.9973999Z Running docker-toolchain
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:37.0960310Z PASS docker-toolchain
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T14:41:37.0962316Z Running live-scenarios
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8310885Z FAIL live-scenarios (exit=1)
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8323174Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-store-init-1  Creating
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8324742Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-namesrv-1  Creating
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8328985Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-store-init-1  Created
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8330449Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-namesrv-1  Created
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8331718Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-broker-1  Creating
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8332864Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-broker-1  Created
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8334050Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-namesrv-1  Starting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8335707Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-store-init-1  Starting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8355442Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-store-init-1  Started
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8356467Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-namesrv-1  Started
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8357456Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-store-init-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8358435Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-namesrv-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8359012Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-store-init-1  Exited
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8359579Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-namesrv-1  Healthy
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8360110Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-broker-1  Starting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8360646Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-broker-1  Started
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8361159Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-broker-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8361664Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-namesrv-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8362205Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-store-init-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8362750Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-store-init-1  Exited
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8363268Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-namesrv-1  Healthy
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8363770Z  Container rocketmq-classic-p19-p3-v04-20261026t152459z-broker-1  Healthy
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8365641Z #Cluster Name           #Broker Name            #BID  #Addr                  #Version              #InTPS(LOAD)                   #OutTPS(LOAD)  #Timer(Progress)        #PCWait(ms)  #Hour         #SPACE    #ACTIVATED
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8368018Z RocketMQLocalTest       broker-a                0     broker:10911           V5_3_4                 0.00(0,0ms)               0.00(0,0ms|0,0ms)  0-0(0.0w, 0.0, 0.0)               0  498063.42     0.9200          true
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8369877Z RocketMQ 5.3.4 tls profile is ready in Compose project rocketmq-classic-p19-p3-v04-20261026t152459z
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8370416Z Creating scenario-owned topic compat_p3_tls
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8370741Z Compiling Java 5.5.1 and Rust live probes
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8371598Z PASS P3-V04: Java and Rust invoked a live NameServer route, accepted trusted CA chains with matching and wrong hostnames, rejected the untrusted CA, and shut down with no pending requests, channels, or worker tasks
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8372756Z Evidence: /home/runner/work/rocketmq-classic/rocketmq-classic/docs/compatibility/evidence/phase-19/P3-V04/20261026T152459Z
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8379642Z Running manifest scenario P5-V02-route with profile basic
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8380627Z Provisioning isolated basic profile in rocketmq-classic-p19-p5-v02-route-20261026t152649z
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8381753Z  Network rocketmq-classic-p19-p5-v02-route-20261026t152649z_default  Creating
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8382738Z  Network rocketmq-classic-p19-p5-v02-route-20261026t152649z_default  Created
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8383751Z  Volume "rocketmq-classic-p19-p5-v02-route-20261026t152649z_broker-store"  Creating
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8385542Z  Volume "rocketmq-classic-p19-p5-v02-route-20261026t152649z_broker-store"  Created
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8386641Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-namesrv-1  Creating
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8387712Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-store-init-1  Creating
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8388785Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-namesrv-1  Created
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8389843Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-store-init-1  Created
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8390943Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-broker-1  Creating
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8392001Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-broker-1  Created
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8393133Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-store-init-1  Starting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8395436Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-namesrv-1  Starting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8396627Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-store-init-1  Started
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8397796Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-namesrv-1  Started
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8399422Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-store-init-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8400501Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-namesrv-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8401549Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-store-init-1  Exited
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8402612Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-namesrv-1  Healthy
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8403355Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-broker-1  Starting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8403949Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-broker-1  Started
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8405099Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-store-init-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8406190Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-broker-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8407226Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-namesrv-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8408333Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-store-init-1  Exited
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8409506Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-namesrv-1  Healthy
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8410584Z  Container rocketmq-classic-p19-p5-v02-route-20261026t152649z-broker-1  Healthy
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8412142Z #Cluster Name           #Broker Name            #BID  #Addr                  #Version              #InTPS(LOAD)                   #OutTPS(LOAD)  #Timer(Progress)        #PCWait(ms)  #Hour         #SPACE    #ACTIVATED
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8413994Z RocketMQLocalTest       broker-a                0     broker:10911           V5_3_4                 0.00(0,0ms)               0.00(0,0ms|0,0ms)  0-0(0.0w, 0.0, 0.0)               0  498063.45     0.9200          true
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8415911Z RocketMQ 5.3.4 basic profile is ready in Compose project rocketmq-classic-p19-p5-v02-route-20261026t152649z
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8416882Z Creating scenario-owned topic compat_p5_route
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8417442Z Compiling Java 5.5.1 and Rust live probes
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8418290Z PASS P5-V02-route: both clients matched existing and missing topic routes (4 existing queue rows)
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8419711Z Evidence: /home/runner/work/rocketmq-classic/rocketmq-classic/docs/compatibility/evidence/phase-19/P5-V02-route/20261026T152649Z
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8421145Z Running manifest scenario P5-V02-producer with profile basic
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8422088Z Provisioning isolated basic profile in rocketmq-classic-p19-p5-v02-producer-20261026t152803z
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8423194Z  Network rocketmq-classic-p19-p5-v02-producer-20261026t152803z_default  Creating
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8424216Z  Network rocketmq-classic-p19-p5-v02-producer-20261026t152803z_default  Created
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8425570Z  Volume "rocketmq-classic-p19-p5-v02-producer-20261026t152803z_broker-store"  Creating
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8426666Z  Volume "rocketmq-classic-p19-p5-v02-producer-20261026t152803z_broker-store"  Created
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8427757Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-namesrv-1  Creating
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8428888Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-store-init-1  Creating
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8430007Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-namesrv-1  Created
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8431117Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-store-init-1  Created
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8432220Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-broker-1  Creating
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8433303Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-broker-1  Created
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8434726Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-store-init-1  Starting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8436117Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-namesrv-1  Starting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8437272Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-store-init-1  Started
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8438760Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-namesrv-1  Started
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8439897Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-store-init-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8441024Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-namesrv-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8442161Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-store-init-1  Exited
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8443276Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-namesrv-1  Healthy
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8444590Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-broker-1  Starting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8445684Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-broker-1  Started
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8446782Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-broker-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8447918Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-namesrv-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8449042Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-store-init-1  Waiting
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8450175Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-namesrv-1  Healthy
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8451304Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-store-init-1  Exited
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8452478Z  Container rocketmq-classic-p19-p5-v02-producer-20261026t152803z-broker-1  Healthy
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8454065Z #Cluster Name           #Broker Name            #BID  #Addr                  #Version              #InTPS(LOAD)                   #OutTPS(LOAD)  #Timer(Progress)        #PCWait(ms)  #Hour         #SPACE    #ACTIVATED
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8456345Z RocketMQLocalTest       broker-a                0     broker:10911           V5_3_4                 0.00(0,0ms)               0.00(0,0ms|0,0ms)  0-0(0.0w, 0.0, 0.0)               0  498063.47     0.9200          true
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8458045Z RocketMQ 5.3.4 basic profile is ready in Compose project rocketmq-classic-p19-p5-v02-producer-20261026t152803z
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8459104Z Creating scenario-owned topic compat_p5_send
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8459853Z Creating scenario-owned reply consumer group compat_p5_reply_group
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8460561Z Compiling Java 5.5.1 and Rust live probes
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8461646Z Java and Rust producer passes did not execute consecutively from the expected queue offsets
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8462663Z Java/Rust P5 producer RPC results or committed queue offsets differ
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8851817Z Local validation failed. Evidence: docs/compatibility/evidence/phase-19/run-local/20261026T134230Z
+Required Docker local Phase 19 matrix	Run every server-free and Docker-backed Phase 19 gate	2026-10-26T15:29:14.8891802Z ##[error]Process completed with exit code 1.
+Required Docker local Phase 19 matrix	Post Run actions/setup-java@v4	﻿2026-10-26T15:29:14.9080854Z Post job cleanup.
+Required Docker local Phase 19 matrix	Post Run actions/setup-java@v4	2026-10-26T15:29:15.2175683Z (node:150894) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+Required Docker local Phase 19 matrix	Post Run actions/setup-java@v4	2026-10-26T15:29:15.2177520Z (Use `node --trace-deprecation ...` to show where the warning was created)
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	﻿2026-10-26T15:29:15.2668359Z Post job cleanup.
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	2026-10-26T15:29:15.3874817Z [command]/usr/bin/git version
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	2026-10-26T15:29:15.3955163Z git version 2.55.0
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	2026-10-26T15:29:15.3999249Z Temporarily overriding HOME='/home/runner/work/_temp/88b9e104-bf3c-4e8f-aca8-2d52cd4839c6' before making global git config changes
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	2026-10-26T15:29:15.4008070Z Adding repository directory to the temporary git global config as a safe directory
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	2026-10-26T15:29:15.4009646Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/rocketmq-classic/rocketmq-classic
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	2026-10-26T15:29:15.4093184Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	2026-10-26T15:29:15.4179969Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	2026-10-26T15:29:15.5055933Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	2026-10-26T15:29:15.5165016Z http.https://github.com/.extraheader
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	2026-10-26T15:29:15.5205261Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	2026-10-26T15:29:15.5291926Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	2026-10-26T15:29:15.5885255Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Required Docker local Phase 19 matrix	Post Run actions/checkout@v4	2026-10-26T15:29:15.5945584Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Required Docker local Phase 19 matrix	Complete job	﻿2026-10-26T15:29:15.6517292Z Cleaning up orphan processes
+Required Docker local Phase 19 matrix	Complete job	2026-10-26T15:29:15.6926429Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-java@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

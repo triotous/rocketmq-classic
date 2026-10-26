@@ -11231,3 +11231,39 @@ Run record:
   GitHub's 360-minute maximum because its live scenario stage exceeded the
   prior limit. A fresh push-triggered workflow is required to validate these
   timeout changes and complete the live scenarios.
+
+## 2026-10-26 CI follow-up on `485fb99a`
+
+- GitHub Actions run `40331947315` checked
+  `485fb99a43b739e5d936bd472efdee8b0ba40313`. The Windows stack-runtime job
+  passed. The general test job passed formatting, strict Clippy, both
+  workspace suites, timezone-specific unique-ID coverage, differential checks,
+  fuzz and race/leak smoke, and Maven verify. It reached the release examples
+  build, then was canceled at its 90-minute limit; benchmark and metadata steps
+  were skipped.
+- The Docker matrix passed both workspace suites and all server-free gates,
+  including release examples, benchmark build and run, packaging, metadata,
+  and Docker toolchain validation. Live scenarios `P3-V04` and `P5-V02-route`
+  passed. `P5-V02-producer` failed its consecutive queue-offset assertion:
+  the runner reported that Java and Rust did not start from the expected
+  offsets. The matrix failed at that scenario after about 1 hour 53 minutes;
+  the job did not reach its 360-minute limit.
+- The CI log did not include the Java and Rust TSV probe rows, so the exact
+  offset values are unavailable. An isolated local run of the old probe passed
+  at `20261026T153132Z`. This points to an intermittent queue-visibility race
+  as a likely cause, but the remote values cannot confirm that diagnosis.
+- The P5 runner now waits up to 15 seconds for the Broker's visible maximum
+  queue offset to reach Java's returned maximum before Rust sends. On timeout,
+  it reports the last observed offset. The failure path also prints both TSV
+  probe outputs. A clean focused run on commit `92cae47d` passed at
+  `20261026T153933Z`; Java stored offsets 0–2 and Rust stored offsets 3–5.
+  The manifest points to this clean-source evidence.
+- Raw logs and run metadata are archived in
+  `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-004/20261026T133543Z/`.
+  The clean focused P5 evidence is in
+  `docs/compatibility/evidence/phase-19/P5-V02-producer/20261026T153933Z/`.
+- The general test limit is raised from 90 to 120 minutes because the release
+  examples build was still compiling after 90 minutes. The Docker matrix stays
+  at 360 minutes. A fresh push-triggered run is required to validate the P5
+  offset wait, finish the release examples build, and continue the full live
+  scenario inventory.
