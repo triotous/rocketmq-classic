@@ -11267,3 +11267,11 @@ Run record:
   at 360 minutes. A fresh push-triggered run is required to validate the P5
   offset wait, finish the release examples build, and continue the full live
   scenario inventory.
+
+## 2026-10-26 CI follow-up on `5eb2cb24`
+
+- GitHub Actions run `40352003113` checked `5eb2cb2450ec6dbb936bf2b69e7acbfbbb759edc`. The general test job passed in 55m41s, including both workspace suites, strict Clippy, Maven verify, release examples, benchmark compilation, and metadata checks. The Windows stack-runtime job passed in 7m06s.
+- The Docker matrix passed all server-free gates and reached the live Phase 19 scenarios. `P5-V02-producer` and `P5-V02-consumer` both passed. The run failed during `P5-V02-extensions`; its captured output ends after the generic live-probe compilation message and contains no probe error or TSV rows. The matrix completed in 1h57m58s, well within its 360-minute limit.
+- A focused clean-source run of `P5-V02-extensions` on `5eb2cb24` passed in 151 seconds, including Docker cleanup. Its evidence is `docs/compatibility/evidence/phase-19/P5-V02-extensions/20261026T174312Z/`, and the manifest points to that run. The remote failure cause remains undetermined.
+- To make another CI failure diagnosable, the extension runner now prints progress after Java/Rust probe builds and before each extension substep. The Docker workflow also uploads the run-local logs and P5 producer, consumer, and extension evidence on failure, with 14-day retention.
+- Raw CI logs and run metadata are archived in `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-005/20261026T174120Z/`. The next push is needed to validate the additional diagnostics and complete the remaining live scenarios.

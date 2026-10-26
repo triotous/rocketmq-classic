@@ -92,3 +92,15 @@ jobs:
         env:
           ROCKETMQ_CLASSIC_TEST_ENV: local-disposable
         run: bash integration-tests/run-local.sh --all
+      - name: Archive Phase 19 runner evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-19-run-local-${{ github.run_id }}
+          path: |
+            docs/compatibility/evidence/phase-19/run-local/**
+            docs/compatibility/evidence/phase-19/P5-V02-producer/**
+            docs/compatibility/evidence/phase-19/P5-V02-consumer/**
+            docs/compatibility/evidence/phase-19/P5-V02-extensions/**
+          if-no-files-found: warn
+          retention-days: 14

@@ -2119,11 +2119,13 @@ if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" -DskipTests compile \
     cat "$evidence_dir/java-compile.log" >&2
     exit 1
 fi
+echo "Java live probe sources compiled"
 if ! cargo build --locked -p rocketmq-classic-integration --bin live_client \
     >"$evidence_dir/rust-build.log" 2>&1; then
     cat "$evidence_dir/rust-build.log" >&2
     exit 1
 fi
+echo "Rust live probe build completed"
 
 if [[ "$scenario_id" == "P7-V03" ]]; then
     echo "Starting transparent response proxies for the bounded deadline phase"
@@ -2801,6 +2803,7 @@ elif [[ "$scenario_id" == "P5-V02-extensions" ]]; then
     for client in java rust; do
         client_group="${consumer_group}_${client}"
         if [[ "$client" == "java" ]]; then
+            echo "P5-V02-extensions: preparing Java group $client_group"
             if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
                 -Dexec.args="prepare $broker_addr $topic $client_group" \
                 exec:java@live-p5-extensions-probe >"$evidence_dir/java-p5-extension-prepare.tsv" \
@@ -2809,6 +2812,7 @@ elif [[ "$scenario_id" == "P5-V02-extensions" ]]; then
                 exit 1
             fi
         else
+            echo "P5-V02-extensions: preparing Rust group $client_group"
             if ! "$repo_root/target/debug/live_client" p5-extension-prepare "$broker_addr" "$topic" "$client_group" \
                 >"$evidence_dir/rust-p5-extension-prepare.tsv" 2>"$evidence_dir/rust-p5-extension-prepare.stderr"; then
                 cat "$evidence_dir/rust-p5-extension-prepare.tsv" "$evidence_dir/rust-p5-extension-prepare.stderr" 2>/dev/null >&2 || true
@@ -2817,6 +2821,7 @@ elif [[ "$scenario_id" == "P5-V02-extensions" ]]; then
         fi
     done
     lite_topic="%LMQ%${topic}%entries"
+    echo "P5-V02-extensions: seeding the parent topic"
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
         -Dexec.args="send $broker_addr $topic p5-extension-seed" \
         exec:java@live-producer-probe >"$evidence_dir/java-extension-seed.tsv" \
@@ -2824,6 +2829,7 @@ elif [[ "$scenario_id" == "P5-V02-extensions" ]]; then
         cat "$evidence_dir/java-extension-seed.tsv" "$evidence_dir/java-extension-seed.stderr" 2>/dev/null >&2 || true
         exit 1
     fi
+    echo "P5-V02-extensions: seeding the Lite topic"
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
         -Dexec.args="send $broker_addr $lite_topic p5-extension-lite" \
         exec:java@live-producer-probe >"$evidence_dir/java-extension-lite-seed.tsv" \
@@ -2834,6 +2840,7 @@ elif [[ "$scenario_id" == "P5-V02-extensions" ]]; then
     for client in java rust; do
         client_group="${consumer_group}_${client}"
         if [[ "$client" == "java" ]]; then
+            echo "P5-V02-extensions: consuming with Java"
             if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
                 -Dexec.args="consume $broker_addr $topic $client_group" \
                 exec:java@live-p5-extensions-probe >"$evidence_dir/java-p5-extension-consume.tsv" \
@@ -2842,6 +2849,7 @@ elif [[ "$scenario_id" == "P5-V02-extensions" ]]; then
                 exit 1
             fi
         else
+            echo "P5-V02-extensions: consuming with Rust"
             if ! "$repo_root/target/debug/live_client" p5-extension-consume "$broker_addr" "$topic" "$client_group" \
                 >"$evidence_dir/rust-p5-extension-consume.tsv" 2>"$evidence_dir/rust-p5-extension-consume.stderr"; then
                 cat "$evidence_dir/rust-p5-extension-consume.tsv" "$evidence_dir/rust-p5-extension-consume.stderr" 2>/dev/null >&2 || true
@@ -2849,6 +2857,7 @@ elif [[ "$scenario_id" == "P5-V02-extensions" ]]; then
             fi
         fi
     done
+    echo "P5-V02-extensions: comparing Java/Rust outcomes"
     if ! python3 - "$evidence_dir" <<'PY'
 import sys
 from pathlib import Path
