@@ -1,0 +1,7 @@
+PASS	cargo-format
+PASS	diff-check
+PASS	workspace-tests-default
+PASS	workspace-tests-all-features
+PASS	workspace-check
+PASS	workspace-clippy
+FAIL	java-verify	1

@@ -1,0 +1,29 @@
+run_id=40372271928
+branch=phase/19-docker-local-validation
+checked_commit=bdae2cd28bd9ab6be9d994f0b6c240ffdb1f3bc0
+created_at=2026-10-26T17:49:48Z
+completed_at=2026-10-26T18:52:39Z
+conclusion=failure
+
+test_job=success
+test_job_duration_seconds=3767
+windows_stack_runtime=success
+windows_job_duration_seconds=351
+docker_matrix=failed
+docker_matrix_duration_seconds=2960
+matrix_timeout_minutes=360
+
+server_free_gates=failed_at_java_verify
+run_local_evidence=run-local/20261026T175630Z
+failure=verify-push-implementation-accessor-fixture reported drift in fixtures/consumer/push-implementation-accessor.json
+live_scenarios=not_started
+remote_artifact_id=12678820927
+remote_artifact_name=phase-19-run-local-40372271928
+remote_artifact_expires=2026-11-09
+
+root_cause=StatsItem samples use two wall-clock reads around the ten-second baseline; a one-millisecond interval change yielded raw TPS 1.9998000199980002 instead of the fixture's modeled 2.0
+local_reproduction=30 fresh Temurin 27.0.1 Linux x86 JVM runs produced 2 JSON hashes; 29 matched the checked-in fixture
+follow_up=record sampled TPS at RocketMQ's two-decimal display precision in the fixture generator
+follow_up_validation=30/30 exact-toolchain JVM runs matched the fixture; full offline Maven verification passes locally
+raw_logs=general-test.log,windows-stack-runtime.log,docker-local-matrix.log
+run_details=run-details.json

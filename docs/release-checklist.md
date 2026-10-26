@@ -11275,3 +11275,22 @@ Run record:
 - A focused clean-source run of `P5-V02-extensions` on `5eb2cb24` passed in 151 seconds, including Docker cleanup. Its evidence is `docs/compatibility/evidence/phase-19/P5-V02-extensions/20261026T174312Z/`, and the manifest points to that run. The remote failure cause remains undetermined.
 - To make another CI failure diagnosable, the extension runner now prints progress after Java/Rust probe builds and before each extension substep. The Docker workflow also uploads the run-local logs and P5 producer, consumer, and extension evidence on failure, with 14-day retention.
 - Raw CI logs and run metadata are archived in `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-005/20261026T174120Z/`. The next push is needed to validate the additional diagnostics and complete the remaining live scenarios.
+
+## 2026-10-26 CI follow-up on `bdae2cd2`
+
+- GitHub Actions run `40372271928` checked
+  `bdae2cd28bd9ab6be9d994f0b6c240ffdb1f3bc0`. The general test job passed
+  in 62m47s and the Windows stack-runtime job passed in 5m51s. The Docker
+  matrix stopped during `java-verify`, before live scenarios, because the
+  push-consumer accessor fixture differed. The matrix failure artifact is
+  archived in `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-006/20261026T183954Z/`.
+- Reproducing the fixture in 30 fresh Temurin 27.0.1 Linux x86 JVMs produced
+  two JSON variants. The drifting values were
+  `consumerStatsSamplingAfterFirstSamplePullTPS` and
+  `consumerStatsSamplingAfterPendingUpdatePullTPS`: one-millisecond wall-clock
+  differences around RocketMQ's ten-second sample interval changed `2.0` to
+  `1.9998000199980002`. The fixture generator now rounds those sampled rates to
+  RocketMQ's two-decimal display precision. All 30 exact-toolchain generations
+  match the checked-in fixture, and local offline Maven verification passes.
+- The updated fixture probe and the full Docker matrix still need a fresh
+  push-triggered CI run.

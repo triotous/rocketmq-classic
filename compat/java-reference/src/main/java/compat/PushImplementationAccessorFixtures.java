@@ -549,9 +549,9 @@ public final class PushImplementationAccessorFixtures {
         manager.incPullTPS("workers", "orders", 20);
         double beforeFirstSample = manager.consumeStatus("workers", "orders").getPullTPS();
         secondSamplers.forEach(Runnable::run);
-        double afterFirstSample = manager.consumeStatus("workers", "orders").getPullTPS();
+        double afterFirstSample = stableTps(manager.consumeStatus("workers", "orders").getPullTPS());
         manager.incPullTPS("workers", "orders", 5);
-        double afterPendingUpdate = manager.consumeStatus("workers", "orders").getPullTPS();
+        double afterPendingUpdate = stableTps(manager.consumeStatus("workers", "orders").getPullTPS());
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("consumerStatsSamplingSecondSamplerCount", secondSamplers.size());
@@ -559,6 +559,14 @@ public final class PushImplementationAccessorFixtures {
         result.put("consumerStatsSamplingAfterFirstSamplePullTPS", afterFirstSample);
         result.put("consumerStatsSamplingAfterPendingUpdatePullTPS", afterPendingUpdate);
         return result;
+    }
+
+    private static double stableTps(double tps) {
+        // StatsItem samples against wall-clock milliseconds, while the fixture
+        // models an exact ten-second interval. Match RocketMQ's two-decimal
+        // TPS display precision so a one-millisecond timing difference cannot
+        // make the checked-in fixture drift (for example, 1.9998 vs. 2.0).
+        return Math.round(tps * 100.0d) / 100.0d;
     }
 
     private static List<String> consumeMessageServicePublicMethods() {
