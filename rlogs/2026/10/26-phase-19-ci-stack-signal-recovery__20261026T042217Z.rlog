@@ -1,0 +1,55 @@
+# Execution log: Phase 19 Linux stack-capture CI correction
+
+- Session date: 2026-10-26 UTC
+- Candidate under initial remote CI: `187b0427263c476ddee7808d67b7aa79e9ddb7f8`
+- Stress implementation: `5e1c80b1716936a04f319832adc9d382adc2b500`
+- Initial aggregate evidence commit: `187b0427`
+- Java oracle: Apache RocketMQ 5.5.1 source
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`, read-only.
+- Scope: diagnose the parallel Linux CI failure, improve the safe signal
+  fallback pool, and align CI's workspace test execution with the serial mode
+  required by the complete local aggregate. No plan files were edited.
+
+## Remote CI diagnostic
+
+- Pushed commit `187b0427` triggered GitHub Actions run
+  `40266865631` at
+  `https://github.com/triotous/rocketmq-classic/actions/runs/40266865631`.
+- The `windows-stack-runtime` job passed. The standard Linux job passed format
+  and strict Clippy, then failed the default parallel
+  `cargo test --workspace --locked` command. The failing test was
+  `stack::tests::concurrent_jstack_captures_are_serialized_without_losing_threads`;
+  the captured panic reported that no unused, unblocked default-ignore signal
+  was available. The required Docker Phase 19 matrix remained in progress at
+  this log's initial write.
+- The signal choice is process-wide and depends on every live thread's blocked
+  mask. Four signals whose default action is ignore are now considered, and the
+  Linux unit tests cover selection of the fourth candidate. When another test
+  process thread blocks all four or installs handlers for them, the stack
+  implementation's existing current-thread fallback remains appropriate.
+
+## Corrective change and checks
+
+- `.github/workflows/ci.yml` now runs both default and all-feature workspace
+  test suites with `-- --test-threads=1`, matching the existing
+  `integration-tests/run-local.sh` command and keeping process-global signal
+  tests isolated from unrelated concurrently running test threads.
+- A Linux ARM64 container using Rust 1.85.0 ran the consumer library suite
+  without serialization once: 275 tests passed, then a repeat reproduced the
+  signal-mask limitation in `jstack_includes_current_and_other_named_threads`.
+  This confirmed the process-wide concurrency issue and justified serial test
+  execution rather than weakening either stack-capture assertion.
+- The same Linux container then ran the consumer suite with
+  `-- --test-threads=1`: all 275 tests passed in 77 seconds. Strict Clippy for
+  the consumer library passed in 27.52 seconds. `cargo fmt --all -- --check`
+  and `git diff --check` passed on the worktree.
+- The remote workflow for the corrected candidate and its Docker matrix remain
+  pending; the initial workflow does not validate the correction.
+
+## Owner and release constraints
+
+- MAN-01 through MAN-04 remain blocked on owner-provided network, security, HA,
+  and representative workload/SLO inputs. The source-backed MAN-05 audit is
+  unchanged. No owner or production environment was accessed, and no plan file
+  was modified.
+- No tag or package was created or published.

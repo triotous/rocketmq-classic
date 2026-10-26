@@ -29,10 +29,10 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - name: Clear check artifacts before linking workspace tests
         run: cargo clean
-      - run: cargo test --workspace --locked
+      - run: cargo test --workspace --locked -- --test-threads=1
       - name: Clear default-feature test artifacts
         run: cargo clean
-      - run: cargo test --workspace --all-features --locked
+      - run: cargo test --workspace --all-features --locked -- --test-threads=1
       - name: Clear test artifacts before remaining gates
         run: cargo clean
       - run: TZ=Asia/Taipei cargo test -p rocketmq-classic-core --lib unique_id::tests::public_unique_id_helpers_match_the_pinned_java_fixture --locked

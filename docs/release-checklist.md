@@ -11130,3 +11130,25 @@ Run record:
 
 Run record:
 `rlogs/2026/10/26-phase-19-final-stress-aggregate__20261026T035914Z.rlog`.
+
+## P19 Linux stack-capture CI concurrency correction — 2026-10-26
+
+- [x] GitHub Actions run `40266865631` on `187b0427` passed
+  `windows-stack-runtime` but the parallel Linux workspace test job failed in
+  `stack::tests::concurrent_jstack_captures_are_serialized_without_losing_threads`.
+  The process had no available default-ignore signal among the current Linux
+  stack-capture candidates while unrelated tests ran concurrently.
+- [x] Added `SIGIO` as a fourth safe default-ignore signal and added candidate
+  selection coverage. A Linux Rust 1.85.0 container passed all 275 consumer
+  tests with `--test-threads=1` and strict Clippy. The parallel suite continued
+  to show the process-wide signal-mask limitation, so the general CI default
+  and all-feature workspace test commands now use the same serial test mode as
+  `integration-tests/run-local.sh`.
+- [ ] Push this correction and await all GitHub Actions jobs, including the
+  required Docker local Phase 19 matrix. The first workflow's Docker matrix is
+  still running as of this record; its Linux test failure is already recorded.
+- [ ] MAN-01 through MAN-04 remain owner-input blocked as recorded above. No
+  plan files were changed.
+
+Run record:
+`rlogs/2026/10/26-phase-19-ci-stack-signal-recovery__20261026T042217Z.rlog`.

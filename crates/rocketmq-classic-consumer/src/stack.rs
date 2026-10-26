@@ -351,8 +351,9 @@ mod linux {
     const MAX_FRAMES: usize = 128;
     const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(5);
     const THREAD_SIGNAL_TIMEOUT: Duration = Duration::from_millis(100);
-    // SIGCHLD is another default-ignore fallback when the common signals are unavailable.
-    const SIGNAL_CANDIDATES: [libc::c_int; 3] = [libc::SIGWINCH, libc::SIGURG, libc::SIGCHLD];
+    // These signals default to ignore and can carry the targeted stack snapshot request.
+    const SIGNAL_CANDIDATES: [libc::c_int; 4] =
+        [libc::SIGWINCH, libc::SIGURG, libc::SIGCHLD, libc::SIGIO];
     const MAX_FRAME_GAP: u64 = 1024 * 1024;
     const MAX_STACK_SPAN: u64 = 32 * 1024 * 1024;
 
@@ -782,7 +783,25 @@ mod linux {
 
             assert_eq!(
                 unblocked_signal_candidates(&threads).collect::<Vec<_>>(),
-                vec![libc::SIGCHLD]
+                vec![libc::SIGCHLD, libc::SIGIO]
+            );
+        }
+
+        #[test]
+        fn signal_candidate_falls_back_to_sigio_when_other_candidates_are_blocked() {
+            let blocked_signals = SIGNAL_CANDIDATES
+                .iter()
+                .filter(|signal| **signal != libc::SIGIO)
+                .fold(0u64, |mask, signal| mask | (1u64 << (*signal - 1)));
+            let threads = [ThreadInfo {
+                id: 1,
+                name: "test".into(),
+                blocked_signals,
+            }];
+
+            assert_eq!(
+                unblocked_signal_candidates(&threads).collect::<Vec<_>>(),
+                vec![libc::SIGIO]
             );
         }
 
