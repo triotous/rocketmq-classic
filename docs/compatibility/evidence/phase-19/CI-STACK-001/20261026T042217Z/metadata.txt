@@ -1,0 +1,9 @@
+scenario=CI-STACK-001
+source_revision=2a81b58ca9f1ea9b9b3623654d139f94657e89e0
+source_code_clean=true
+environment=rust:1.85.0-bookworm,linux/arm64
+serial_command=cargo test --locked -p rocketmq-classic-consumer --lib -- --test-threads=1
+serial_result=275 passed, 0 failed, 82.78 seconds
+clippy_command=cargo clippy --locked -p rocketmq-classic-consumer --lib -- -D warnings
+clippy_result=PASS, 0.63 seconds using the warmed build cache
+parallel_diagnostics=three consecutive suite runs; run 3 failed only because all safe default-ignore signals were unavailable

@@ -53,3 +53,17 @@
   unchanged. No owner or production environment was accessed, and no plan file
   was modified.
 - No tag or package was created or published.
+
+## Clean committed-source verification
+
+- Correction commit: `2a81b58ca9f1ea9b9b3623654d139f94657e89e0`.
+- After commit, the Linux ARM64 Rust 1.85.0 container reran the consumer
+  library suite with `-- --test-threads=1`: 275 passed, 0 failed, in 82.78
+  seconds. Consumer-library strict Clippy passed with `-D warnings`.
+- Archived serial test, Clippy, parallel diagnostic, and initial GitHub failure
+  excerpt files are in
+  `docs/compatibility/evidence/phase-19/CI-STACK-001/20261026T042217Z/`.
+  Metadata records the committed source revision and container commands.
+- `cargo fmt --all -- --check` and `git diff --check` pass. No plan files were
+  changed. The correction has not yet been pushed; GitHub Actions must validate
+  the final pushed candidate.

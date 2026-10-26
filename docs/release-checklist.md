@@ -11143,7 +11143,8 @@ Run record:
   tests with `--test-threads=1` and strict Clippy. The parallel suite continued
   to show the process-wide signal-mask limitation, so the general CI default
   and all-feature workspace test commands now use the same serial test mode as
-  `integration-tests/run-local.sh`.
+  `integration-tests/run-local.sh`. Clean-source Linux evidence is in
+  `docs/compatibility/evidence/phase-19/CI-STACK-001/20261026T042217Z/`.
 - [ ] Push this correction and await all GitHub Actions jobs, including the
   required Docker local Phase 19 matrix. The first workflow's Docker matrix is
   still running as of this record; its Linux test failure is already recorded.
