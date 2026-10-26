@@ -1,0 +1,20 @@
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p12-v03-20261026t000855z bash integration-tests/setup.sh
+docker compose --project-name rocketmq-classic-p19-p12-v03-20261026t000855z --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateTopic -b 127.0.0.1:50911 -t compat_p12_orderly -r 1 -w 1 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p12-v03-20261026t000855z --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateTopic -b 127.0.0.1:50921 -t compat_p12_orderly -r 1 -w 1 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p12-v03-20261026t000855z --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateSubGroup -b 127.0.0.1:50911 -g compat_p12_orderly -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p12-v03-20261026t000855z --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateSubGroup -b 127.0.0.1:50921 -g compat_p12_orderly -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="update 127.0.0.1:50911 compat_p12_orderly compat_p12_orderly 0 0" exec:java@live-consumer-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="update 127.0.0.1:50921 compat_p12_orderly compat_p12_orderly 0 0" exec:java@live-consumer-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed 127.0.0.1:19876 compat_p12_orderly broker-a 0 p12-slow-a" exec:java@live-orderly-interop-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed 127.0.0.1:19876 compat_p12_orderly broker-a 0 p12-next-a" exec:java@live-orderly-interop-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed 127.0.0.1:19876 compat_p12_orderly broker-b 0 p12-slow-b" exec:java@live-orderly-interop-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed 127.0.0.1:19876 compat_p12_orderly broker-b 0 p12-next-b" exec:java@live-orderly-interop-probe
+JAVA_TOOL_OPTIONS=-Drocketmq.client.unlockDelayTimeMills=1000 mvn -q -f compat/java-reference/pom.xml -Dexec.args="consumer 127.0.0.1:19876 compat_p12_orderly compat_p12_orderly <java-ownership> <java-ready> <java-stop> <marker-dir> <release-file>" exec:java@live-orderly-interop-probe
+env rocketmq.client.unlockDelayTimeMills=1000 target/debug/live_client p12-orderly 127.0.0.1:19876 compat_p12_orderly compat_p12_orderly <rust-ownership> <rust-ready> <rust-stop> <rust-exited> <marker-dir>
+target/debug/live_client offset-query-named 127.0.0.1:50911 broker-a compat_p12_orderly compat_p12_orderly 0
+target/debug/live_client offset-query-named 127.0.0.1:50921 broker-b compat_p12_orderly compat_p12_orderly 0
+python3 tests/differential/check_p12_orderly.py held <marker-dir> <java-ownership> compat_p12_orderly 30
+target/debug/live_client offset-query-named 127.0.0.1:50911 broker-a compat_p12_orderly compat_p12_orderly 0
+target/debug/live_client offset-query-named 127.0.0.1:50921 broker-b compat_p12_orderly compat_p12_orderly 0
+python3 tests/differential/check_p12_orderly.py handoff <marker-dir> <rust-ownership> compat_p12_orderly 90
+After Rust advances its queue to offset 2, stop Rust while Java's older callbacks remain gated, release those callbacks, stop Java, then query both offsets and probe/release both locks with a fresh client ID. This leaves no live offset writer to mask a stale Java completion. Java and Rust use an explicit 1-second orderly unlock-delay property; the Broker remains the unmodified 5.3.4 image.

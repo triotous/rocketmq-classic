@@ -1,0 +1,16 @@
+scenario=P5-V02-route
+profile=basic
+project=rocketmq-classic-p19-p5-v02-route-20261025t235010z
+run_id=20261025T235010Z
+java_client=5.5.1
+server=5.3.4
+server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+source_revision=c877869bd1f9bfacf288a27593649cca12ed9c5d
+source_code_dirty=false
+producer_group=-
+body=-
+seed=not-applicable
+existing_topic=compat_p5_route
+missing_topic=compat_p5_missing
+exit_status=0
+duration_seconds=66

@@ -1,0 +1,1 @@
+PASS P7-V02: Java and Rust matched all seven high-level producer send modes

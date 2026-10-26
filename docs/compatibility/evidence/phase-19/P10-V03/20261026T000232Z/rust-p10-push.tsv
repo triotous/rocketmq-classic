@@ -1,0 +1,20 @@
+P10	CALLBACK	p10-success	0	0
+P10	CALLBACK	p10-partial-ack	0	1
+P10	CALLBACK	p10-partial-retry	0	2
+P10	BATCH	PARTIAL	p10-success,p10-partial-ack,p10-partial-retry	0,0,0	1
+P10	CALLBACK	p10-partial-retry	1	0
+P10	BATCH	SUCCESS	p10-partial-retry	1
+P10	READY	FIXED	broker-a	0
+P10	CALLBACK	p10-failure-dlq	0	3
+P10	BATCH	RECONSUME_LATER	p10-failure-dlq	0
+P10	OBSERVED	p10-success	0
+P10	OBSERVED	p10-partial-ack	0
+P10	OBSERVED	p10-partial-retry	0
+P10	OBSERVED	p10-partial-retry	1
+P10	OBSERVED	p10-failure-dlq	0
+P10	DLQ_QUERY_RETRY	request 12 rejected by %DLQ%compat_p10_push with code 208: Some("query message by key finished, but no message.")
+P10	CALLBACK	p10-failure-dlq	1	1
+P10	BATCH	RECONSUME_LATER	p10-failure-dlq	1
+P10	OBSERVED	p10-failure-dlq	1
+P10	DLQ	%DLQ%compat_p10_push	p10-failure-dlq	2	p10-failure-dlq-key
+P10	PASS	LISTENER_SUCCESS_PARTIAL_FAILURE	RETRIES=1	DLQ=FOUND

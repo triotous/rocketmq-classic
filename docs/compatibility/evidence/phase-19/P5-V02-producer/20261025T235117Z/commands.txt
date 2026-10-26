@@ -1,0 +1,5 @@
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p5-v02-producer-20261025t235117z bash integration-tests/setup.sh
+docker compose --project-name rocketmq-classic-p19-p5-v02-producer-20261025t235117z --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t compat_p5_send -r 4 -w 4 -n namesrv:9876
+docker compose --project-name rocketmq-classic-p19-p5-v02-producer-20261025t235117z --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_p5_reply_group -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="127.0.0.1:20911 compat_p5_send" exec:java@live-p5-producer-probe
+target/debug/live_client p5-producer 127.0.0.1:20911 compat_p5_send compat_p5_producer

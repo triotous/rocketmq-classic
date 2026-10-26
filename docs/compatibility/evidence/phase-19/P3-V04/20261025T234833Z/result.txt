@@ -1,0 +1,1 @@
+PASS P3-V04: Java and Rust invoked a live NameServer route, accepted trusted CA chains with matching and wrong hostnames, rejected the untrusted CA, and shut down with no pending requests, channels, or worker tasks
