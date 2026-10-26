@@ -63,19 +63,26 @@ contention, average assignment over two live Brokers, transaction
 commit/rollback visibility, bidirectional request/reply including no-responder
 timeouts and late replies, producer timeout, client TLS through a local
 terminating proxy, and P17-V02 multi-Broker query parity with bounded-time,
-partial-failure, and terminal-error checks. They do not complete Broker-native
-TLS/auth, ACL, failover, or stress coverage.
+partial-failure, and terminal-error checks, plus P7-V04 bounded server-backed
+producer stress. The local profiles do not reproduce owner-specific
+Broker-native TLS/auth policy, replicated HA failover, or production capacity
+and SLO requirements.
 
-## Pending local server coverage
+## Local server coverage and remaining acceptance
 
-The scenario manifest contains 37 live cases; 35 pass. The eight basic
-route/heartbeat/send scenarios above, `P3-V04`, four consumer cases, the P5
-route row, `P6-V04`, `ORDER-001-lock-unlock`, `REBAL-001-average-10q-3c`, and
-the two transaction rows passed. `P0-V03` also passes as an aggregate over
+The scenario manifest contains 37 live cases, all with passing evidence. The
+eight basic route/heartbeat/send scenarios above, `P3-V04`, the four consumer
+cases, the P5 route row, `P6-V04`, `ORDER-001-lock-unlock`,
+`REBAL-001-average-10q-3c`, and the two transaction rows passed. `P0-V03` also
+passes as an aggregate over
 eleven clean constituent runs, `P7-V02` covers high-level producer send modes,
-and `P9-V03` covers manual pull and offset resume. `P7-V04` passed three
-Java and Rust producer start/shutdown cycles with 20 sends each and zero
-pending requests, connections, or owned task groups after every shutdown.
+and `P9-V03` covers manual pull and offset resume. `P7-V04` sent 8,192
+fixed-seed variable-size messages from each client with a maximum of 32
+concurrent sends. Both clients matched the 6,292,961-byte payload total and
+checksum; Java received contiguous offsets 0–8,191 and Rust received
+8,192–16,383. Each then completed three 20-send producer start/shutdown cycles
+with zero pending requests, connections, or owned task groups after every
+shutdown. See [P7-V04 evidence](evidence/phase-19/P7-V04/20261026T005812Z/).
 `P7-V03` verifies two-Broker retry avoidance and stable body/unique-ID
 preservation after injected retryable responses, then checks each client's
 bounded send deadline against a delayed real Broker response. `P10-V03`
@@ -120,14 +127,12 @@ post-shutdown lock checks. `P16-V02` also passes ACL signature and mutual-TLS
 outcomes using the checksum-verified official 5.3.4 binary distribution in an
 amd64 JDK container, which includes the Linux x86_64 RocksDB JNI library that
 the pinned ARM64 image lacks. All 37 registered local scenarios have passing
-evidence. The two-Broker profiles cover producer
+evidence. The two-Broker profiles cover producer stress,
 retry/deadline/lifecycle, lock/unlock, average queue assignment, the P10 Push
 retry/DLQ path, and the listed P17 query path. Broader query conditions and
 feature-specific profiles remain incomplete. No server limitation is inferred
-from an unrun case. Phase 19 acceptance remains open until each locally
-reproducible case has Java/Rust
-evidence or a source-backed matched server limitation plus the required
-success-path evidence.
+from an unrun case. Owner-specific network, security, HA, and production
+workload acceptance remains tracked separately in MAN-01 through MAN-04.
 
 ## Current-candidate rerun — 2026-10-25
 

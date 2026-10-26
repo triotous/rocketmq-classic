@@ -115,9 +115,12 @@ RocketMQ requests through a locally generated TLS terminator that forwards to
 the disposable plain Broker. Both clients verify the configured CA chain,
 accept the trusted certificate with a wrong hostname as Java 5.5.1 does, reject
 an untrusted CA, and report zero retained remoting resources at shutdown.
-`P7-V04` uses two host-routed Brokers to send 20 messages in each of
-three producer start/shutdown cycles and checks that pending requests,
-connections, and task groups return to zero each time.
+`P7-V04` uses two host-routed Brokers for a fixed-seed workload of 8,192
+variable-size messages per client, with at most 32 concurrent sends. It checks
+matching payload bytes and checksum, contiguous Broker queue offsets, and a
+120-second deadline. Each client then completes three additional 20-send
+producer start/shutdown cycles with pending requests, connections, and task
+groups returning to zero after each shutdown.
 `P11-V04` sends Java messages through Rust Push on Broker A and Rust messages
 through Java Push on Broker B; both listeners retry once before succeeding.
 Java and Rust offset queries match at 1 on each Broker, and three Push

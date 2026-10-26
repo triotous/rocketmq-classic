@@ -28,5 +28,16 @@ The selected assertions cover these resource and ownership boundaries:
 
 The test assertions, not process memory, are the evidence for pending entries,
 connections, owned tasks, admission permits, queue generations and offsets.
-Server-backed sustained load, restart and Broker failover remain Phase 19
-obligations.
+Broker-backed sustained producer load is covered by `P7-V04`: Java 5.5.1 and
+Rust each send 8,192 fixed-seed variable-size messages with at most 32
+concurrent sends, matching byte totals and checksums, contiguous offsets, and a
+120-second deadline. Each client then completes three 20-send start/shutdown
+cycles, with pending requests, connections, and owned task groups returning to
+zero each time. Clean-source evidence is recorded at
+`docs/compatibility/evidence/phase-19/P7-V04/20261026T005812Z/`.
+
+`P9-V03` checks that a consumer restart resumes from the Broker-persisted
+offset. `P7-V03` checks client retry across two Brokers after injected
+retryable responses. Replicated Broker HA failover remains an owner-specific
+Phase 19 obligation because these local Brokers do not reproduce the approved
+production replica topology.

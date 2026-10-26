@@ -11064,3 +11064,32 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 
 Run record:
 `rlogs/2026/10/26-phase-19-final-local-aggregate__20261026T002813Z.rlog`.
+
+## P19 P7-V04 Broker-backed producer stress extension — 2026-10-26 (`5e1c80b1`)
+
+- [x] Added a clean-source P7-V04 workload with fixed seed `1592594996`,
+  8,192 variable-size messages per language, a maximum of 32 concurrent sends,
+  and a 120-second deadline. Java and Rust each sent 6,292,961 payload bytes
+  with checksum `f47e95bbe41fd746`; Java queue offsets were 0–8,191 and Rust
+  offsets were 8,192–16,383.
+- [x] Both clients reported zero pending requests, connections, and owned task
+  groups after the workload, then completed three additional 20-send
+  start/shutdown cycles with the same zero-resource result after every cycle.
+  Clean-source evidence: `docs/compatibility/evidence/phase-19/P7-V04/20261026T005812Z/`
+  (`source_code_dirty=false`, exit status 0, duration 102 seconds).
+- [x] The scenario-owned topic and two-Broker disposable Compose project were
+  removed after evidence capture. No owner or production environment was
+  accessed.
+- [ ] Rerun `integration-tests/run-local.sh --all` on the new stress-probe
+  revision and reconcile all 37 scenario evidence pointers. The prior 23-gate
+  aggregate applies to the earlier source revision.
+- [ ] Push the completed local candidate and await the configured GitHub
+  Actions workflow. Run `40249722222` was triggered for earlier commit
+  `1e4152b9`, before this stress extension; it does not validate `5e1c80b1`.
+- [ ] MAN-01 through MAN-04 remain pending owner-provided network, security,
+  HA topology, and representative workload/SLO inputs. P7-V04 supplies bounded
+  local load evidence but does not establish production capacity or replicated
+  HA failover.
+
+Run record:
+`rlogs/2026/10/26-phase-19-p7-v04-broker-backed-stress__20261026T010127Z.rlog`.
