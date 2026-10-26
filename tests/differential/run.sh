@@ -1180,7 +1180,7 @@ ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PRO
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_p5_reply_group -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$broker_addr $topic" exec:java@live-p5-producer-probe
-target/debug/live_client p5-producer $broker_addr $topic compat_p5_producer
+target/debug/live_client p5-producer $broker_addr $topic compat_p5_producer <java-max-offset-from-java-p5-producer.tsv>
 EOF
 elif [[ "$scenario_id" == "P5-V02-consumer" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -2680,7 +2680,9 @@ elif [[ "$scenario_id" == "P5-V02-producer" ]]; then
                 exit 1
             fi
         else
-            if ! "$repo_root/target/debug/live_client" p5-producer "$broker_addr" "$topic" compat_p5_producer \
+            java_max_offset="$(awk -F '\t' '$1 == "P5" && $2 == "MAX" { value = $3 } END { if (value == "") exit 1; print value }' \
+                "$evidence_dir/java-p5-producer.tsv")"
+            if ! "$repo_root/target/debug/live_client" p5-producer "$broker_addr" "$topic" compat_p5_producer "$java_max_offset" \
                 >"$evidence_dir/rust-p5-producer.tsv" 2>"$evidence_dir/rust-p5-producer.stderr"; then
                 cat "$evidence_dir/rust-p5-producer.tsv" "$evidence_dir/rust-p5-producer.stderr" 2>/dev/null >&2 || true
                 exit 1
@@ -2721,13 +2723,17 @@ def parse(path):
 java_base, java_sends, java_max = parse(java_path)
 rust_base, rust_sends, rust_max = parse(rust_path)
 if java_base != 0 or rust_base != java_max or rust_max != java_max + 3:
-    raise SystemExit("Java and Rust producer passes did not execute consecutively from the expected queue offsets")
+    raise SystemExit(
+        "Java and Rust producer passes did not execute consecutively from the expected queue offsets "
+        f"(java_base={java_base}, java_max={java_max}, rust_base={rust_base}, rust_max={rust_max})"
+    )
 for java_row, rust_row in zip(java_sends, rust_sends):
     if java_row[2:6] != rust_row[2:6]:
         raise SystemExit(f"Java/Rust {java_row[2]} producer results differ: {java_row!r} vs {rust_row!r}")
 PY
     then
         echo "Java/Rust P5 producer RPC results or committed queue offsets differ" >&2
+        cat "$evidence_dir/java-p5-producer.tsv" "$evidence_dir/rust-p5-producer.tsv" >&2 || true
         exit 1
     fi
     printf 'PASS P5-V02-producer: Java and Rust matched V1, V2, and batch send results, plus one-way reply V1/V2 and endTransactionOneway outcomes\n' \

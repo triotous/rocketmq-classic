@@ -199,8 +199,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        Some("p5-producer") if arguments.len() == 4 => {
-            p5_producer(&arguments[1], &arguments[2], &arguments[3]).await
+        Some("p5-producer") if arguments.len() == 5 => {
+            p5_producer(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                arguments[4].parse()?,
+            )
+            .await
         }
         Some("p5-consumer") if arguments.len() == 5 => {
             p5_consumer(&arguments[1], &arguments[2], &arguments[3], &arguments[4]).await
@@ -411,7 +417,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p10-push <namesrv-address> <topic> <group> <ready-file> <failure-go-file> | p11-mixed-group <namesrv-address> <topic> <group> <ownership-file> <stop-file> <exited-file> | p12-orderly <namesrv-address> <topic> <group> <ownership-file> <ready-file> <stop-file> <exited-file> <marker-dir> | p11-push <namesrv-address> <topic> <group> <body> <ready-file> | p11-producer <namesrv-address> <topic> <producer-group> <body> | p5-producer <broker-address> <topic> <producer-group> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume|p5-extension-lite-pop <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-timeout|p19-late-timeout <namesrv-address> <topic> <producer-group> <body> <timeout-ms> <hold-ms> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> [delay-ms] | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | p14-transaction <namesrv-address> <topic> <producer-group> <commit|rollback|unknown> <key> <body> | p14-pull <broker-address> <broker-name> <group> <topic> <queue-id> <offset> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-query-named <broker-address> <broker-name> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | rebalance <namesrv-address> <topic> <comma-separated-consumer-ids> | p7-producer <namesrv-address> <topic> | p10-push <namesrv-address> <topic> <group> <ready-file> <failure-go-file> | p11-mixed-group <namesrv-address> <topic> <group> <ownership-file> <stop-file> <exited-file> | p12-orderly <namesrv-address> <topic> <group> <ownership-file> <ready-file> <stop-file> <exited-file> <marker-dir> | p11-push <namesrv-address> <topic> <group> <body> <ready-file> | p11-producer <namesrv-address> <topic> <producer-group> <body> | p5-producer <broker-address> <topic> <producer-group> <minimum-base-offset> | p5-consumer <broker-address> <group> <topic> <seed-body> | p5-extension-prepare|p5-extension-consume|p5-extension-lite-pop <broker-address> <topic> <group-prefix> | p6-shared-runtime <namesrv-address> <topic> <producer-a> <producer-b> <consumer-group> | p9-pull <namesrv-address> <topic> <consumer-group> | p19-request <namesrv-address> <topic> <producer-group> <body> | p19-timeout|p19-late-timeout <namesrv-address> <topic> <producer-group> <body> <timeout-ms> <hold-ms> | p19-respond <namesrv-address> <topic> <consumer-group> <producer-group> <reply-body> [delay-ms] | transaction <namesrv-address> <topic> <producer-group> <commit|rollback> <key> <body> | p14-transaction <namesrv-address> <topic> <producer-group> <commit|rollback|unknown> <key> <body> | p14-pull <broker-address> <broker-name> <group> <topic> <queue-id> <offset> | max-offset <broker-address> <topic> <queue-id> | timeout-send <proxy-address> <topic> <producer-group> <body> <timeout-ms> <go-file> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids> | offset-query <broker-address> <group> <topic> <queue-id> | offset-query-named <broker-address> <broker-name> <group> <topic> <queue-id> | offset-update <broker-address> <group> <topic> <queue-id> <offset> | pull <broker-address> <group> <topic> <queue-id> <queue-offset> | lock|unlock <broker-address> <group> <client-id> <topic> <broker-name> <queue-id>".into()),
     }
 }
 
@@ -2928,6 +2934,7 @@ async fn p5_producer(
     broker_address: &str,
     topic: &str,
     producer_group: &str,
+    minimum_base_offset: i64,
 ) -> Result<(), Box<dyn Error>> {
     let remoting = RemotingClient::new(TransportMode::Plain);
     if let Err(error) = remoting.start() {
@@ -2940,13 +2947,28 @@ async fn p5_producer(
         max_header.set_topic(Some(topic.to_owned()));
         max_header.set_queue_id(Some(0));
         max_header.set_broker_name(Some("broker-a".into()));
-        let base_offset = api
-            .get_max_offset(
-                broker_address,
-                &max_header,
-                Instant::now() + Duration::from_secs(10),
-            )
-            .await?;
+        let base_deadline = Instant::now() + Duration::from_secs(15);
+        let mut observed_base_offset = -1;
+        let base_offset = loop {
+            let now = Instant::now();
+            if now >= base_deadline {
+                return Err(format!(
+                    "Broker queue max offset did not reach Java's committed offset: expected at least {minimum_base_offset}, observed {observed_base_offset}"
+                )
+                .into());
+            }
+            observed_base_offset = api
+                .get_max_offset(
+                    broker_address,
+                    &max_header,
+                    std::cmp::min(base_deadline, now + Duration::from_secs(5)),
+                )
+                .await?;
+            if observed_base_offset >= minimum_base_offset {
+                break observed_base_offset;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        };
         println!("P5\tBASE\t{base_offset}");
 
         let ids = UniqueIdGenerator::new(None);
