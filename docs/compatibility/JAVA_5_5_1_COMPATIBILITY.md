@@ -88,10 +88,12 @@ queries, preserves Broker A results when Broker B fails, and maps terminal
 query failures to `NO_MESSAGE`; see the
 [live evidence](evidence/phase-19/P17-V02/20261025T172205Z/).
 All 37 registered Phase 19 live scenarios have passing manifest evidence,
-including corrected clean-source runs for P3-V04, P6-V04, and P16-V02. A fresh
-aggregate run-local replay is pending. The Phase 18 source/API/settings
-reverse audit and the current-tree delta review are recorded; owner-executed
-MAN-01 through MAN-04 evidence remains blocked on owner inputs.
+including corrected clean-source runs for P3-V04, P6-V04, and P16-V02. The
+final `run-local.sh --all` replay passed all 23 gates at workspace revision
+`c877869bd1f9bfacf288a27593649cca12ed9c5d`; its evidence reconciliation
+verified all 37 manifest rows have clean-source PASS results and exit status
+0. The Phase 18 source/API/settings reverse audit and current-tree delta
+review are recorded. MAN-01 through MAN-04 remain blocked on owner inputs.
 `P13-V02` and `P5-V02-extensions` now have clean Java/Rust evidence; the
 latter records the two unsupported Lite request paths on 5.3.4 and separate
 positive Lite success evidence on 5.5.0. These results do not establish owner

@@ -10433,6 +10433,7 @@ the fixture fix commit. Details: `rlogs/2026/10/25-phase-18-timeout-fixture-dete
 - [ ] P19-05/P19-V05 remain blocked. No matched Java/Rust outcomes or success
   path for the 30 missing cases is claimed. MAN-01 through MAN-05 remain
   BLOCKED in `docs/owner-validation.md`; no owner environment was accessed.
+
 - [ ] P19-07 Docker CI job is present but has not been run remotely. Current
   local matrix correctly returns BLOCKED, so final compatibility/release
   approval is not supported.
@@ -11022,3 +11023,44 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [x] Post-run Docker queries found no Phase 19 containers, volumes, or
   networks. The nine generated private-key copies in archived P3-V04 run
   directories were removed.
+
+## P19 final corrected current-tree local validation — 2026-10-26
+
+- [x] The final full local replay passed all 23 gates at workspace revision
+  `c877869bd1f9bfacf288a27593649cca12ed9c5d`, containing production code
+  revision `d3c7d2e845364e40ad72f0540a0a498fc1582247`. Evidence is
+  `docs/compatibility/evidence/phase-19/run-local/20261025T225807Z/`.
+  Gates passed formatting and diff hygiene, default and all-feature workspace
+  suites, workspace check, strict Clippy, Java verification, differential
+  self-test and manifest validation, race/leak and fuzz smoke, release
+  examples, benchmark build and run, Cargo/workspace metadata, package content,
+  UTC and Taipei ID checks, Docker toolchain, all live scenarios, and final
+  evidence reconciliation.
+- [x] The aggregate executed all 37 registered live scenario IDs. Final
+  reconciliation confirms every manifest row points to a PASS result with
+  exit status 0 and `source_code_dirty=false`. The evidence and manifest
+  pointers were committed in `f92b7917`.
+- [x] Two earlier corrected-TLS aggregate attempts are retained as diagnostics:
+  `20261025T223516Z` passed tests, check, and other preceding gates but strict
+  Clippy found one needless borrow in `consumer.rs`; commit `21430d58` fixed
+  it. `20261025T224821Z` then passed preceding gates but found three needless
+  borrows in `live_client.rs`; commit `d3c7d2e8` fixed them. The subsequent
+  aggregate passed strict Clippy and all remaining gates.
+- [x] Fresh clean-source live evidence was recorded for
+  [P3-V04](compatibility/evidence/phase-19/P3-V04/20261025T234833Z/),
+  [P6-V04](compatibility/evidence/phase-19/P6-V04/20261025T235605Z/),
+  and [P16-V02](compatibility/evidence/phase-19/P16-V02/20261026T002026Z/).
+  Each records `source_code_dirty=false` and exit status 0. Synthetic per-run
+  private-key files were removed from the current worktree after evidence
+  capture.
+- [x] Post-run Docker queries found no Phase 19 containers, volumes, or
+  networks. No owner or production environment was accessed.
+- [ ] The remote Docker CI job has not been run. Remote CI and the owner-only
+  checks remain outside this local aggregate's evidence.
+- [ ] MAN-01 through MAN-04 remain pending owner-provided network paths,
+  security material and policy, authorized HA topology, and representative
+  workload/SLO inputs. This local replay does not provide owner approval or
+  final production release approval.
+
+Run record:
+`rlogs/2026/10/26-phase-19-final-local-aggregate__20261026T002813Z.rlog`.

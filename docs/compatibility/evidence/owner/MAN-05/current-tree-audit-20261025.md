@@ -72,10 +72,17 @@ without a Java 5.5.1 counterpart.
 
 The source/API rows above close the identified post-P18 code deltas. The
 complete P18 audit remains the record for the broader scoped API, overload,
-setting, input, error, control-flow, and reverse-export review. The 37
-Phase 19 live scenarios have passing manifest evidence, including clean
-corrected P3-V04, P6-V04, and P16-V02 runs. A fresh full `run-local.sh --all`
-replay at the corrected TLS code revision is pending in this audit snapshot.
+setting, input, error, control-flow, and reverse-export review. The full
+[`run-local.sh --all` replay](../../phase-19/run-local/20261025T225807Z/)
+passed all 23 gates at workspace revision
+`c877869bd1f9bfacf288a27593649cca12ed9c5d`, which contains production code
+revision `d3c7d2e845364e40ad72f0540a0a498fc1582247`. Its final reconciliation
+verified all 37 manifest rows point to clean-source PASS evidence with exit
+status 0. Corrected live evidence is recorded for
+[P3-V04](../../phase-19/P3-V04/20261025T234833Z/),
+[P6-V04](../../phase-19/P6-V04/20261025T235605Z/), and
+[P16-V02](../../phase-19/P16-V02/20261026T002026Z/). The evidence and
+manifest pointers were committed in `f92b7917`.
 
 ## MAN-05 decision
 
