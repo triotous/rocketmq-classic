@@ -49,9 +49,17 @@ implementation.
 
 A current-revision remote workflow was requested as run `40383732405`, but
 GitHub started none of its three jobs and ran zero steps because account
-payments failed or the Actions spending limit must be increased. This is an
-external validation blocker; it is not a source/API result. Its captured
+payments failed or the Actions spending limit must be increased. This is a
+historical run result, not a source/API result. Its captured
 [run details](../../CI-DOCKER-RETRY-007/20261026T203546Z/) record the reason.
+
+## Validation disposition updated — 2026-10-27
+
+Per the user's direction, `.github/workflows/ci.yml` has been removed and
+GitHub Actions CI is no longer a validation requirement. The completed local
+Phase 19 aggregate above is the accepted validation record for this tree.
+This workflow change does not alter the source/API audit or resolve the
+separate MAN-01 through MAN-04 owner inputs.
 
 No additional source-backed feature-specific case needs an owner-only service.
 MAN-01 through MAN-04 remain blocked on production network, organization

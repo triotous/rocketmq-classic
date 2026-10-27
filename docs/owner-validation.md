@@ -1,6 +1,6 @@
 # Owner validation handoff
 
-Status date: 2026-10-26. The Phase 19 production code candidate is
+Status date: 2026-10-27. The Phase 19 production code candidate is
 `413f735ad0ab41717acb9d76e2cb664b42076f4d`. The current local aggregate and
 manifest refresh are recorded under
 `docs/compatibility/evidence/phase-19/run-local/20261026T190920Z/`. This
@@ -57,6 +57,8 @@ registered local scenarios have passing evidence. The current local aggregate on
 scenarios reconciled to current clean-source PASS evidence and exit status 0.
 The current-tree audit is
 [docs/compatibility/evidence/owner/MAN-05/current-tree-audit-20261026.md](compatibility/evidence/owner/MAN-05/current-tree-audit-20261026.md).
-Remote CI run `40383732405` did not start any job steps because GitHub reports
-an account payment/spending-limit block. This does not approve production use
-or substitute for MAN-01 through MAN-04.
+GitHub Actions CI was removed per the user's 2026-10-27 direction and is not a
+release gate. Historical run `40383732405`, which started no job steps because
+of an account payment/spending-limit block, remains archived in the Phase 19
+evidence. This does not approve production use or substitute for MAN-01
+through MAN-04.

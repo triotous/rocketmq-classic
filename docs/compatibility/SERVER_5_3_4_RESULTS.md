@@ -532,7 +532,8 @@ production HA, or representative workload/SLO evidence.
 The push-triggered GitHub Actions follow-up `40383732405` checked the same code
 revision but all three jobs failed before starting, with zero runner steps.
 GitHub's annotation says recent account payments failed or the Actions
-spending limit must be increased. Therefore the current-revision remote CI gate
-remains unverified until the repository owner resolves that account billing
-state and reruns the workflow. Captured details:
+spending limit must be increased. This is retained as historical run evidence:
 [CI run evidence](evidence/phase-19/CI-DOCKER-RETRY-007/20261026T203546Z/).
+Per the user's 2026-10-27 direction, the repository's GitHub Actions CI
+workflow has since been removed; remote CI is no longer part of the validation
+gate. The accepted Phase 19 validation is the completed local aggregate above.

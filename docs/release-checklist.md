@@ -11308,11 +11308,11 @@ Run record:
 - [x] The manifest reconciliation selected current clean-source PASS evidence
   for all 37/37 scenario rows. Post-run Docker queries found no Phase 19 project
   containers, volumes, or networks.
-- [ ] Current-revision remote CI remains unverified. GitHub run `40383732405`
+- [x] GitHub Actions CI was removed per the user's 2026-10-27 direction;
+  remote CI is no longer a validation gate. Historical run `40383732405`
   started zero job steps and cites failed account payments or an insufficient
-  Actions spending limit; see
+  Actions spending limit; its record remains at
   `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-007/20261026T203546Z/`.
-  Rerun after the repository owner resolves the billing/spending-limit state.
 - [ ] MAN-01 through MAN-04 remain BLOCKED pending owner-provided network,
   security, HA, and representative workload/SLO inputs. MAN-05 remains N/A per
   the current-tree source/API delta audit. Final compatibility/release approval

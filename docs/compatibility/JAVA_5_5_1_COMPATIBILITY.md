@@ -104,10 +104,14 @@ positive Lite success evidence on 5.5.0. These results do not establish owner
 environment behavior or production approval. See
 [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md) for the executed server
 cases and [`../owner-validation.md`](../owner-validation.md) for the blocked
-owner inputs. Current-revision remote CI run `40383732405` ran zero steps because
-GitHub reports an account payment/spending-limit issue; the next workflow run
-must wait until that external account state is fixed. Final compatibility and
-release approval remain blocked.
+owner inputs. Historical GitHub Actions run `40383732405` ran zero steps because
+GitHub reported an account payment/spending-limit issue; its captured record is
+preserved at
+[`CI run evidence`](evidence/phase-19/CI-DOCKER-RETRY-007/20261026T203546Z/).
+Per the user's 2026-10-27 direction, the repository GitHub Actions CI workflow
+has been removed and remote CI is no longer a validation requirement. Final
+compatibility and release approval remain blocked only on MAN-01 through
+MAN-04 owner inputs.
 
 P13 follow-up: run `20261025T124657Z` initialized and verified offset 0 on
 both queues for all six groups after seeding. The separate Java consume probe
