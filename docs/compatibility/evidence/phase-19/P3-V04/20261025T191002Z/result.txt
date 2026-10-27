@@ -1,1 +1,0 @@
-PASS P3-V04: Java and Rust invoked a live NameServer route and accepted the trusted TLS Broker path; both rejected the untrusted CA, Rust rejected the wrong-host certificate, Java 5.5.1 accepted it without endpoint identification, and all clients shut down with no pending requests, channels, or worker tasks

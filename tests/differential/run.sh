@@ -5,7 +5,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # The live probe uses lifecycle snapshots that are compiled only for this
 # differential harness, keeping those diagnostics out of normal crate builds.
 export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--cfg=rocketmq_classic_test_support"
-manifest="$repo_root/tests/differential/scenarios.yaml"
+source_manifest="$repo_root/tests/differential/scenarios.yaml"
+manifest="${ROCKETMQ_CLASSIC_SCENARIOS_MANIFEST:-$source_manifest}"
 scenario_ids=()
 scenario_id_count=0
 selection=""
@@ -74,6 +75,41 @@ fi
 if [[ "$selection" != "scenario" && $scenario_id_count -ne 0 ]]; then
     echo "--scenario cannot be combined with another selector" >&2
     exit 2
+fi
+
+if [[ "$selection" == "scenario" || "$selection" == "phase" || "$selection" == "all" ]]; then
+    if [[ -z "${ROCKETMQ_CLASSIC_EVIDENCE_DIR:-}" ]]; then
+        evidence_root="$(mktemp -d "${TMPDIR:-/tmp}/rocketmq-classic-test-artifacts.XXXXXX")"
+        evidence_root="$(cd "$evidence_root" && pwd -P)"
+    else
+        mkdir -p "$ROCKETMQ_CLASSIC_EVIDENCE_DIR"
+        evidence_root="$(cd "$ROCKETMQ_CLASSIC_EVIDENCE_DIR" && pwd -P)"
+    fi
+    case "$evidence_root/" in
+        "$repo_root/"*)
+            echo "Test artifacts must be stored outside the repository: $evidence_root" >&2
+            exit 2
+            ;;
+    esac
+    export ROCKETMQ_CLASSIC_EVIDENCE_DIR="$evidence_root"
+    if [[ -n "${ROCKETMQ_CLASSIC_SCENARIOS_MANIFEST:-}" ]]; then
+        manifest="$(python3 - "$ROCKETMQ_CLASSIC_SCENARIOS_MANIFEST" <<'PY'
+import sys
+from pathlib import Path
+print(Path(sys.argv[1]).resolve())
+PY
+)"
+        case "$manifest" in
+            "$repo_root/"*)
+                echo "A live run cannot update a scenario manifest inside the repository: $manifest" >&2
+                exit 2
+                ;;
+        esac
+    else
+        manifest="$evidence_root/scenarios.json"
+        cp "$source_manifest" "$manifest"
+    fi
+    export ROCKETMQ_CLASSIC_SCENARIOS_MANIFEST="$manifest"
 fi
 
 selected_file="$(mktemp)"
@@ -704,7 +740,7 @@ if [[ -n "$("${compose[@]}" ps --all --quiet 2>/dev/null)" ]]; then
     exit 2
 fi
 
-evidence_dir="$repo_root/docs/compatibility/evidence/phase-19/${scenario_id}/${run_id}"
+evidence_dir="$evidence_root/${scenario_id}/${run_id}"
 namesrv_addr="127.0.0.1:${ROCKETMQ_NAMESRV_HOST_PORT}"
 broker_addr="127.0.0.1:${ROCKETMQ_BROKER_HOST_PORT}"
 code_dirty_paths=(Cargo.toml Cargo.lock crates/ compat/java-reference/ integration-tests/
@@ -1513,8 +1549,7 @@ PY
     fi
     ended_epoch="$(date +%s)"
     if ((status == 0)); then
-        evidence_relative="${evidence_dir#"$repo_root"/}"
-        if ! python3 - "$manifest" "$scenario_id" "$evidence_relative" <<'PY'
+        if ! python3 - "$manifest" "$scenario_id" "$evidence_dir" <<'PY'
 import json
 import os
 import re

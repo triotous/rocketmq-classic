@@ -1,1 +1,0 @@
-PASS CONS-004-update-offset: Java and Rust read back each other’s consumer-offset updates

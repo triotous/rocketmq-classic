@@ -1,2 +1,0 @@
-delete topic [compat_p9_pull] from cluster [RocketMQLocalTest] success.
-delete topic [compat_p9_pull] from NameServer success.

@@ -1,8 +1,0 @@
-ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=transaction COMPOSE_PROJECT_NAME=rocketmq-classic-p19-tx-002-rollback-20261026t025808z bash integration-tests/setup.sh
-docker compose --project-name rocketmq-classic-p19-tx-002-rollback-20261026t025808z --file integration-tests/compose.yaml --profile transaction exec broker-tx ./mqadmin updateTopic -c RocketMQLocalTest -t compat_phase0_tx -r 1 -w 1 -n namesrv:9876
-docker compose --project-name rocketmq-classic-p19-tx-002-rollback-20261026t025808z --file integration-tests/compose.yaml --profile transaction exec broker-tx ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_phase0_tx_consumer_group -n namesrv:9876
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="127.0.0.1:19876 compat_phase0_tx compat_phase0_tx_group rollback compat_tx_rollback_java transaction-body" exec:java@live-transaction-probe
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- transaction 127.0.0.1:19876 compat_phase0_tx compat_phase0_tx_group rollback compat_tx_rollback_rust transaction-body
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- max-offset 127.0.0.1:30911 compat_phase0_tx 0
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="pull 127.0.0.1:30911 compat_phase0_tx_consumer_group compat_phase0_tx 0 0" exec:java@live-consumer-probe
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- pull 127.0.0.1:30911 compat_phase0_tx_consumer_group compat_phase0_tx 0 0

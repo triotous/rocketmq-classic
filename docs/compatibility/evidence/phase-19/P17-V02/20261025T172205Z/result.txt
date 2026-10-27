@@ -1,1 +1,0 @@
-PASS P17-V02: Java and Rust returned the same duplicate-key messages from both Brokers, the timestamp-bounded query returned only the in-range message, one Broker query failure preserved the other Broker's result, and terminal failures mapped to NO_MESSAGE

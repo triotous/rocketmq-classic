@@ -1,6 +1,0 @@
-ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p15-v03-20261026t034755z bash tests/differential/run.sh --scenario P15-V03
-The runner provisions the isolated two-Broker host-routed profile, creates six one-queue topics on both Brokers, creates the two responder groups, runs bidirectional success plus both no-responder and late-reply language directions, checks timeout/callback/correlation state, and tears down only this Compose project.
-request_timeout_ms=4500
-no_reply_hold_ms=1500
-late_reply_delay_ms=6500
-late_reply_hold_ms=4000

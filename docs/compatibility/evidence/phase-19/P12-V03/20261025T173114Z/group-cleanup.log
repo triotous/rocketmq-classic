@@ -1,2 +1,0 @@
-delete subscription group [compat_p12_orderly] from broker [127.0.0.1:50911] success.
-delete subscription group [compat_p12_orderly] from broker [127.0.0.1:50921] success.

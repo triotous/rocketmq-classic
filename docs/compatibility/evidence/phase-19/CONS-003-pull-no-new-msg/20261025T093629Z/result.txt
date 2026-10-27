@@ -1,1 +1,0 @@
-PASS CONS-003-pull-no-new-msg: matching NO_NEW_MSG status and empty response body

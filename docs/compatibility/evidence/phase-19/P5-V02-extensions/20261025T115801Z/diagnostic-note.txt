@@ -1,8 +1,0 @@
-Diagnostic only. This nonzero clean-source run is not PASS evidence and the manifest remains PENDING_PHASE_19.
-
-Revision: 91b0bc564029145a3a1b2193919bc551be67290e (source_code_dirty=false)
-Java 5.5.1 completed heartbeat, heartbeat V2, query assignment, and set message request mode.
-The next call, MQClientAPIExt.syncLiteSubscriptionAsync, received Broker response code 3 with remark: request type 200071 not supported.
-The fail-fast runner stopped before the Rust probe, message seeding, POP, ACK, batch ACK, or change-invisible-time assertions. No Java/Rust parity claim is made.
-
-Cleanup completed: scenario parent and derived Lite topics deleted; isolated Compose containers, network, and volume removed. Project-filtered container, network, and volume listings were empty afterward.

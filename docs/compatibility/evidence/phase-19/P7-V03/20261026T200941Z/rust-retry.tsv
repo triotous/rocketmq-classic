@@ -1,8 +1,0 @@
-ROUTE	rust	broker-a,broker-b
-ATTEMPT	rust	1	broker-a	ERROR	p7-retry-original-body	0A0A0A798CC1FA49B33D851317EA0000
-ATTEMPT_ERROR	rust	1	request 310 rejected by 127.0.0.1:50911 with code 16: Some("P7-V03 injected retryable NO_PERMISSION response")
-ATTEMPT	rust	2	broker-b	ERROR	p7-retry-original-body	0A0A0A798CC1FA49B33D851317EA0000
-ATTEMPT_ERROR	rust	2	request 310 rejected by 127.0.0.1:50921 with code 16: Some("P7-V03 injected retryable NO_PERMISSION response")
-ATTEMPT	rust	3	broker-a	SEND_OK	p7-retry-original-body	0A0A0A798CC1FA49B33D851317EA0000
-ATTEMPT_ERROR	rust	3	
-RESULT	rust	retry	SUCCESS	SEND_OK	broker-a	12

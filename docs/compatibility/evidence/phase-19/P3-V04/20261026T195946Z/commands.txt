@@ -1,8 +1,0 @@
-ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=tls COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p3-v04-20261026t195946z bash integration-tests/setup.sh
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="route 127.0.0.1:19876 compat_p3_tls" exec:java@live-p3-remoting-probe
-target/debug/live_client p3-raw-route 127.0.0.1:19876 compat_p3_tls
-openssl req -x509 -newkey rsa:2048 -nodes -days 2 -config <evidence>/ca.cnf -keyout <evidence>/ca.key -out <evidence>/ca.pem
-openssl req -new -newkey rsa:2048 -nodes -config <evidence>/server-req.cnf -keyout <evidence>/server.key -out <evidence>/server.csr
-openssl x509 -req -in <evidence>/server.csr -CA <evidence>/ca.pem -CAkey <evidence>/ca.key -set_serial 1 -days 2 -sha256 -extfile <evidence>/server-ext.cnf -extensions server_cert -out <evidence>/server.pem
-python3 tests/differential/tls_broker_proxy.py --upstream 127.0.0.1:20911 --cert <evidence>/server.pem --key <evidence>/server.key --ready-file <evidence>/tls-proxy-ready.txt --log-file <evidence>/tls-proxy.tsv
-Java and Rust TLS calls use the trusted CA, then independently test a trusted wrong-host certificate and an untrusted CA; both accept the trusted wrong-host certificate without endpoint identification and reject the untrusted CA; all clients shut down before the next probe.

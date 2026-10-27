@@ -1,2 +1,0 @@
-create topic to 127.0.0.1:30911 success.
-TopicConfig [topicName=compat_phase0_tx, readQueueNums=1, writeQueueNums=1, perm=RW-, topicFilterType=SINGLE_TAG, topicSysFlag=0, order=false, attributes={}]

@@ -1,2 +1,0 @@
-delete topic [compat_p3_tls] from cluster [RocketMQLocalTest] success.
-delete topic [compat_p3_tls] from NameServer success.

@@ -1,8 +1,0 @@
-Traceback (most recent call last):
-  File "<repo>/tests/differential/compare.py", line 830, in <module>
-    raise SystemExit(main(sys.argv[1:]))
-  File "<repo>/tests/differential/compare.py", line 813, in main
-    self_test()
-  File "<repo>/tests/differential/compare.py", line 746, in self_test
-    assert phase6[0]["live_status"] == "PENDING_PHASE_19"
-AssertionError

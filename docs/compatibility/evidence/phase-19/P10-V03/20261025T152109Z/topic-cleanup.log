@@ -1,2 +1,0 @@
-delete topic [compat_p10_retry] from cluster [RocketMQLocalTest] success.
-delete topic [compat_p10_retry] from NameServer success.

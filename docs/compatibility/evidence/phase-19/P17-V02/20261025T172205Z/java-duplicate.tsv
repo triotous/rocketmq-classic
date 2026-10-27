@@ -1,3 +1,0 @@
-P17	RESULT	p17-duplicate-key	2	1792948961301
-P17	MESSAGE	p17-duplicate-key	null	0	1792948958759	p17-duplicate-broker-a
-P17	MESSAGE	p17-duplicate-key	null	0	1792948958781	p17-duplicate-broker-b

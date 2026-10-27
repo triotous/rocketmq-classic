@@ -4,6 +4,20 @@ set -Eeuo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 compose_file="$repo_root/integration-tests/compose-lite-5.5.0.yaml"
 image_ref="apache/rocketmq:5.5.0@sha256:7e8f6c9dbd9df742ed26ba69c00d4ad69e2f86a56f3ca7782ff8144dd0798132"
+if [[ -z "${ROCKETMQ_CLASSIC_EVIDENCE_DIR:-}" ]]; then
+    evidence_root="$(mktemp -d "${TMPDIR:-/tmp}/rocketmq-classic-test-artifacts.XXXXXX")"
+    evidence_root="$(cd "$evidence_root" && pwd -P)"
+else
+    mkdir -p "$ROCKETMQ_CLASSIC_EVIDENCE_DIR"
+    evidence_root="$(cd "$ROCKETMQ_CLASSIC_EVIDENCE_DIR" && pwd -P)"
+fi
+case "$evidence_root/" in
+    "$repo_root/"*)
+        echo "Test artifacts must be stored outside the repository: $evidence_root" >&2
+        exit 2
+        ;;
+esac
+export ROCKETMQ_CLASSIC_EVIDENCE_DIR="$evidence_root"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 run_slug="$(printf '%s' "$run_id" | tr '[:upper:]' '[:lower:]')"
 project_name="rocketmq-classic-p19-lite-supplementary-$run_slug"
@@ -11,7 +25,7 @@ topic="compat_p5_lite_supplementary"
 group="compat_p5_lite_supplementary"
 lite_topic='%LMQ%$'"$topic"'$entries'
 repo_commit="$(git -C "$repo_root" rev-parse HEAD)"
-evidence_dir="$repo_root/docs/compatibility/evidence/phase-19/supplementary-lite-5.5.0/$run_id"
+evidence_dir="$evidence_root/supplementary-lite-5.5.0/$run_id"
 namesrv_port="${ROCKETMQ_SUPPLEMENTARY_NAMESRV_PORT:-29876}"
 broker_port="${ROCKETMQ_SUPPLEMENTARY_BROKER_PORT:-29911}"
 
@@ -292,4 +306,4 @@ for method in methods:
         raise SystemExit(f"Java/Rust {method} outcomes differ: {java[method]!r} vs {rust[method]!r}")
 PY
 printf 'Java and Rust Lite subscription and POP success paths matched on 5.5.0.\n' >"$evidence_dir/comparison.txt"
-echo "Supplementary Lite success-path checks passed; teardown will archive and verify cleanup."
+echo "Supplementary Lite success-path checks passed; local outputs are at $evidence_dir and teardown will verify cleanup."

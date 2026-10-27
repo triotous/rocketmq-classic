@@ -451,7 +451,7 @@ remain separate P17/P18 platform evidence.
 
 **P17-V02** passed against the pinned RocketMQ 5.3.4 image with Java 5.5.1 and
 Rust. The clean run at
-[`20261025T172205Z`](evidence/phase-19/P17-V02/20261025T172205Z/) seeded
+`20261025T172205Z` (raw output not retained) seeded
 duplicate keys on both Brokers and an in-range/out-of-range timestamp pair.
 Both clients returned the same two broad duplicate results and the same single
 bounded result. With Broker B query replies changed to `SYSTEM_ERROR`, both

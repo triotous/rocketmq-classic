@@ -166,3 +166,12 @@ Cargo.lock
 *.pdb
 
 # End of https://www.toptal.com/developers/gitignore/api/rust,java,macos,intellij+all
+
+# Differential and Docker test output is local-only and must not be committed.
+docs/compatibility/evidence/phase-19/
+compat/java-reference/java-home-before-store-class-init/
+
+# Python test and tooling caches
+__pycache__/
+*.py[cod]
+.pytest_cache/

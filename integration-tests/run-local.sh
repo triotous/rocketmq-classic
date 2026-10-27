@@ -2,7 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-manifest="$repo_root/tests/differential/scenarios.yaml"
+source_manifest="$repo_root/tests/differential/scenarios.yaml"
+manifest=""
 
 usage() {
     cat <<'EOF'
@@ -10,8 +11,9 @@ Usage:
   ROCKETMQ_CLASSIC_TEST_ENV=local-disposable bash integration-tests/run-local.sh --all
 
 Runs the server-free workspace gates, every registered Phase 19 live scenario,
-and the final manifest/evidence reconciliation. The live runner refuses to
-start Compose if any selected manifest row has no implementation.
+and the final local-output reconciliation. Test artifacts are written outside
+the repository under ROCKETMQ_CLASSIC_EVIDENCE_DIR or the system temp directory.
+The live runner refuses to start Compose if any selected manifest row has no implementation.
 EOF
 }
 
@@ -31,9 +33,26 @@ if ! command -v cargo >/dev/null || ! command -v mvn >/dev/null || ! command -v 
 fi
 
 cd "$repo_root"
+if [[ -z "${ROCKETMQ_CLASSIC_EVIDENCE_DIR:-}" ]]; then
+    evidence_root="$(mktemp -d "${TMPDIR:-/tmp}/rocketmq-classic-test-artifacts.XXXXXX")"
+    evidence_root="$(cd "$evidence_root" && pwd -P)"
+else
+    mkdir -p "$ROCKETMQ_CLASSIC_EVIDENCE_DIR"
+    evidence_root="$(cd "$ROCKETMQ_CLASSIC_EVIDENCE_DIR" && pwd -P)"
+fi
+case "$evidence_root/" in
+    "$repo_root/"*)
+        echo "Test artifacts must be stored outside the repository: $evidence_root" >&2
+        exit 2
+        ;;
+esac
+export ROCKETMQ_CLASSIC_EVIDENCE_DIR="$evidence_root"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 started_epoch="$(date +%s)"
-evidence_dir="$repo_root/docs/compatibility/evidence/phase-19/run-local/$run_id"
+manifest="$evidence_root/scenarios-$run_id.json"
+cp "$source_manifest" "$manifest"
+export ROCKETMQ_CLASSIC_SCENARIOS_MANIFEST="$manifest"
+evidence_dir="$evidence_root/run-local/$run_id"
 mkdir -p "$evidence_dir"
 result="FAIL"
 steps_file="$evidence_dir/steps.tsv"
@@ -80,11 +99,11 @@ finish() {
         >"$evidence_dir/metadata.txt"
     redact_paths || exit_code=1
     if [[ "$result" == "PASS" && $exit_code -eq 0 ]]; then
-        echo "Local validation passed. Evidence: ${evidence_dir#"$repo_root"/}"
+        echo "Local validation passed. Local artifacts: $evidence_dir"
     elif [[ "$result" == "BLOCKED" ]]; then
-        echo "Local validation blocked by missing live implementations. Evidence: ${evidence_dir#"$repo_root"/}" >&2
+        echo "Local validation blocked by missing live implementations. Local artifacts: $evidence_dir" >&2
     else
-        echo "Local validation failed. Evidence: ${evidence_dir#"$repo_root"/}" >&2
+        echo "Local validation failed. Local artifacts: $evidence_dir" >&2
     fi
     exit "$exit_code"
 }
@@ -182,7 +201,7 @@ fi
 
 run_step docker-toolchain bash -c 'command -v docker >/dev/null && docker version --format "Docker client {{.Client.Version}} / server {{.Server.Version}}" && docker compose version'
 run_step live-scenarios env ROCKETMQ_CLASSIC_TEST_ENV=local-disposable "$repo_root/tests/differential/run.sh" --all
-run_step scenario-evidence-reconciliation python3 - "$manifest" "$repo_root" <<'PY'
+run_step scenario-evidence-reconciliation python3 - "$manifest" "$evidence_root" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -199,7 +218,9 @@ for row in required:
     if row.get("live_status") != "PASS" or not evidence:
         failures.append(f"{scenario_id}: live_status={row.get('live_status')} evidence={evidence}")
         continue
-    evidence_path = root / evidence
+    evidence_path = Path(evidence)
+    if not evidence_path.is_absolute():
+        evidence_path = root / evidence_path
     results = []
     if evidence_path.is_dir():
         direct_result = evidence_path / "result.txt"

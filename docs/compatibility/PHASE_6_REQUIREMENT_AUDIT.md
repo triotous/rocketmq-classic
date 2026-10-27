@@ -5664,9 +5664,8 @@ API or setting was added in this range.
 
 The source-backed MAN-05 disposition is N/A for any additional
 feature-specific owner validation because every registered feature scenario
-is locally runnable and all 37 have passing evidence. Owner-network,
-organization security, HA fault-injection, and workload/SLO evidence remain
-separate MAN-01 through MAN-04 requirements. See
-[MAN-05 current-tree audit](evidence/owner/MAN-05/current-tree-audit-20261025.md)
-and the Phase 19 aggregate run at
-[evidence/phase-19/run-local/20261025T203947Z](evidence/phase-19/run-local/20261025T203947Z/).
+was locally runnable and all 37 passed in historical runs. The checked-in
+manifest records those outcomes as `PASS_RECORDED`; raw outputs are not
+retained. Owner-network, organization security, HA fault-injection, and
+workload/SLO evidence remain separate MAN-01 through MAN-04 requirements. See
+[MAN-05 current-tree audit](evidence/owner/MAN-05/current-tree-audit-20261025.md).

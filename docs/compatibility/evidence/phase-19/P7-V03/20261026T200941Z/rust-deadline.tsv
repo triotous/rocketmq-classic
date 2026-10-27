@@ -1,4 +1,0 @@
-ROUTE	rust	broker-a,broker-b
-ATTEMPT	rust	1	broker-b	ERROR	p7-deadline-original-body	0A0A0A798D7E5159C3FC85133A810000
-ATTEMPT_ERROR	rust	1	transport failure: response wait deadline expired for Some("127.0.0.1:50921") after Some(899.462792ms)
-RESULT	rust	deadline	TIMEOUT	transport failure: response wait deadline expired for Some("127.0.0.1:50921") after Some(899.462792ms)	902

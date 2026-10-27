@@ -1,6 +1,0 @@
-P13	prepare	compat_p13_pop_java_expiry	POP
-P13	pop-offset-state	phase=after-prepare	group=compat_p13_pop_java_expiry	queue=0	offset=NOT_FOUND
-P13	prepare	compat_p13_pop_java_change	POP
-P13	pop-offset-state	phase=after-prepare	group=compat_p13_pop_java_change	queue=0	offset=NOT_FOUND
-P13	prepare	compat_p13_pop_java_mixed	POP
-P13	pop-offset-state	phase=after-prepare	group=compat_p13_pop_java_mixed	queue=0	offset=NOT_FOUND

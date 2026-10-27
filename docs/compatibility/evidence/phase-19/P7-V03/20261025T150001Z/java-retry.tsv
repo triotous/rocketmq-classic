@@ -1,2 +1,0 @@
-ROUTE	java	broker-a,broker-b
-RESULT	java	retry	BROKER_ERROR	org.apache.rocketmq.client.exception.MQClientException: No route info of this topic: compat_p7_retry See https://rocketmq.apache.org/docs/faq/ for further details.	9

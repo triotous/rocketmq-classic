@@ -1,1 +1,0 @@
-PASS TX-002-rollback: Java/Rust decisions matched and Broker queue max offset was 0

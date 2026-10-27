@@ -1,4 +1,0 @@
-create topic to 127.0.0.1:40911 success.
-TopicConfig [topicName=compat_phase0_request_java, readQueueNums=1, writeQueueNums=1, perm=RW-, topicFilterType=SINGLE_TAG, topicSysFlag=0, order=false, attributes={}]
-create topic to 127.0.0.1:40911 success.
-TopicConfig [topicName=compat_phase0_request_rust, readQueueNums=1, writeQueueNums=1, perm=RW-, topicFilterType=SINGLE_TAG, topicSysFlag=0, order=false, attributes={}]

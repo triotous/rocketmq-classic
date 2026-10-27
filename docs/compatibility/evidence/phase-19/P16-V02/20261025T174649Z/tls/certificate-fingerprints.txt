@@ -1,8 +1,0 @@
-SHA256(/Users/bruce.tsai/Projects/trio/rocketmq-classic/docs/compatibility/evidence/phase-19/P16-V02/20261025T174649Z/tls/server.pem)= 94e91181643489ee52ca93eea08a9008c9ef69a83d2ac852e42f7b0a78d3c71f
-SHA256(/Users/bruce.tsai/Projects/trio/rocketmq-classic/docs/compatibility/evidence/phase-19/P16-V02/20261025T174649Z/tls/client.pem)= 1e89b2f52bf8016e972dc8b872da149a14d3432d279c38e9b0480566adbf55cc
-SHA256(/Users/bruce.tsai/Projects/trio/rocketmq-classic/docs/compatibility/evidence/phase-19/P16-V02/20261025T174649Z/tls/ca.pem)= f9a588af83429b9258663361313e8018a873c5d3e5c0ad6b35dbba4d3b23d0d5
-SHA256(/Users/bruce.tsai/Projects/trio/rocketmq-classic/docs/compatibility/evidence/phase-19/P16-V02/20261025T174649Z/tls/untrusted-ca.pem)= 7cf22dd877d014af7857fc71660d3b7c2f7cd610d2956f44496631b301011a8f
-subject= /CN=localhost
-issuer= /CN=rocketmq-classic-p16-test-ca
-subject= /CN=rocketmq-classic-p16-test-client
-issuer= /CN=rocketmq-classic-p16-test-ca

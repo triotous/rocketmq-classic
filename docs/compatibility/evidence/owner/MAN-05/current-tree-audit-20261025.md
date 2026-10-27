@@ -42,7 +42,7 @@ without a Java 5.5.1 counterpart.
    heartbeat transport failures remain best effort, unsubscribe does not
    trigger rebalance, code 25 does not send an extra heartbeat, and results use
    the subscription snapshot captured for the pull. The clean live
-   [P6-V04 run](../../phase-19/P6-V04/20261025T222205Z/) verifies subscription
+   P6-V04 run (raw output not retained) verifies subscription
    updates, tag filtering, and the remaining shared producer. Pinned source:
    [DefaultMQPushConsumerImpl.java](https://github.com/apache/rocketmq/blob/rocketmq-all-5.5.1/client/src/main/java/org/apache/rocketmq/client/impl/consumer/DefaultMQPushConsumerImpl.java#L335-L350),
    [subscription methods](https://github.com/apache/rocketmq/blob/rocketmq-all-5.5.1/client/src/main/java/org/apache/rocketmq/client/impl/consumer/DefaultMQPushConsumerImpl.java#L1265-L1309),
@@ -62,9 +62,9 @@ without a Java 5.5.1 counterpart.
    mode now checks the configured trust chain and certificate validity but
    does not compare the requested hostname. It still rejects untrusted and
    expired certificates and still verifies handshake signatures. Fresh
-   [P3-V04 evidence](../../phase-19/P3-V04/20261025T222946Z/) confirms that
+   P3-V04 evidence (raw output not retained) confirms that
    both clients accept the CA-trusted wrong-host certificate and reject an
-   untrusted CA. Fresh [P16-V02 evidence](../../phase-19/P16-V02/20261025T223149Z/)
+   untrusted CA. Fresh P16-V02 evidence (raw output not retained)
    confirms the same behavior under mutual TLS while rejecting missing client
    certificates. The TLS-terminating proxy forwards to the isolated plain
    Broker; these cases validate client TLS behavior, not Broker TLS
@@ -72,17 +72,17 @@ without a Java 5.5.1 counterpart.
 
 The source/API rows above close the identified post-P18 code deltas. The
 complete P18 audit remains the record for the broader scoped API, overload,
-setting, input, error, control-flow, and reverse-export review. The full
-[`run-local.sh --all` replay](../../phase-19/run-local/20261025T225807Z/)
-passed all 23 gates at workspace revision
+setting, input, error, control-flow, and reverse-export review. The historical
+`run-local.sh --all` replay passed all 23 gates at workspace revision
 `c877869bd1f9bfacf288a27593649cca12ed9c5d`, which contains production code
 revision `d3c7d2e845364e40ad72f0540a0a498fc1582247`. Its final reconciliation
-verified all 37 manifest rows point to clean-source PASS evidence with exit
-status 0. Corrected live evidence is recorded for
-[P3-V04](../../phase-19/P3-V04/20261025T234833Z/),
-[P6-V04](../../phase-19/P6-V04/20261025T235605Z/), and
-[P16-V02](../../phase-19/P16-V02/20261026T002026Z/). The evidence and
-manifest pointers were committed in `f92b7917`.
+verified all 37 manifest rows passed from clean source with exit status 0.
+The repository now retains only their `PASS_RECORDED` manifest summaries and
+not the raw run outputs. Corrected live outcomes were recorded for
+P3-V04 (raw output not retained),
+P6-V04 (raw output not retained), and
+P16-V02 (raw output not retained). The run evidence and its manifest pointers
+were removed from the repository during test-artifact cleanup.
 
 ## MAN-05 decision
 

@@ -1,6 +1,0 @@
-P11	DELIVERY	java	p11-rust-to-java-retry	0	compat_p11_push	0	0
-P11	DELIVERY	java	p11-rust-to-java-retry	1	compat_p11_push	0	0
-P11	CYCLE	java	0	true	true
-P11	CYCLE	java	1	true	true
-P11	CYCLE	java	2	true	true
-P11	PASS	JAVA_PUSH_RETRY	CYCLES=3	RETRIES=1

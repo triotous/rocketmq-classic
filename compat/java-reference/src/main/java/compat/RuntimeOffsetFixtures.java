@@ -24,15 +24,23 @@ public final class RuntimeOffsetFixtures {
         String storeRootProperty = "rocketmq.client.localOffsetStoreDir";
         String previousStoreRoot = System.getProperty(storeRootProperty);
         String previousUserHome = System.getProperty("user.home");
+        Path fixtureHomeRoot = Files.createTempDirectory("rocketmq-offset-fixture-home-");
         System.clearProperty(storeRootProperty);
-        System.setProperty("user.home", "java-home-before-store-class-init");
-        String storeRootAtInitialization = LocalFileOffsetStore.LOCAL_OFFSET_STORE_DIR;
-        System.setProperty("user.home", "java-home-after-store-class-init");
-        String storeRootAfterHomeChange = LocalFileOffsetStore.LOCAL_OFFSET_STORE_DIR;
-        if (previousStoreRoot == null) System.clearProperty(storeRootProperty);
-        else System.setProperty(storeRootProperty, previousStoreRoot);
-        if (previousUserHome == null) System.clearProperty("user.home");
-        else System.setProperty("user.home", previousUserHome);
+        String storeRootAtInitialization;
+        String storeRootAfterHomeChange;
+        try {
+            System.setProperty("user.home", fixtureHomeRoot.resolve("java-home-before-store-class-init").toString());
+            storeRootAtInitialization = normalizeFixtureHome(
+                fixtureHomeRoot, LocalFileOffsetStore.LOCAL_OFFSET_STORE_DIR);
+            System.setProperty("user.home", fixtureHomeRoot.resolve("java-home-after-store-class-init").toString());
+            storeRootAfterHomeChange = normalizeFixtureHome(
+                fixtureHomeRoot, LocalFileOffsetStore.LOCAL_OFFSET_STORE_DIR);
+        } finally {
+            if (previousStoreRoot == null) System.clearProperty(storeRootProperty);
+            else System.setProperty(storeRootProperty, previousStoreRoot);
+            if (previousUserHome == null) System.clearProperty("user.home");
+            else System.setProperty("user.home", previousUserHome);
+        }
 
         ClientConfig config = new ClientConfig(); config.setClientIP("offset-client"); config.setNamespace("ignored-config-namespace");
         MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
@@ -199,6 +207,14 @@ public final class RuntimeOffsetFixtures {
             row.put("offset", entry.getValue()); rows.add(row);
         }
         return rows;
+    }
+    private static String normalizeFixtureHome(Path fixtureHomeRoot, String configuredPath) {
+        Path root = fixtureHomeRoot.toAbsolutePath().normalize();
+        Path value = Path.of(configuredPath).toAbsolutePath().normalize();
+        if (!value.startsWith(root)) {
+            throw new IllegalStateException("local offset store path escaped fixture temp home: " + configuredPath);
+        }
+        return root.relativize(value).toString().replace('\\', '/');
     }
     private static List<Object> rows(Map<MessageQueue, Long> table) {
         List<Map.Entry<MessageQueue, Long>> entries = new ArrayList<>(table.entrySet());

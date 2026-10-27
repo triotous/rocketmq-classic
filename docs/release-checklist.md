@@ -5,6 +5,11 @@ It does not authorize a compatibility claim, registry publication, release
 tag, or deployment. The Java client baseline is RocketMQ 5.5.1; the Phase 19
 Broker baseline is 5.3.4.
 
+The dated entries below describe the state of each validation run at that
+time. Raw Phase 19 run outputs were removed from the repository on 2026-10-27;
+see [the test artifact policy](compatibility/TEST_ARTIFACTS.md) for current
+storage rules.
+
 ## Compatibility and validation
 
 - [x] P18-V02 full current-code server-free refresh (`c497f376`, 2026-10-24):
@@ -3447,34 +3452,34 @@ Before any publication:
   5.3.4 profile. Java and Rust returned the same four `broker-a` queue rows
   (IDs 0–3); scenario-topic deletion and project-only Compose cleanup passed.
   The runner marked this manifest row `PASS`. Latest evidence:
-  [`20261017T052003Z`](compatibility/evidence/phase-19/ROUTE-001-get-existing-topic/20261017T052003Z/).
+  `20261017T052003Z` (raw output not retained).
 - [x] Run `ROUTE-002-topic-not-exist`; Java and Rust both returned `NO_ROUTE`,
   and project-only Compose cleanup passed. Evidence:
-  [`20261017T051903Z`](compatibility/evidence/phase-19/ROUTE-002-topic-not-exist/20261017T051903Z/).
+  `20261017T051903Z` (raw output not retained).
 - [x] Run `HEARTBEAT-001`; Java and Rust sent the same encoded producer
   heartbeat and received Broker version `481`. Project-only Compose cleanup
   passed. Evidence:
-  [`20261017T053144Z`](compatibility/evidence/phase-19/HEARTBEAT-001/20261017T053144Z/).
+  `20261017T053144Z` (raw output not retained).
 - [x] Run `PROD-001-sync-send` against the pinned basic profile. Java and Rust
   both returned `SEND_OK`; each client read the other's message by physical offset
   and matched topic, queue, queue offset, and body. Topic and project-only
   Compose cleanup passed. Code/evidence commits: `95e38101`, `398c8ebd`. Evidence:
-  [`20261017T054628Z`](compatibility/evidence/phase-19/PROD-001-sync-send/20261017T054628Z/).
+  `20261017T054628Z` (raw output not retained).
 - [x] Run `PROD-002-async-send` against the pinned basic profile. Java's
   callback fired once; Rust's Future resolved once; both returned `SEND_OK` and
   cross-read the other's message by physical offset. Topic and project-only
   Compose cleanup passed. Code/evidence commits: `6f2a0c12`, `aa35cc45`. Evidence:
-  [`20261017T055737Z`](compatibility/evidence/phase-19/PROD-002-async-send/20261017T055737Z/).
+  `20261017T055737Z` (raw output not retained).
 - [x] Run `PROD-003-oneway-send` against the pinned basic profile. Both clients
   returned without a Broker response; the queue max offset advanced to 1 and 2,
   and each language read the other's message at queue offsets 0 and 1. Topic,
   containers, network, and volume cleanup passed. Code commit: `48ed3f58`.
-  Evidence: [`20261017T063258Z`](compatibility/evidence/phase-19/PROD-003-oneway-send/20261017T063258Z/).
+  Evidence: `20261017T063258Z` (raw output not retained).
 - [x] Run `PROD-004-batch-send` against the pinned basic profile. Both languages
   returned `SEND_OK` with two physical offset IDs; each read both messages from
   the other client with matching bodies and queue offsets. Topic and Compose
   project/network/volume cleanup passed. Code commit: `8262d722`.
-  Evidence: [`20261017T065458Z`](compatibility/evidence/phase-19/PROD-004-batch-send/20261017T065458Z/).
+  Evidence: `20261017T065458Z` (raw output not retained).
 - [x] After adding the integration package, rerun default and all-feature
   workspace tests, strict workspace Clippy, Maven `verify`, format, workspace
   metadata/license checks, comparator self-test, and 37-row manifest
@@ -10422,7 +10427,7 @@ the fixture fix commit. Details: `rlogs/2026/10/25-phase-18-timeout-fixture-dete
   all-feature workspace suites, check, strict Clippy, Maven verify, comparator
   self-test/manifest, race/leak and fuzz smoke, examples, benchmark build/run,
   metadata/package checks, formatting, and UTC/Taipei ID checks passed.
-  Evidence: `docs/compatibility/evidence/phase-19/run-local/20261025T022131Z/`.
+  Evidence: `raw local output (not retained)`.
 - [ ] P19-03/P19-V02 full live inventory remains BLOCKED: 30 of 37 scenario
   IDs have no runner. The fail-closed coverage gate ran after the offline
   gates, listed every missing ID, and started no Docker resources.
@@ -10455,7 +10460,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [x] Reran `integration-tests/run-local.sh --all` on `70e9a4d8`. All 19
   server-free gates passed; the final coverage check returned `BLOCKED` with
   26 missing live scenarios and started no Docker resources. Evidence:
-  `docs/compatibility/evidence/phase-19/run-local/20261025T080256Z/`.
+  `raw local output (not retained)`.
 - [x] Added `P5-V02-route` on `63000299`. Java and Rust matched both the
   existing four-queue route and the missing-topic result on a fresh basic
   profile; clean evidence is linked in
@@ -10473,7 +10478,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   Java held the lock and acquired after Java's synchronous unlock. Java then
   acquired the queue after Rust released it. Clean evidence at revision
   `6684ff8c22c92fdb0fc3af8f97574fd3e34c9a82` is
-  `docs/compatibility/evidence/phase-19/ORDER-001-lock-unlock/20261025T083111Z/`.
+  `raw local output (not retained)`.
   The earlier dirty-source rehearsal is retained separately and is not the
   manifest evidence pointer.
 - Live coverage is now 13/37; 24 cases remain without runners. This does not
@@ -10492,7 +10497,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   package content, and UTC/Taipei Unique ID checks.
 - [ ] The final live coverage gate returned `BLOCKED` with 24 missing scenario
   runners and started no Docker resources. Evidence:
-  `docs/compatibility/evidence/phase-19/run-local/20261025T083442Z/`.
+  `raw local output (not retained)`.
   Live coverage remains 13/37; the other 24 local scenarios, broad P18-V01,
   MAN-01 through MAN-05, and remote Docker CI remain open.
 
@@ -10546,7 +10551,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [x] The aggregate passed at `20261025T092635Z` on
   `34f14b727e200016961d5189f160dc96ceb3a06e`, with `source_code_dirty=false`.
   All 11 child runs also passed on that revision; the evidence table and logs
-  are archived under `docs/compatibility/evidence/phase-19/P0-V03/`.
+  are archived under `raw local output (not retained)`.
 - [x] Refreshed the 11 child manifest pointers to the fresh evidence collected
   by this aggregate. No Phase 19 Compose resources remained after teardown.
 - Live coverage is 17/37, with 20 scenarios pending. The full local gate must
@@ -10686,7 +10691,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   5.3.4 returned code 3, `request type 200071 not supported`, for
   `syncLiteSubscriptionAsync`. No Rust comparison or successful POP/ACK path
   ran, so `P5-V02-extensions` remains pending. Diagnostic evidence is under
-  `docs/compatibility/evidence/phase-19/P5-V02-extensions/20261025T115801Z/`.
+  `raw local output (not retained)`.
 - [x] The failed run deleted the parent and derived Lite topics and removed
   its Compose containers, network, and volume. Live coverage remains 25/37,
   with 12 Phase 19 scenarios pending; full local gates must be rerun after
@@ -10702,7 +10707,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   but the Broker returned queue 1 and queue 0 remained empty. No POP/ACK
   lifecycle result passed; the P13 manifest row remains pending while seed
   routing and the live POP exchange are corrected. Diagnostic evidence is under
-  `docs/compatibility/evidence/phase-19/P13-V02/`.
+  `raw local output (not retained)`.
 - [ ] Route-aware retry `20261025T122748Z` sent to queues 0 and 1; queue 0's
   max offset advanced, but queue 1's immediate max-offset read still returned
   zero after `SEND_OK`. The run stopped before POP and cleaned the isolated
@@ -10730,7 +10735,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   consume process observed offset 1 before its first POP and received
   `POLLING_NOT_FOUND`; no lifecycle assertion passed and Rust consumption did
   not run. The exact transition after reset remains unlocalized. Evidence is
-  under `docs/compatibility/evidence/phase-19/P13-V02/20261025T124657Z/`.
+  under `raw local output (not retained)`.
 - [x] The runner deleted the scenario topic and removed its isolated two-Broker
   containers, network, and volumes. P13 remains pending; coverage remains
   25/37 with 12 Phase 19 scenarios pending.
@@ -10743,7 +10748,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   expiry-redelivery POP returned `POLLING_NOT_FOUND`, so the lifecycle did not
   pass and Rust consumption did not run. This supersedes the earlier
   interpretation that offset 1 preceded initial delivery. Evidence is under
-  `docs/compatibility/evidence/phase-19/P13-V02/20261025T125153Z/`.
+  `raw local output (not retained)`.
 - [x] The runner deleted the topic and removed its isolated two-Broker
   containers, network, and volumes. P13 remains pending; live coverage remains
   25/37 with 12 Phase 19 scenarios pending.
@@ -10755,7 +10760,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   low-level probe lacked Java's `POP_CK` decoration derived from response-header
   offsets; it stopped before Rust lifecycle assertions. The probe now mirrors
   that mapping, and a clean Java/Rust comparison remains pending. Evidence is
-  under `docs/compatibility/evidence/phase-19/P13-V02/20261025T125713Z/`.
+  under `raw local output (not retained)`.
 - [x] The runner deleted the scenario topic and removed its isolated two-Broker
   containers, network, and volumes. P13 remains pending at 25/37 live PASS.
 
@@ -10767,7 +10772,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   lifecycle comparison: delivery, expiry redelivery, ACK, visibility change,
   replacement receipt ACK, mixed queue mapping, and malformed receipt
   rejection. The manifest records PASS. Evidence is under
-  `docs/compatibility/evidence/phase-19/P13-V02/20261025T130156Z/`.
+  `raw local output (not retained)`.
 - [x] The runner deleted the scenario topic and removed the two-Broker Compose
   containers, network, and volumes. Live coverage is 26/37 with 11 cases
   pending: `P5-V02-extensions`, `P7-V03`, `P7-V04`, `P10-V03`, `P11-V03`,
@@ -10783,7 +10788,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   visibility-change checks. Both clients received the pinned 5.3.4
   unsupported response (code 3) for Lite subscription request 200071 and
   Lite POP request 200070. Evidence is under
-  `docs/compatibility/evidence/phase-19/P5-V02-extensions/20261025T132049Z/`.
+  `raw local output (not retained)`.
 - [x] The runner deleted the parent and derived Lite topics and removed its
   isolated Compose containers, network, and volume. Live coverage is 27/37
   with 10 runnerless cases pending: `P7-V03`, `P7-V04`, `P10-V03`,
@@ -10801,7 +10806,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   mode, Lite subscription, Lite POP `FOUND`, and the seeded message body.
   The isolated profile enabled LMQ and multi-dispatch; `source_code_dirty=false`,
   exit status 0, duration 100 seconds. Evidence:
-  `docs/compatibility/evidence/phase-19/supplementary-lite-5.5.0/20261025T135033Z/`.
+  `raw local output (not retained)`.
 - [x] The runner deleted the derived Lite topic and parent topic, then removed
   its containers, network, and volume. Filtered Docker queries returned no
   remaining project resources. This supplementary result does not modify the
@@ -10815,7 +10820,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   unmodified RocketMQ 5.3.4 image. Java 5.5.1 and Rust each sent 20 messages
   in three producer start/shutdown cycles; pending requests, connections, and
   owned task groups were zero after each cycle. Evidence is under
-  `docs/compatibility/evidence/phase-19/P7-V04/20261025T141436Z/`.
+  `raw local output (not retained)`.
 - [x] The runner deleted the scenario topic from both host-routed Brokers and
   removed the isolated containers, NameServer, volumes, and network. Exit
   status 0, duration 88 seconds, `source_code_dirty=false`; filtered Docker
@@ -10833,7 +10838,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   timeouts in both clients, and delayed opposite-language replies after timeout.
   Each late timeout retained one terminal callback and no pending correlation.
   Evidence is under
-  `docs/compatibility/evidence/phase-19/P15-V03/20261025T143716Z/`.
+  `raw local output (not retained)`.
 - [x] `source_code_dirty=false`, exit status 0, duration 280 seconds. The runner
   removed all six scenario topics from both Brokers and removed the isolated
   containers, NameServer, volumes, and network. Filtered Docker queries found
@@ -10852,7 +10857,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   Broker, and succeeded on attempt three with a stable body and unique ID.
   Both then hit the 900 ms deadline against a delayed real Broker response.
   Evidence is under
-  `docs/compatibility/evidence/phase-19/P7-V03/20261025T150708Z/`.
+  `raw local output (not retained)`.
 - [x] Metadata records `source_code_dirty=false`, exit status 0, and duration
   91 seconds. The runner deleted the scenario topic from both Brokers and
   removed the isolated containers, NameServer, volumes, and network. Filtered
@@ -10872,7 +10877,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   The configured DLQ received the original body and key with Broker
   `reconsumeTimes=2` for group retry maximum 1.
 - [x] Evidence is under
-  `docs/compatibility/evidence/phase-19/P10-V03/20261025T153016Z/`;
+  `raw local output (not retained)`;
   metadata records `source_code_dirty=false`, exit status 0, and duration
   124 seconds. The runner deleted the owned topic from both Brokers and removed
   the isolated containers, NameServer, volumes, and network. Filtered Docker
@@ -10890,7 +10895,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   one transient overlapping snapshot occurred during convergence and was
   allowed. After Java left, Rust converged to all eight queues.
 - [x] Evidence is under
-  `docs/compatibility/evidence/phase-19/P11-V03/20261025T154631Z/`;
+  `raw local output (not retained)`;
   metadata records `source_code_dirty=false`, exit status 0, and duration
   93 seconds. The runner deleted the owned topic from both Brokers and removed
   the isolated containers, NameServer, volumes, and network. Filtered Docker
@@ -10911,7 +10916,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   and pull scheduled executors terminated; Rust's ClientRuntime stopped, the
   factory table emptied, and pending requests, connections, and owned remoting
   tasks returned to zero. Evidence is under
-  `docs/compatibility/evidence/phase-19/P11-V04/20261025T155944Z/`;
+  `raw local output (not retained)`;
   metadata records `source_code_dirty=false`, exit status 0, and duration 168
   seconds.
 - [x] The runner deleted `compat_p11_push` and `%RETRY%compat_p11_push` from
@@ -10933,7 +10938,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [x] The runner deleted `compat_p17_admin_query` from both Brokers and removed
   the isolated containers, NameServer, volumes, and network. Filtered exact-
   project Docker queries found no resources. Evidence is under
-  `docs/compatibility/evidence/phase-19/P17-V02/20261025T172205Z/`.
+  `raw local output (not retained)`.
 - [ ] Live coverage is 35/37 PASS. `P12-V03` and `P16-V02` remain pending;
   full local gates, the reverse audit, owner manual evidence, and final Phase
   19 acceptance remain open.
@@ -10954,7 +10959,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [x] Scenario topic and groups were deleted. The isolated Compose containers,
   volumes, and network were removed; filtered Docker queries found no resources.
   Evidence is under
-  `docs/compatibility/evidence/phase-19/P12-V03/20261025T173114Z/`.
+  `raw local output (not retained)`.
 - [ ] Live coverage is 36/37 PASS. `P16-V02`, all local suite reconciliation,
   the reverse audit, owner manual evidence, and final Phase 19 acceptance
   remain open.
@@ -10973,7 +10978,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   NameServer remained on the pinned 5.3.4 image. Evidence records both image
   IDs, the distribution checksum, config hashes, toolchains, and redacted
   Broker logs at
-  `docs/compatibility/evidence/phase-19/P16-V02/20261025T174649Z/`.
+  `raw local output (not retained)`.
 - [x] The per-run synthetic credentials and private keys were removed. The
   isolated project containers, volume, and network were removed; exact-project
   Docker queries found no resources.
@@ -11016,7 +11021,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   workspace tests, check, strict Clippy, Java verification, race/leak and fuzz
   smoke, examples, benchmark build/run, metadata/package checks, UTC/Taipei ID
   checks, Docker toolchain, live scenarios, and evidence reconciliation.
-  Evidence: <code>docs/compatibility/evidence/phase-19/run-local/20261025T203947Z/</code>.
+  Evidence: <code>raw local output (not retained)</code>.
 - [x] Post-closure P18 current-tree public-surface delta reviewed and indexed;
   MAN-05 is N/A with source-backed evidence. MAN-01 through MAN-04 remain
   owner-input blocked.
@@ -11029,7 +11034,7 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
 - [x] The final full local replay passed all 23 gates at workspace revision
   `c877869bd1f9bfacf288a27593649cca12ed9c5d`, containing production code
   revision `d3c7d2e845364e40ad72f0540a0a498fc1582247`. Evidence is
-  `docs/compatibility/evidence/phase-19/run-local/20261025T225807Z/`.
+  `raw local output (not retained)`.
   Gates passed formatting and diff hygiene, default and all-feature workspace
   suites, workspace check, strict Clippy, Java verification, differential
   self-test and manifest validation, race/leak and fuzz smoke, release
@@ -11047,9 +11052,9 @@ Run record: `rlogs/2026/10/25-phase-19-docker-local-validation__20261025T013808Z
   borrows in `live_client.rs`; commit `d3c7d2e8` fixed them. The subsequent
   aggregate passed strict Clippy and all remaining gates.
 - [x] Fresh clean-source live evidence was recorded for
-  [P3-V04](compatibility/evidence/phase-19/P3-V04/20261025T234833Z/),
-  [P6-V04](compatibility/evidence/phase-19/P6-V04/20261025T235605Z/),
-  and [P16-V02](compatibility/evidence/phase-19/P16-V02/20261026T002026Z/).
+  P3-V04 (raw output not retained),
+  P6-V04 (raw output not retained),
+  and P16-V02 (raw output not retained).
   Each records `source_code_dirty=false` and exit status 0. Synthetic per-run
   private-key files were removed from the current worktree after evidence
   capture.
@@ -11075,7 +11080,7 @@ Run record:
 - [x] Both clients reported zero pending requests, connections, and owned task
   groups after the workload, then completed three additional 20-send
   start/shutdown cycles with the same zero-resource result after every cycle.
-  Clean-source evidence: `docs/compatibility/evidence/phase-19/P7-V04/20261026T005812Z/`
+  Clean-source evidence: `raw local output (not retained)`
   (`source_code_dirty=false`, exit status 0, duration 102 seconds).
 - [x] The scenario-owned topic and two-Broker disposable Compose project were
   removed after evidence capture. No owner or production environment was
@@ -11101,15 +11106,15 @@ Run record:
   source revision `5764ec8488c3319768246bb9218616c339d433f6`. The live runner
   executed all 37 registered Phase 19 scenarios, and the final reconciliation
   passed all 37 manifest rows against their PASS evidence. Aggregate evidence:
-  `docs/compatibility/evidence/phase-19/run-local/20261026T021806Z/`.
+  `raw local output (not retained)`.
 - [x] P7-V04 passed in the aggregate at
-  `docs/compatibility/evidence/phase-19/P7-V04/20261026T032917Z/` with clean
+  `raw local output (not retained)` with clean
   source and exit status 0. Java and Rust each sent 8,192 fixed-seed messages
   (6,292,961 bytes; checksum `f47e95bbe41fd746`) with at most 32 concurrent
   sends and contiguous Broker offsets. Three further 20-send lifecycle cycles
   ended with zero pending requests, connections, or owned task groups.
 - [x] The prior aggregate at
-  `docs/compatibility/evidence/phase-19/run-local/20261026T010231Z/` stopped
+  `raw local output (not retained)` stopped
   during P6-V04's Rust probe wait after earlier gates passed. A focused P6-V04
   rerun passed at `20261026T021437Z`, and P6-V04 passed again in the complete
   aggregate at `20261026T032432Z`. The earlier failure remains archived as a
@@ -11144,7 +11149,7 @@ Run record:
   to show the process-wide signal-mask limitation, so the general CI default
   and all-feature workspace test commands now use the same serial test mode as
   `integration-tests/run-local.sh`. Clean-source Linux evidence is in
-  `docs/compatibility/evidence/phase-19/CI-STACK-001/20261026T042217Z/`.
+  `raw local output (not retained)`.
 - [x] Pushed the Linux signal-candidate and serialized-test correction. GitHub
   Actions later passed the general Rust test job on `b2e2c54e`; its required
   Docker matrix is tracked in the follow-up records below.
@@ -11165,7 +11170,7 @@ Run record:
   Evidence is archived under the scenario directories and manifest pointers
   refer to the latest local passes.
 - [x] Archived all three GitHub job logs at
-  `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-001/20261026T042612Z/`.
+  `raw local output (not retained)`.
   The first matrix attempt failed at `P5-V02-extensions`; the second stopped at
   `REQ-001-request-reply-success` without a compiler or assertion diagnostic.
   The third attempt was terminated during `live-scenarios` after all server-
@@ -11191,7 +11196,7 @@ Run record:
   the global capture deadline could be spent on earlier threads before the
   remaining thread names were read.
 - Raw logs and job metadata are archived in
-  `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-002/20261026T093620Z/`.
+  `raw local output (not retained)`.
 - A corrective worktree change now chooses Linux capture signals per target
   thread and preserves partial dumps when every safe signal is blocked. Windows
   capture now resolves names before stack walking, prioritizes named threads,
@@ -11225,7 +11230,7 @@ Run record:
   180-minute limit. The captured log contains no scenario assertion failure.
   The full live scenario set and final evidence reconciliation did not finish.
 - All three job logs and run metadata are archived in
-  `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-003/20261026T103057Z/`.
+  `raw local output (not retained)`.
 - The general test job limit is raised from 60 to 90 minutes to give the
   release examples build more time. The matrix job limit is raised from 180 to
   GitHub's 360-minute maximum because its live scenario stage exceeded the
@@ -11259,9 +11264,9 @@ Run record:
   `20261026T153933Z`; Java stored offsets 0–2 and Rust stored offsets 3–5.
   The manifest points to this clean-source evidence.
 - Raw logs and run metadata are archived in
-  `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-004/20261026T133543Z/`.
+  `raw local output (not retained)`.
   The clean focused P5 evidence is in
-  `docs/compatibility/evidence/phase-19/P5-V02-producer/20261026T153933Z/`.
+  `raw local output (not retained)`.
 - The general test limit is raised from 90 to 120 minutes because the release
   examples build was still compiling after 90 minutes. The Docker matrix stays
   at 360 minutes. A fresh push-triggered run is required to validate the P5
@@ -11272,9 +11277,9 @@ Run record:
 
 - GitHub Actions run `40352003113` checked `5eb2cb2450ec6dbb936bf2b69e7acbfbbb759edc`. The general test job passed in 55m41s, including both workspace suites, strict Clippy, Maven verify, release examples, benchmark compilation, and metadata checks. The Windows stack-runtime job passed in 7m06s.
 - The Docker matrix passed all server-free gates and reached the live Phase 19 scenarios. `P5-V02-producer` and `P5-V02-consumer` both passed. The run failed during `P5-V02-extensions`; its captured output ends after the generic live-probe compilation message and contains no probe error or TSV rows. The matrix completed in 1h57m58s, well within its 360-minute limit.
-- A focused clean-source run of `P5-V02-extensions` on `5eb2cb24` passed in 151 seconds, including Docker cleanup. Its evidence is `docs/compatibility/evidence/phase-19/P5-V02-extensions/20261026T174312Z/`, and the manifest points to that run. The remote failure cause remains undetermined.
+- A focused clean-source run of `P5-V02-extensions` on `5eb2cb24` passed in 151 seconds, including Docker cleanup. Its evidence is `raw local output (not retained)`, and the manifest points to that run. The remote failure cause remains undetermined.
 - To make another CI failure diagnosable, the extension runner now prints progress after Java/Rust probe builds and before each extension substep. The Docker workflow also uploads the run-local logs and P5 producer, consumer, and extension evidence on failure, with 14-day retention.
-- Raw CI logs and run metadata are archived in `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-005/20261026T174120Z/`. The next push is needed to validate the additional diagnostics and complete the remaining live scenarios.
+- Raw CI logs and run metadata are archived in `raw local output (not retained)`. The next push is needed to validate the additional diagnostics and complete the remaining live scenarios.
 
 ## 2026-10-26 CI follow-up on `bdae2cd2`
 
@@ -11283,7 +11288,7 @@ Run record:
   in 62m47s and the Windows stack-runtime job passed in 5m51s. The Docker
   matrix stopped during `java-verify`, before live scenarios, because the
   push-consumer accessor fixture differed. The matrix failure artifact is
-  archived in `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-006/20261026T183954Z/`.
+  archived in `raw local output (not retained)`.
 - Reproducing the fixture in 30 fresh Temurin 27.0.1 Linux x86 JVMs produced
   two JSON variants. The drifting values were
   `consumerStatsSamplingAfterFirstSamplePullTPS` and
@@ -11304,7 +11309,7 @@ Run record:
   suites, strict Clippy, Maven verification, offline race/fuzz/example/benchmark
   gates, timezone coverage, Docker profile preflight, the complete live
   scenario matrix, and final evidence reconciliation. The aggregate evidence is
-  `docs/compatibility/evidence/phase-19/run-local/20261026T190920Z/`.
+  `raw local output (not retained)`.
 - [x] The manifest reconciliation selected current clean-source PASS evidence
   for all 37/37 scenario rows. Post-run Docker queries found no Phase 19 project
   containers, volumes, or networks.
@@ -11312,7 +11317,7 @@ Run record:
   remote CI is no longer a validation gate. Historical run `40383732405`
   started zero job steps and cites failed account payments or an insufficient
   Actions spending limit; its record remains at
-  `docs/compatibility/evidence/phase-19/CI-DOCKER-RETRY-007/20261026T203546Z/`.
+  `raw local output (not retained)`.
 - [ ] MAN-01 through MAN-04 remain BLOCKED pending owner-provided network,
   security, HA, and representative workload/SLO inputs. MAN-05 remains N/A per
   the current-tree source/API delta audit. Final compatibility/release approval

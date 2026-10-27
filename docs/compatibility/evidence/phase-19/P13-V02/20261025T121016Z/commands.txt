@@ -1,5 +1,0 @@
-ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p13-v02-20261025t121016z bash integration-tests/setup.sh
-docker compose --project-name rocketmq-classic-p19-p13-v02-20261025t121016z --file integration-tests/compose.yaml --profile two-broker exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t compat_p13_pop -r 4 -w 4 -n namesrv:9876
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="seed 127.0.0.1:20911 compat_p13_pop java" exec:java@live-p13-pop-probe
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="consume 127.0.0.1:20911 compat_p13_pop java" exec:java@live-p13-pop-probe
-target/debug/live_client p13-pop-consume 127.0.0.1:20911 compat_p13_pop rust

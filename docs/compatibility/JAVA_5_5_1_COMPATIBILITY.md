@@ -52,12 +52,12 @@ and remoting resources quiesced.
 `P16-V02` passes Java/Rust ACL signature acceptance and rejection, plus mutual
 TLS trust, hostname, and client-certificate outcomes. The ACL Broker uses the
 SHA-512-verified Apache 5.3.4 binary distribution in an amd64 JDK container;
-the NameServer remains the pinned 5.3.4 image. See [P16-V02 live evidence](evidence/phase-19/P16-V02/20261025T174649Z/).
+the NameServer remains the pinned 5.3.4 image. See P16-V02 live evidence (raw output not retained).
 `P12-V03` passes the mixed Java/Rust orderly handoff: Rust acquired each
 transferred Broker lock, advanced both queue offsets to 2 before Java's held
 callbacks returned, and no stale completion regressed either offset. Both
 clients shut down and each Broker queue became lockable and releasable.
-Evidence: [P12-V03 live run](evidence/phase-19/P12-V03/20261025T173114Z/).
+Evidence: P12-V03 live run (raw output not retained).
 `P5-V02-producer` matches raw V1, V2, batch, one-way reply V1/V2, and
 end-transaction RPC outcomes.
 `P5-V02-consumer` matches raw pull/Lite pull, offset update/query,
@@ -71,7 +71,7 @@ run on official RocketMQ 5.5.0 image digest
 matched Java/Rust Lite subscription and Lite POP success, including the seeded
 message body. This supplementary result does not alter the 5.3.4 manifest row
 or establish production support; evidence is under
-[`supplementary-lite-5.5.0/20261025T135033Z`](evidence/phase-19/supplementary-lite-5.5.0/20261025T135033Z/).
+`supplementary-lite-5.5.0/20261025T135033Z` (raw output not retained).
 `PROD-005-send-timeout` delays the Broker responses beyond 100 ms, confirms
 both clients report timeout, and verifies each message is committed once by
 matching Java/Rust pull results. `P3-V04` compares raw NameServer routing, CA
@@ -83,19 +83,19 @@ clean-source live evidence for 8,192 fixed-seed variable-size sends per client,
 with matching payload bytes/checksum and contiguous Broker offsets. Three
 additional shutdown cycles returned pending requests, connections, and owned
 task groups to zero
-([evidence](evidence/phase-19/P7-V04/20261026T201111Z/)).
+(evidence (raw output not retained)).
 `P14-V03` passes cross-language commit visibility, rollback invisibility with
 unchanged normal offsets, and bounded Unknown resolution through actual Broker
 checks in both directions. `P17-V02` passes duplicate-key and bounded-time
 queries, preserves Broker A results when Broker B fails, and maps terminal
 query failures to `NO_MESSAGE`; see the
-[live evidence](evidence/phase-19/P17-V02/20261026T203310Z/).
+live evidence (raw output not retained).
 All 37 registered Phase 19 live scenarios have passing manifest evidence,
 including corrected clean-source runs for P3-V04, P6-V04, and P16-V02. The
 latest `run-local.sh --all` replay passed all 23 gates at workspace revision
 `413f735ad0ab41717acb9d76e2cb664b42076f4d`; evidence reconciliation verified
 all 37 manifest rows have current clean-source PASS results and exit status 0
-([aggregate evidence](evidence/phase-19/run-local/20261026T190920Z/)). The Phase
+(aggregate evidence (raw output not retained)). The Phase
 18 source/API/settings reverse audit and current-tree delta review are recorded.
 MAN-01 through MAN-04 remain blocked on owner inputs.
 `P13-V02` and `P5-V02-extensions` now have clean Java/Rust evidence; the
@@ -107,7 +107,7 @@ cases and [`../owner-validation.md`](../owner-validation.md) for the blocked
 owner inputs. Historical GitHub Actions run `40383732405` ran zero steps because
 GitHub reported an account payment/spending-limit issue; its captured record is
 preserved at
-[`CI run evidence`](evidence/phase-19/CI-DOCKER-RETRY-007/20261026T203546Z/).
+`CI run evidence` (raw output not retained).
 Per the user's 2026-10-27 direction, the repository GitHub Actions CI workflow
 has been removed and remote CI is no longer a validation requirement. Final
 compatibility and release approval remain blocked only on MAN-01 through
@@ -839,12 +839,12 @@ The matrix starts with the source areas required by the master plan. Work on eac
 | `client/.../consumer/store/LocalFileOffsetStore.java` | local persistence/recovery | Phase 9; see [Phase 9 offline method matrix](PHASE_9_OFFLINE_METHOD_MATRIX.md) | P9-V02/U01; local offset fixture/tests | UNIT_VERIFIED | PENDING_PHASE_19 / 5.3.4 |
 | `client/.../impl/MQClientAPIImpl.java` | search/min/max/earliest-time offset RPCs | Phase 9; see [Phase 9 offline method matrix](PHASE_9_OFFLINE_METHOD_MATRIX.md) | P9-U01; request codes 29–32 | UNIT_VERIFIED | PENDING_PHASE_19 / 5.3.4 |
 | `client/.../impl/consumer/ConsumeMessageConcurrentlyService.java` | concurrent callbacks/ackIndex/retry/send-back | Phase 10; [offline method/configuration matrix](PHASE_10_OFFLINE_METHOD_MATRIX.md) | P10-06/07/09; P10-U01/V04 | UNIT_VERIFIED — Java-fixture tests cover callback success/partial/failure, panic isolation, scripted send-back/fallback metadata and failed-retry retention; shutdown retains unresolved work. Live Broker DLQ remains P10-V03 | PENDING_PHASE_19 / 5.3.4 |
-| `client/.../impl/consumer/ConsumeMessageOrderlyService.java`, orderly `ProcessQueue` methods, `RebalanceImpl` lock branches | Per-queue ordered callbacks, Broker lock/renewal/expiry, retry and offset-safe lifecycle | Phase 12; see [orderly compatibility matrix](PHASE_12_ORDERLY_MATRIX.md) | P12-V01/V02/U01 | UNIT_VERIFIED — public defaults/context/statuses, partial batch locks, per-response lock freshness, retry/rollback, independent and serialized queues, loss, rebalance and shutdown pass local checks | P12-V03 PASS — mixed-client lock handoff, stale-offset prevention, and post-shutdown lock recovery on 5.3.4; [run evidence](evidence/phase-19/P12-V03/20261025T173114Z/) |
-| transaction producer/check APIs | half message, check, commit/rollback | Phase 14; [transaction matrix](PHASE_14_TRANSACTION_MATRIX.md) | P14-V01/V02/U01 | UNIT_VERIFIED — half-send, end-transaction fields, inbound checks, callback ownership and shutdown are locally covered | P14-V03 PASS — cross-language commit/rollback visibility and bounded Unknown Broker checks on 5.3.4; [run evidence](evidence/phase-19/P14-V03/20261025T164955Z/) |
-| request/reply APIs | correlation, callback completion and responder | Phase 15; [request/reply matrix](PHASE_15_REQUEST_REPLY_MATRIX.md) | P15-V01/V02/U01/V03 | UNIT_VERIFIED — all six overloads, correlation lifecycle, reply handling, timeout/cancellation races and Java metadata fixtures are locally covered; P15-V03 passes bidirectional 5.3.4 Broker request/reply, timeout, and late-reply checks | [P15-V03 PASS](evidence/phase-19/P15-V03/20261025T143716Z/) |
-| Lite/POP APIs and configuration | complete public methods and receipt lifecycle | Phase 13; [Lite/POP matrix](PHASE_13_LITE_POP_MATRIX.md) | P13-V01/V03/U01/V02 | UNIT_VERIFIED — Lite API/config audit, POP assignment/receipt lifecycle, expiry and replacement cases pass local checks | P13-V02 PASS — Java/Rust live POP lifecycle on pinned 5.3.4; [run evidence](evidence/phase-19/P13-V02/20261025T130156Z/) |
-| namespace, hooks, ACL/TLS, trace | settings, validation, ordering and lifecycle | Phase 16; [security and operations guide](../security.md), [Phase 16 API matrix](PHASE_16_NAMESPACE_SECURITY_OPERATIONS_MATRIX.md), ACL/TLS/trace and namespace fixtures | P16-U01; `namespace_util_fixture_matches_java_5_5_1`, `public_topic_validator_surface_matches_pinned_java_fixture`, `fixtures/namespace/namespace-util.json` and `fixtures/namespace/topic-validator.json`; `auth::tests`, `trace::tests`, `message_types_match_java_names_ordinals_and_short_name_fallback`, `consume_message_hooks_wrap_the_listener_and_share_context_state`, `pull_consume_hooks_receive_empty_pull_context_with_java_success_state`, `lite_poll_consume_hooks_run_around_delivery_with_queue_metadata`, `internal_trace_producer_uses_host_namespace_once_and_keeps_namespace_v2`, `lite_internal_trace_producer_uses_host_namespace_once_and_keeps_namespace_v2`, `p16_slow_channel_observer_*`, scripted TLS peers, `namespaced_send_uses_wire_names_and_unwraps_the_result`, `retry_and_dlq_messages_restore_logical_topics_for_orderly_and_pop`, `namespaced_request_wraps_its_topic_once_before_send`, `transaction_half_send_wraps_topic_and_group_once`, `recall_wraps_topic_and_group_once_at_the_namespace_wire_boundary`, `pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_persists_offsets`, `trace_flush_waits_for_scripted_broker_delivery`, `trace_shutdown_waits_for_scripted_broker_delivery` | PARTIAL — ACL HMAC/key-file/YAML fixtures, all public `NamespaceUtil` methods/constants including retry/DLQ, system-resource and dynamic system-topic classification, Push/Pull/Lite hook context defaults and callback timing, TLS positive/negative peers, trace queue/chunk/flush/shutdown delivery, trace internal producer namespace-v2 propagation, Producer request/reply/transaction/recall namespace, Push retry/DLQ restoration and response unwrapping, namespaced offset persistence, and the complete Java MessageType enum have local evidence; the full Java source/API/settings-to-test audit and phase acceptance remain open | P16-V02 PASS — Java/Rust ACL and mutual-TLS outcomes on 5.3.4; [live evidence](evidence/phase-19/P16-V02/20261025T174649Z/) |
-| MQAdmin/query public API | methods, result models, fan-out | Phase 17; [admin/query matrix](PHASE_17_ADMIN_MATRIX.md) | P17-V01/V02/V03/U01; core admin RPC and Producer/Push/Pull facade cases | UNIT_VERIFIED — all in-scope Java client MQAdmin/query operations and concrete facade counterparts have local evidence in the Phase 17 matrix | P17-V02 PASS — duplicate-key, bounded-time, partial Broker failure, and terminal `NO_MESSAGE` mapping on 5.3.4; [run evidence](evidence/phase-19/P17-V02/20261025T172205Z/) |
+| `client/.../impl/consumer/ConsumeMessageOrderlyService.java`, orderly `ProcessQueue` methods, `RebalanceImpl` lock branches | Per-queue ordered callbacks, Broker lock/renewal/expiry, retry and offset-safe lifecycle | Phase 12; see [orderly compatibility matrix](PHASE_12_ORDERLY_MATRIX.md) | P12-V01/V02/U01 | UNIT_VERIFIED — public defaults/context/statuses, partial batch locks, per-response lock freshness, retry/rollback, independent and serialized queues, loss, rebalance and shutdown pass local checks | P12-V03 PASS — mixed-client lock handoff, stale-offset prevention, and post-shutdown lock recovery on 5.3.4; run evidence (raw output not retained) |
+| transaction producer/check APIs | half message, check, commit/rollback | Phase 14; [transaction matrix](PHASE_14_TRANSACTION_MATRIX.md) | P14-V01/V02/U01 | UNIT_VERIFIED — half-send, end-transaction fields, inbound checks, callback ownership and shutdown are locally covered | P14-V03 PASS — cross-language commit/rollback visibility and bounded Unknown Broker checks on 5.3.4; run evidence (raw output not retained) |
+| request/reply APIs | correlation, callback completion and responder | Phase 15; [request/reply matrix](PHASE_15_REQUEST_REPLY_MATRIX.md) | P15-V01/V02/U01/V03 | UNIT_VERIFIED — all six overloads, correlation lifecycle, reply handling, timeout/cancellation races and Java metadata fixtures are locally covered; P15-V03 passes bidirectional 5.3.4 Broker request/reply, timeout, and late-reply checks | P15-V03 PASS (raw output not retained) |
+| Lite/POP APIs and configuration | complete public methods and receipt lifecycle | Phase 13; [Lite/POP matrix](PHASE_13_LITE_POP_MATRIX.md) | P13-V01/V03/U01/V02 | UNIT_VERIFIED — Lite API/config audit, POP assignment/receipt lifecycle, expiry and replacement cases pass local checks | P13-V02 PASS — Java/Rust live POP lifecycle on pinned 5.3.4; run evidence (raw output not retained) |
+| namespace, hooks, ACL/TLS, trace | settings, validation, ordering and lifecycle | Phase 16; [security and operations guide](../security.md), [Phase 16 API matrix](PHASE_16_NAMESPACE_SECURITY_OPERATIONS_MATRIX.md), ACL/TLS/trace and namespace fixtures | P16-U01; `namespace_util_fixture_matches_java_5_5_1`, `public_topic_validator_surface_matches_pinned_java_fixture`, `fixtures/namespace/namespace-util.json` and `fixtures/namespace/topic-validator.json`; `auth::tests`, `trace::tests`, `message_types_match_java_names_ordinals_and_short_name_fallback`, `consume_message_hooks_wrap_the_listener_and_share_context_state`, `pull_consume_hooks_receive_empty_pull_context_with_java_success_state`, `lite_poll_consume_hooks_run_around_delivery_with_queue_metadata`, `internal_trace_producer_uses_host_namespace_once_and_keeps_namespace_v2`, `lite_internal_trace_producer_uses_host_namespace_once_and_keeps_namespace_v2`, `p16_slow_channel_observer_*`, scripted TLS peers, `namespaced_send_uses_wire_names_and_unwraps_the_result`, `retry_and_dlq_messages_restore_logical_topics_for_orderly_and_pop`, `namespaced_request_wraps_its_topic_once_before_send`, `transaction_half_send_wraps_topic_and_group_once`, `recall_wraps_topic_and_group_once_at_the_namespace_wire_boundary`, `pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_persists_offsets`, `trace_flush_waits_for_scripted_broker_delivery`, `trace_shutdown_waits_for_scripted_broker_delivery` | PARTIAL — ACL HMAC/key-file/YAML fixtures, all public `NamespaceUtil` methods/constants including retry/DLQ, system-resource and dynamic system-topic classification, Push/Pull/Lite hook context defaults and callback timing, TLS positive/negative peers, trace queue/chunk/flush/shutdown delivery, trace internal producer namespace-v2 propagation, Producer request/reply/transaction/recall namespace, Push retry/DLQ restoration and response unwrapping, namespaced offset persistence, and the complete Java MessageType enum have local evidence; the full Java source/API/settings-to-test audit and phase acceptance remain open | P16-V02 PASS — Java/Rust ACL and mutual-TLS outcomes on 5.3.4; live evidence (raw output not retained) |
+| MQAdmin/query public API | methods, result models, fan-out | Phase 17; [admin/query matrix](PHASE_17_ADMIN_MATRIX.md) | P17-V01/V02/V03/U01; core admin RPC and Producer/Push/Pull facade cases | UNIT_VERIFIED — all in-scope Java client MQAdmin/query operations and concrete facade counterparts have local evidence in the Phase 17 matrix | P17-V02 PASS — duplicate-key, bounded-time, partial Broker failure, and terminal `NO_MESSAGE` mapping on 5.3.4; run evidence (raw output not retained) |
 
 Phase 16 TLS setting continuation (2026-10-12): pinned `TlsSystemConfig` declares `tls.ciphers` and `tls.protocols`, and `extractTlsConfigFromFile` lets the properties file override JVM values. The invoked Java `TlsHelper.buildSslContext(true)` path returns before `moreTlsConfig`, so those settings do not alter the Java client handshake. Rust `TlsConfig` retains both property values for inspection but likewise does not apply or reject them in the client connector. Java fixtures cover defaults, system properties, file precedence, and the client's inert setting behavior; `java_client_tls_ignores_cipher_and_protocol_properties` and `java_tls_cipher_protocol_settings_match_pinned_fixture_and_file_loading` cover the Rust mapping. This closes the client-side TLS setting mapping only; Phase 16 remains PARTIAL pending the full Java source/API/settings-to-test audit and phase gates.
 
@@ -1140,7 +1140,7 @@ POP delivery, expiry redelivery, ACK, change-invisibility, replacement-
 receipt ACK, mixed queue mapping, and malformed receipt rejection. The
 manifest records PASS; live coverage is 26/37 with 11 pending. The runner
 removed the topic, two-Broker containers, network, and volumes. Evidence
-is under [`20261025T130156Z`](evidence/phase-19/P13-V02/20261025T130156Z/).
+is under `20261025T130156Z` (raw output not retained).
 
 P5-V02-extensions live result: clean-source run `20261025T132049Z` on
 `d93c978e04c3619d3c8fe6e1c0d82c4de05f050b` passed. Java and Rust matched
@@ -1149,4 +1149,4 @@ ACK, and visibility change. Both received response code 3 for unsupported
 Lite subscription request 200071 and Lite POP request 200070. This proves
 the 5.3.4 rejection mapping; the Lite success path remains to be checked on
 a supplementary unmodified server. Evidence is under
-[`20261025T132049Z`](evidence/phase-19/P5-V02-extensions/20261025T132049Z/).
+`20261025T132049Z` (raw output not retained).

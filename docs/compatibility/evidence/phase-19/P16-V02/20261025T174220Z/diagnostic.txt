@@ -1,8 +1,0 @@
-P16-V02 setup diagnostic — 2026-10-25
-
-The clean-source runner built the locally verified Apache RocketMQ 5.3.4
-distribution image, then stopped before Compose setup. The distribution builder
-printed its SHA-512 verification summary to stdout alongside the image tag;
-the caller captured the whole output as the Compose image name. No Java/Rust
-probes ran, and the exact-project Docker container, volume, and network queries
-returned no resources. This run is diagnostic only and is not a PASS.

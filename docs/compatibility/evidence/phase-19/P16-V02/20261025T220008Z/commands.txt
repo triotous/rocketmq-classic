@@ -1,8 +1,0 @@
-bash integration-tests/build-official-rocketmq-5.3.4-amd64.sh
-ROCKETMQ_AUTH_BROKER_IMAGE=rocketmq-classic-p19-official-5.3.4-amd64:88508d548042 ROCKETMQ_AUTH_BROKER_PLATFORM=linux/amd64 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=tls-auth COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p16-v02-20261025t220008z bash integration-tests/setup.sh
-python3 tests/differential/acl_tampering_proxy.py --upstream 127.0.0.1:61911 --ready-file <evidence>/acl-proxy-ready.txt --log-file <evidence>/acl-proxy-events.tsv
-python3 tests/differential/tls_broker_proxy.py --upstream 127.0.0.1:61911 --cert <evidence>/tls/server.pem --key <evidence>/tls/server.key --client-ca <evidence>/tls/ca.pem --ready-file <evidence>/tls-proxy-ready.txt --log-file <evidence>/tls-proxy-events.tsv
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="auth-{valid,wrong-secret,tampered} <broker-or-acl-proxy>" exec:java@live-p16-security-probe
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p16-auth <broker-or-acl-proxy> {valid,wrong-secret,tampered}
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="tls-{trusted,wrong-host,untrusted,missing-client} <tls-proxy> <ca> <client-cert|-> <client-key|->" exec:java@live-p16-security-probe
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p16-tls <tls-proxy> {trusted,wrong-host,untrusted,missing-client} <ca> <client-cert|-> <client-key|->

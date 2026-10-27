@@ -1,6 +1,0 @@
-ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic COMPOSE_PROJECT_NAME=rocketmq-classic-p19-cons-002-pull-found-20261025t184508z bash integration-tests/setup.sh
-docker compose --project-name rocketmq-classic-p19-cons-002-pull-found-20261025t184508z --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t compat_phase0_pull_found -r 4 -w 4 -n namesrv:9876
-docker compose --project-name rocketmq-classic-p19-cons-002-pull-found-20261025t184508z --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_phase0_pull_found_group -n namesrv:9876
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="send 127.0.0.1:20911 compat_phase0_pull_found pull-seed" exec:java@live-producer-probe
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="pull 127.0.0.1:20911 compat_phase0_pull_found_group compat_phase0_pull_found 0 0" exec:java@live-consumer-probe
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- pull 127.0.0.1:20911 compat_phase0_pull_found_group compat_phase0_pull_found 0 0

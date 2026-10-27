@@ -1,2 +1,0 @@
-TIMEOUT	READY	java	0
-TIMEOUT	RESULT	java	TIMEOUT	RemotingTimeoutException	104	0

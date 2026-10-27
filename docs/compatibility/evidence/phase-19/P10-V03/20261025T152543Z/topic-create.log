@@ -1,4 +1,0 @@
-create topic to 127.0.0.1:50911 success.
-TopicConfig [topicName=compat_p10_retry, readQueueNums=1, writeQueueNums=1, perm=RW-, topicFilterType=SINGLE_TAG, topicSysFlag=0, order=false, attributes={}]
-create topic to 127.0.0.1:50921 success.
-TopicConfig [topicName=compat_p10_retry, readQueueNums=1, writeQueueNums=1, perm=RW-, topicFilterType=SINGLE_TAG, topicSysFlag=0, order=false, attributes={}]

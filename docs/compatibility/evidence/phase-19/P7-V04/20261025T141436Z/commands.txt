@@ -1,7 +1,0 @@
-ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=two-broker-host COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p7-v04-20261025t141436z bash integration-tests/setup.sh
-docker compose --project-name rocketmq-classic-p19-p7-v04-20261025t141436z --file integration-tests/compose.yaml --profile two-broker-host exec broker-a-host ./mqadmin updateTopic -b 127.0.0.1:50911 -t compat_p7_lifecycle -r 4 -w 4 -n namesrv:9876
-docker compose --project-name rocketmq-classic-p19-p7-v04-20261025t141436z --file integration-tests/compose.yaml --profile two-broker-host exec broker-b-host ./mqadmin updateTopic -b 127.0.0.1:50921 -t compat_p7_lifecycle -r 4 -w 4 -n namesrv:9876
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="127.0.0.1:19876 compat_p7_lifecycle" exec:java@live-producer-lifecycle-probe
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p7-lifecycle 127.0.0.1:19876 compat_p7_lifecycle
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="delete-topic 127.0.0.1:50911 compat_p7_lifecycle" exec:java@live-producer-lifecycle-probe
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="delete-topic 127.0.0.1:50921 compat_p7_lifecycle" exec:java@live-producer-lifecycle-probe

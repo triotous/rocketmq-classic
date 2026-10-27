@@ -1,1 +1,0 @@
-PASS P14-V03: Java and Rust commits were visible to the opposite-language pull client; both rollback messages remained absent without advancing normal queue offsets; Unknown transactions were resolved by actual bounded Broker checks in both directions

@@ -1,6 +1,0 @@
-ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=host-routed COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p6-v04-20261025t203254z bash integration-tests/setup.sh
-docker compose --project-name rocketmq-classic-p19-p6-v04-20261025t203254z --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateTopic -c RocketMQLocalTest -t compat_p6_shared -r 1 -w 1 -n namesrv:9876
-docker compose --project-name rocketmq-classic-p19-p6-v04-20261025t203254z --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_p6_consumer_java -n namesrv:9876
-docker compose --project-name rocketmq-classic-p19-p6-v04-20261025t203254z --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateSubGroup -c RocketMQLocalTest -g compat_p6_consumer_rust -n namesrv:9876
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="127.0.0.1:19876 compat_p6_shared compat_p6_producer_a compat_p6_producer_b compat_p6_consumer" exec:java@live-shared-runtime-probe
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p6-shared-runtime 127.0.0.1:19876 compat_p6_shared compat_p6_producer_a compat_p6_producer_b compat_p6_consumer

@@ -1,3 +1,0 @@
-Java/Rust p17-duplicate-key query results differ:
-Java=[('null', 0, 1792948668384, 'p17-duplicate-broker-a'), ('null', 0, 1792948668407, 'p17-duplicate-broker-b')]
-Rust=[('', 0, 1792948668384, 'p17-duplicate-broker-a'), ('', 0, 1792948668407, 'p17-duplicate-broker-b')]

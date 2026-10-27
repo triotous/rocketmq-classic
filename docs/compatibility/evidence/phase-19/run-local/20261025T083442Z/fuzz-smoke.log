@@ -1,3 +1,0 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.23s
-     Running `target/debug/examples/fuzz_smoke`
-fuzz smoke passed: 163 frame seeds, 11 message seeds, 11 property seeds, 2960 bounded mutations, 564 frame decodes, 192 message decodes, 176 property decodes

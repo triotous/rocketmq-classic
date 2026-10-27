@@ -1,4 +1,0 @@
-result=PASS
-started_epoch=1793041760
-ended_epoch=1793046901
-revision=413f735ad0ab41717acb9d76e2cb664b42076f4d

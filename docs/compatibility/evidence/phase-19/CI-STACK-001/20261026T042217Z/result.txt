@@ -1,2 +1,0 @@
-PASS Linux serial consumer unit suite and strict Clippy
-Parallel diagnostics confirm that process-wide signal availability can be exhausted by concurrently running tests.

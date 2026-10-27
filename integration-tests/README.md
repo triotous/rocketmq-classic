@@ -154,16 +154,18 @@ Broker config with LMQ and multi-dispatch enabled. Clean run
 success. It archives its own results and does not change the mandatory 5.3.4
 matrix or by itself establish production support. It removes its isolated
 topics, containers, network, and volume after the run. Toolchain,
-configuration, output, and cleanup evidence is stored under
-`docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
-after comparison and cleanup both succeed.
+configuration, output, and cleanup records are written outside the checkout to
+`ROCKETMQ_CLASSIC_EVIDENCE_DIR` or a system temporary directory. A manifest row
+becomes `PASS` in the local run copy only after comparison and cleanup succeed.
 
 The runner now implements all 37 manifest scenarios. The full local aggregate
-run reconciled every row to PASS evidence after comparison and cleanup:
-[20261025T203947Z](../docs/compatibility/evidence/phase-19/run-local/20261025T203947Z/).
-The manifest points to each latest successful scenario run. This establishes
-the registered local compatibility matrix only; owner-specific deployment
-validation remains in [docs/owner-validation.md](../docs/owner-validation.md).
+run reconciled every row after comparison and cleanup; the checked-in manifest
+records `PASS_RECORDED` summaries, while raw test artifacts remain local and
+are not committed. Set `ROCKETMQ_CLASSIC_EVIDENCE_DIR` to choose an output
+directory outside the checkout. This establishes the registered local
+compatibility matrix only; owner-specific deployment validation remains in
+[docs/owner-validation.md](../docs/owner-validation.md). See
+[test artifact handling](../docs/compatibility/TEST_ARTIFACTS.md).
 `--phase N` and `--all` fail closed when any selected case has no runner.
 
 The two-Broker lock case can be replayed with:
@@ -277,15 +279,18 @@ bash integration-tests/run-local.sh --all
 
 It records and runs all server-free gates first. It then checks every Phase 19
 manifest row before starting any Docker resource. Missing scenario runners
-produce a `BLOCKED` result with the missing IDs in the archived log; the full
-matrix cannot report success until all IDs have passing evidence. All 37 live
-cases have passing evidence, including `P16-V02` through the
-verified Apache 5.3.4 binary-distribution profile described above. A fresh
-`run-local.sh --all` aggregate run remains pending.
-`P5-V02-extensions`
-passed the 5.3.4 parity case with matching unsupported responses for Lite
-subscription and Lite POP; positive Lite success-path coverage passed
-separately on the official 5.5.0 image and is not part of the 5.3.4 manifest
-count. The last full local run predates several later runner additions and
-must be rerun against the current revision.
-Starting a profile by itself does not mark a scenario passed.
+produce a `BLOCKED` result with the missing IDs in the local log; the full
+matrix cannot report success until all IDs pass. The recorded 2026-10-26 local
+aggregate passed 23 gates and all 37 live cases, including `P16-V02` through
+the verified Apache 5.3.4 binary-distribution profile described above.
+`P5-V02-extensions` passed the 5.3.4 parity case with matching unsupported
+responses for Lite subscription and Lite POP; positive Lite success-path
+coverage passed separately on the official 5.5.0 image and is not part of the
+5.3.4 manifest count. The checked-in manifest retains these historical results
+as `PASS_RECORDED`; raw outputs are not committed. A fresh aggregate run against
+the current revision remains pending. Starting a profile by itself does not
+mark a scenario passed.
+
+All run outputs stay outside the checkout. See
+[the test artifact policy](../docs/compatibility/TEST_ARTIFACTS.md) for the
+default location and `ROCKETMQ_CLASSIC_EVIDENCE_DIR` override.

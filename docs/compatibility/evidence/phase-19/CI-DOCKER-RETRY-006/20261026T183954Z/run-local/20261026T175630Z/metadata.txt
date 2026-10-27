@@ -1,4 +1,0 @@
-result=FAIL
-started_epoch=1793037390
-ended_epoch=1793039946
-revision=bdae2cd28bd9ab6be9d994f0b6c240ffdb1f3bc0

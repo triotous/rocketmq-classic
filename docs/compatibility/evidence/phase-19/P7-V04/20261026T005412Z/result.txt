@@ -1,1 +1,0 @@
-PASS P7-V04: Java and Rust each sent 512 fixed-seed variable-size messages with at most 32 concurrent sends, matching payload bytes/checksum and contiguous Broker offsets; three additional 20-send lifecycle cycles returned to zero pending requests, connections, and owned task groups after every shutdown

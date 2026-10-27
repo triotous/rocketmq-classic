@@ -1,4 +1,0 @@
-result=BLOCKED
-started_epoch=1792915376
-ended_epoch=1792916124
-revision=70e9a4d84861318d4397b77a05213f2a61cb6023

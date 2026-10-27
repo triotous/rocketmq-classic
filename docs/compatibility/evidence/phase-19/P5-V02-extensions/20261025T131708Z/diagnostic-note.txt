@@ -1,5 +1,0 @@
-The complete P5-V02-extensions comparison passed on the disposable 5.3.4 Broker. This run used a dirty source worktree (`source_code_dirty=true`), so it is retained as diagnostic evidence and is not the clean-source manifest evidence. The runner will be replayed after the implementation commit.
-
-Java and Rust matched the Broker's unsupported responses for Lite subscription (request 200071, response code 3) and Lite POP (request 200070, response code 3). Both clients also matched heartbeat, heartbeat V2, assignment, request mode, standard POP, ACK, batch ACK, and change-invisibility results.
-
-The scenario topic, derived Lite topic, isolated containers, network, and volume were removed.

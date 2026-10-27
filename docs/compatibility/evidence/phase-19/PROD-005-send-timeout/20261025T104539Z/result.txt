@@ -1,1 +1,0 @@
-PASS PROD-005-send-timeout: Java and Rust each timed out at 100 ms; both sends were committed exactly once and matched on pull readback

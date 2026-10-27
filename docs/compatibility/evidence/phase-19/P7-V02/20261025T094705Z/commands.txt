@@ -1,4 +1,0 @@
-ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=host-routed COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p7-v02-20261025t094705z bash integration-tests/setup.sh
-docker compose --project-name rocketmq-classic-p19-p7-v02-20261025t094705z --file integration-tests/compose.yaml --profile host-routed exec broker-host ./mqadmin updateTopic -c RocketMQLocalTest -t compat_p7_send -r 4 -w 4 -n namesrv:9876
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="127.0.0.1:19876 compat_p7_send" exec:java@live-high-level-producer-probe
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- p7-producer 127.0.0.1:19876 compat_p7_send

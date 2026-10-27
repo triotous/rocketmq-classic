@@ -1,1 +1,0 @@
-PASS REQ-001: Java and Rust each received exactly one correlated Broker reply from the other client; reply body and metadata matched

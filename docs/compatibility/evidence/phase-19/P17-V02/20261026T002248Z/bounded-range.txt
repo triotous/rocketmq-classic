@@ -1,2 +1,0 @@
-begin_timestamp=1792974214708
-end_timestamp=1792974216208

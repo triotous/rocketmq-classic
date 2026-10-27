@@ -1,7 +1,0 @@
-   Compiling rocketmq-classic-remoting v0.1.0 (<repo>/crates/rocketmq-classic-remoting)
-   Compiling rocketmq-classic-core v0.1.0 (<repo>/crates/rocketmq-classic-core)
-   Compiling rocketmq-classic-producer v0.1.0 (<repo>/crates/rocketmq-classic-producer)
-   Compiling rocketmq-classic-consumer v0.1.0 (<repo>/crates/rocketmq-classic-consumer)
-   Compiling rocketmq-classic v0.1.0 (<repo>/crates/rocketmq-classic)
-   Compiling rocketmq-classic-integration v0.1.0 (<repo>/integration-tests)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 23.61s

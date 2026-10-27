@@ -1,6 +1,0 @@
-ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic COMPOSE_PROJECT_NAME=rocketmq-classic-p19-prod-004-batch-send-20261025t184118z bash integration-tests/setup.sh
-docker compose --project-name rocketmq-classic-p19-prod-004-batch-send-20261025t184118z --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t compat_phase0_batch -r 4 -w 4 -n namesrv:9876
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="batch-send 127.0.0.1:20911 compat_phase0_batch batch 2" exec:java@live-producer-probe
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- view-batch 127.0.0.1:20911 compat_phase0_batch '<java-offset-message-ids>'
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- batch-send 127.0.0.1:20911 compat_phase0_batch batch 2
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="view-batch 127.0.0.1:20911 compat_phase0_batch <rust-offset-message-ids>" exec:java@live-producer-probe

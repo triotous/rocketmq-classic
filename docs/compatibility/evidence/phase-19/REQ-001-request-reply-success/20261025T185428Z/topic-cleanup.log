@@ -1,4 +1,0 @@
-delete topic [compat_phase0_request_java] from cluster [RocketMQLocalTest] success.
-delete topic [compat_phase0_request_java] from NameServer success.
-delete topic [compat_phase0_request_rust] from cluster [RocketMQLocalTest] success.
-delete topic [compat_phase0_request_rust] from NameServer success.

@@ -1,1 +1,0 @@
-PASS P12-V03: Java held orderly callbacks on both Brokers while Rust joined; Rust acquired the transferred Broker lock, processed the redelivered message and its successor, and advanced the offset to 2 before Java returned; stale completion did not regress either offset, both consumers shut down, and both Broker queues became lockable and releasable

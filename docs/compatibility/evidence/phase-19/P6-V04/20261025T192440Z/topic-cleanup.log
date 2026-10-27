@@ -1,2 +1,0 @@
-delete topic [compat_p6_shared] from cluster [RocketMQLocalTest] success.
-delete topic [compat_p6_shared] from NameServer success.

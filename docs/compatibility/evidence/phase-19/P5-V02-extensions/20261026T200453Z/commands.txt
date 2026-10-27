@@ -1,9 +1,0 @@
-ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic COMPOSE_PROJECT_NAME=rocketmq-classic-p19-p5-v02-extensions-20261026t200453z bash integration-tests/setup.sh
-docker compose --project-name rocketmq-classic-p19-p5-v02-extensions-20261026t200453z --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t compat_p5_extension -r 1 -w 1 -n namesrv:9876
-docker compose --project-name rocketmq-classic-p19-p5-v02-extensions-20261026t200453z --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t %LMQ%compat_p5_extension%entries -r 1 -w 1 -n namesrv:9876
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="prepare 127.0.0.1:20911 compat_p5_extension compat_p5_extension_java" exec:java@live-p5-extensions-probe
-target/debug/live_client p5-extension-prepare 127.0.0.1:20911 compat_p5_extension compat_p5_extension_rust
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="send 127.0.0.1:20911 compat_p5_extension p5-extension-seed" exec:java@live-producer-probe
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="send 127.0.0.1:20911 %LMQ%compat_p5_extension%entries p5-extension-lite" exec:java@live-producer-probe
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="consume 127.0.0.1:20911 compat_p5_extension compat_p5_extension_java" exec:java@live-p5-extensions-probe
-target/debug/live_client p5-extension-consume 127.0.0.1:20911 compat_p5_extension compat_p5_extension_rust

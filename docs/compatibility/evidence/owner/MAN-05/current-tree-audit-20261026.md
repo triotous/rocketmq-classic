@@ -35,23 +35,22 @@ The other Java changes in this range are compatibility-harness code: a bounded
 producer stress probe and normalization of wall-clock-derived sampled TPS in a
 fixture. They do not change Rust client behavior or expand the public surface.
 
-The complete current-revision local run passed both workspace test suites,
+The historical current-revision local run passed both workspace test suites,
 strict Clippy, Java/Maven verification, race/leak and fuzz smoke, release
 examples, benchmark build/run, metadata/package checks, timezone-specific
-coverage, Docker toolchain validation, and all live scenarios. Its evidence
-records 23/23 aggregate gates and reconciles all 37 manifest rows to current
-clean-source PASS evidence:
-[run-local aggregate](../../phase-19/run-local/20261026T190920Z/).
+coverage, Docker toolchain validation, and all live scenarios. Its summary
+records 23/23 aggregate gates and all 37 clean-source scenarios passing. The
+manifest retains `PASS_RECORDED` outcomes; raw run outputs are not retained.
 Targeted stack tests are included in the workspace suites. The existing
-[Windows stack-runtime CI result](../../CI-DOCKER-RETRY-006/20261026T183954Z/)
+Windows stack-runtime CI result (raw output not retained)
 passed on the preceding workflow revision, which contains the same stack
 implementation.
 
 A current-revision remote workflow was requested as run `40383732405`, but
 GitHub started none of its three jobs and ran zero steps because account
 payments failed or the Actions spending limit must be increased. This is a
-historical run result, not a source/API result. Its captured
-[run details](../../CI-DOCKER-RETRY-007/20261026T203546Z/) record the reason.
+historical run result, not a source/API result; its raw details are not
+retained.
 
 ## Validation disposition updated — 2026-10-27
 

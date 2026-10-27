@@ -1,2 +1,0 @@
-delete topic [compat_p5_consumer] from cluster [RocketMQLocalTest] success.
-delete topic [compat_p5_consumer] from NameServer success.

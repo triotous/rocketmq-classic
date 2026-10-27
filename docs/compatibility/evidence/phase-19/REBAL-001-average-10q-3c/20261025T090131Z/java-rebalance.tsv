@@ -1,3 +1,0 @@
-ASSIGN	consumer-a	compat_phase0_rebalance|broker-a|0,compat_phase0_rebalance|broker-a|1,compat_phase0_rebalance|broker-a|2,compat_phase0_rebalance|broker-a|3
-ASSIGN	consumer-b	compat_phase0_rebalance|broker-a|4,compat_phase0_rebalance|broker-b|0,compat_phase0_rebalance|broker-b|1
-ASSIGN	consumer-c	compat_phase0_rebalance|broker-b|2,compat_phase0_rebalance|broker-b|3,compat_phase0_rebalance|broker-b|4

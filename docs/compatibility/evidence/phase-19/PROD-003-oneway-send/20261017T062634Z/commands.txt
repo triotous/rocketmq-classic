@@ -1,8 +1,0 @@
-ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=basic COMPOSE_PROJECT_NAME=rocketmq-classic-p19-prod-003-oneway-send-20261017t062634z bash integration-tests/setup.sh
-docker compose --project-name rocketmq-classic-p19-prod-003-oneway-send-20261017t062634z --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t compat_phase0_send -r 4 -w 4 -n namesrv:9876
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="oneway-send 127.0.0.1:20911 compat_phase0_send fixed compat_phase0_oneway_java_20261017t062634z 1" exec:java@live-producer-probe
-docker compose --project-name rocketmq-classic-p19-prod-003-oneway-send-20261017t062634z --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin queryMsgByKey -t compat_phase0_send -k compat_phase0_oneway_java_20261017t062634z -n namesrv:9876
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- view 127.0.0.1:20911 compat_phase0_send <java-message-id>
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- oneway-send 127.0.0.1:20911 compat_phase0_send fixed compat_phase0_oneway_rust_20261017t062634z 2
-docker compose --project-name rocketmq-classic-p19-prod-003-oneway-send-20261017t062634z --file integration-tests/compose.yaml --profile basic exec broker ./mqadmin queryMsgByKey -t compat_phase0_send -k compat_phase0_oneway_rust_20261017t062634z -n namesrv:9876
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="view 127.0.0.1:20911 compat_phase0_send <rust-message-id>" exec:java@live-producer-probe

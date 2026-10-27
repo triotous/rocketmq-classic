@@ -1,1 +1,0 @@
-PASS P7-V03: Java and Rust each recovered on their third attempt after one injected NO_PERMISSION from both Brokers with stable body/unique ID, then exhausted the 900 ms send deadline after one delayed-response attempt

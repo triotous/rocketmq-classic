@@ -1,6 +1,0 @@
-basicConstraints=critical,CA:FALSE
-keyUsage=critical,digitalSignature,keyEncipherment
-extendedKeyUsage=serverAuth
-subjectAltName=DNS:localhost
-subjectKeyIdentifier=hash
-authorityKeyIdentifier=keyid,issuer

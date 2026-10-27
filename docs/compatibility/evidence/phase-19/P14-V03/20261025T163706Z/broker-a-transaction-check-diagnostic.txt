@@ -1,7 +1,0 @@
-Additional live diagnostic captured before disposable Compose teardown:
-
-- Broker A's `/home/rocketmq/logs/rocketmqlogs/transaction.log` showed the half message with key `p14-rust-unknown-key` at half-topic queue offset 16. Its op-topic offset remained 1 while the half-topic offset reached 17; the Broker did not record a commit op for this message.
-- The Rust probe output recorded `P14 CHECK COMMIT 1 1786`, but the normal topic remained unchanged. Broker logs then reported `Check transaction failed, channel table is empty. groupId=compat_p14_transaction`; after 15 failed checks, Broker 5.3.4 moved the half message to `TRANS_CHECK_MAXTIME_TOPIC`.
-- Java Unknown did resolve through its Broker check: `P14 CHECK COMMIT 1 6985`, and Rust's pull found `p14-java-unknown`. Java and Rust commits were visible to opposite-language pull probes. Both rollbacks remained absent and the two normal-topic max offsets stayed unchanged at 1.
-
-The first runner revision reused `java-p14-transaction.tsv` and `rust-p14-transaction.tsv` for all decisions, so these files contain only each producer's final Unknown result. The next replay will retain separate commit, rollback and Unknown output files and capture both Brokers' internal transaction logs.

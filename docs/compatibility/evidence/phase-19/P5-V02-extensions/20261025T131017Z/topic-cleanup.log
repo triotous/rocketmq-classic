@@ -1,4 +1,0 @@
-delete topic [compat_p5_extension] from cluster [RocketMQLocalTest] success.
-delete topic [compat_p5_extension] from NameServer success.
-delete topic [%LMQ%compat_p5_extension%entries] from cluster [RocketMQLocalTest] success.
-delete topic [%LMQ%compat_p5_extension%entries] from NameServer success.

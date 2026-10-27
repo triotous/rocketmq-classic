@@ -1,1 +1,0 @@
-PASS P5-V02-consumer: Java and Rust matched pull, lite-pull, offset, consumer-list, send-back, lock and unlock RPC outcomes

@@ -1,1 +1,0 @@
-DIAGNOSTIC ONLY: corrected post-run verification passed, but the original runner exited 1 before its proxy-label assertion was fixed; this run is not counted as a scenario PASS.

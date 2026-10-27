@@ -1,4 +1,0 @@
-ROUTE	java	broker-a,broker-b
-ATTEMPT	java	1	broker-a	ERROR	70372d646561646c696e652d6f726967696e616c2d626f6479	FD07B51ACC660000A617DB5E0AB7E9F1462F52F5766680BE24910000
-ATTEMPT_ERROR	java	1	org.apache.rocketmq.remoting.exception.RemotingTimeoutException: wait response on the channel </127.0.0.1:50911> timeout, 892(ms)
-RESULT	java	deadline	TIMEOUT	org.apache.rocketmq.remoting.exception.RemotingTooMuchRequestException: sendDefaultImpl call timeout	910

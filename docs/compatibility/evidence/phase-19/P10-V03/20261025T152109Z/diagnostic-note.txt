@@ -1,5 +1,0 @@
-This clean-source replay used revision 73f135c1 with source_code_dirty=false. It provisioned the isolated two-Broker Compose project, created compat_p10_retry with queue 0 on both Brokers, and created compat_p10_push with retryMaxTimes=1. The host Java seeder then failed because this Compose profile advertises internal Docker hostnames to clients running on the host; it did not send any P10 messages and no listener assertion passed.
-
-The runner's exit trap then stopped before its Compose teardown because Bash nounset rejected expansion of the empty P7 proxy PID array. The isolated project was manually torn down with integration-tests/cleanup.sh. Subsequent Docker queries filtered by the exact project label/name returned no containers, volumes, or network. The failed seed output, commands, group/topic setup logs, and toolchain are preserved here. The manifest remains PENDING_PHASE_19.
-
-The corrective runner selects the host-routed two-Broker Compose profile for P10-V03 while preserving the manifest's two-broker topology, provisions both Brokers directly, and handles the empty proxy PID array safely. A clean-source replay is required.

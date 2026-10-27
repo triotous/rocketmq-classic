@@ -108,4 +108,4 @@ the subsequent clean Java/Rust run passed.
 
 ## Phase 19 live Broker result
 
-Clean-source run `20261025T130156Z` on `99d2dc68484ab8de43da86b997dc20dc49267c3c` passed `P13-V02`. Java and Rust matched delivery, expiry redelivery, ACK, visibility change, replacement receipt ACK, mixed queue mapping (`0,1`), and malformed receipt rejection. The manifest records PASS, bringing live coverage to 26/37 with 11 cases pending. The runner removed the topic, containers, network, and volumes. Archived evidence is in [`20261025T130156Z`](evidence/phase-19/P13-V02/20261025T130156Z/).
+The historical clean-source run `20261025T130156Z` on `99d2dc68484ab8de43da86b997dc20dc49267c3c` passed `P13-V02`. Java and Rust matched delivery, expiry redelivery, ACK, visibility change, replacement receipt ACK, mixed queue mapping (`0,1`), and malformed receipt rejection. The manifest then recorded PASS, bringing live coverage to 26/37 with 11 cases pending. The runner removed the topic, containers, network, and volumes. Raw output is not retained.

@@ -1,2 +1,0 @@
-P11	CONVERGENCE	joined	PASS	stable_samples=4	java_queues=4	rust_queues=4	maximum_transient_overlap=4	transient_overlap_samples=1
-P11	TRANSIENT_REDELIVERY_POLICY	ALLOWED_DURING_CONVERGENCE

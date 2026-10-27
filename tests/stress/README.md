@@ -33,11 +33,15 @@ Rust each send 8,192 fixed-seed variable-size messages with at most 32
 concurrent sends, matching byte totals and checksums, contiguous offsets, and a
 120-second deadline. Each client then completes three 20-send start/shutdown
 cycles, with pending requests, connections, and owned task groups returning to
-zero each time. Clean-source evidence is recorded at
-`docs/compatibility/evidence/phase-19/P7-V04/20261026T005812Z/`.
+zero each time. The checked-in scenario manifest records the historical pass;
+raw outputs are written to the local test-artifact directory and are not
+committed.
 
 `P9-V03` checks that a consumer restart resumes from the Broker-persisted
 offset. `P7-V03` checks client retry across two Brokers after injected
 retryable responses. Replicated Broker HA failover remains an owner-specific
 Phase 19 obligation because these local Brokers do not reproduce the approved
 production replica topology.
+
+Build and test outputs are not committed. See
+[the test artifact policy](../../docs/compatibility/TEST_ARTIFACTS.md).

@@ -1,3 +1,0 @@
-create topic to broker:10911 success.
-create topic to broker-b:10921 success.
-TopicConfig [topicName=compat_phase0_order_topic, readQueueNums=4, writeQueueNums=4, perm=RW-, topicFilterType=SINGLE_TAG, topicSysFlag=0, order=false, attributes={}]

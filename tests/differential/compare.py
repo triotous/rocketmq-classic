@@ -2,6 +2,7 @@
 """Compare normalized JSON results without discarding meaningful array order."""
 
 import json
+import os
 import re
 import sys
 import tempfile
@@ -55,6 +56,20 @@ def pending_phase19_source_case_ids():
                 re.findall(r"(?m)^- \[ \] \*\*(P\d+-V\d+)\*\*", handoff.group(1))
             )
     return pending
+
+
+def configured_evidence_root():
+    configured = os.environ.get("ROCKETMQ_CLASSIC_EVIDENCE_DIR")
+    if configured:
+        return Path(configured).resolve()
+    return (Path(tempfile.gettempdir()) / "rocketmq-classic-test-artifacts" / "phase-19").resolve()
+
+
+def configured_manifest_path():
+    configured = os.environ.get("ROCKETMQ_CLASSIC_SCENARIOS_MANIFEST")
+    if configured:
+        return Path(configured)
+    return Path("tests/differential/scenarios.yaml")
 
 
 def validate_manifest(manifest):
@@ -141,16 +156,25 @@ def validate_manifest(manifest):
                 f"scenario cleanup includes a non-isolated resource: {scenario['id']}"
             )
         live_status = scenario["live_status"]
-        if live_status not in {"PENDING_PHASE_19", "PASS"}:
+        if live_status not in {"PENDING_PHASE_19", "PASS", "PASS_RECORDED"}:
             raise ValueError(f"unsupported live status for {scenario['id']}: {live_status}")
+        if live_status == "PASS_RECORDED":
+            if scenario["execution_phase"] != 19:
+                raise ValueError(f"only Phase 19 scenarios may carry live PASS: {scenario['id']}")
+            if scenario.get("evidence") is not None:
+                raise ValueError(f"recorded Phase 19 outcomes must not include test artifacts: {scenario['id']}")
+            continue
         if live_status == "PASS":
             if scenario["execution_phase"] != 19:
                 raise ValueError(f"only Phase 19 scenarios may carry live PASS: {scenario['id']}")
             evidence = scenario.get("evidence")
             if not isinstance(evidence, str) or not evidence:
                 raise ValueError(f"Phase 19 PASS requires evidence: {scenario['id']}")
-            evidence_root = Path("docs/compatibility/evidence/phase-19").resolve()
-            evidence_path = Path(evidence).resolve()
+            evidence_root = configured_evidence_root()
+            evidence_path = Path(evidence)
+            if not evidence_path.is_absolute():
+                evidence_path = evidence_root / evidence_path
+            evidence_path = evidence_path.resolve()
             if evidence_root not in evidence_path.parents or not evidence_path.is_dir():
                 raise ValueError(f"Phase 19 evidence path is missing or outside the evidence root: {scenario['id']}")
             metadata_path = evidence_path / "metadata.txt"
@@ -564,17 +588,18 @@ def self_test():
         raise AssertionError("manifest accepted evidence outside the Phase 19 evidence directory")
     except ValueError as error:
         assert "evidence path" in str(error)
-    checked_in = json.loads(Path("tests/differential/scenarios.yaml").read_text())
+    checked_in = json.loads(configured_manifest_path().read_text())
     validate_manifest(checked_in)
     async_scenario = next(
         scenario
         for scenario in checked_in["scenarios"]
         if scenario["id"] == "PROD-002-async-send"
     )
-    evidence_root = Path("docs/compatibility/evidence/phase-19").resolve()
+    evidence_root = configured_evidence_root()
+    evidence_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="compare-self-test-", dir=evidence_root) as temporary:
         evidence_dir = Path(temporary)
-        evidence_rel = str(evidence_dir.relative_to(Path.cwd()))
+        evidence_rel = str(evidence_dir.resolve())
         (evidence_dir / "metadata.txt").write_text("exit_status=0\n")
         (evidence_dir / "result.txt").write_text(
             "PASS PROD-002-async-send: synthetic validator evidence\n"
@@ -628,7 +653,7 @@ def self_test():
     )
     with tempfile.TemporaryDirectory(prefix="compare-self-test-", dir=evidence_root) as temporary:
         evidence_dir = Path(temporary)
-        evidence_rel = str(evidence_dir.relative_to(Path.cwd()))
+        evidence_rel = str(evidence_dir.resolve())
         (evidence_dir / "metadata.txt").write_text("exit_status=0\n")
         (evidence_dir / "result.txt").write_text(
             "PASS PROD-003-oneway-send: synthetic validator evidence\n"
@@ -688,7 +713,7 @@ def self_test():
     )
     with tempfile.TemporaryDirectory(prefix="compare-self-test-", dir=evidence_root) as temporary:
         evidence_dir = Path(temporary)
-        evidence_rel = str(evidence_dir.relative_to(Path.cwd()))
+        evidence_rel = str(evidence_dir.resolve())
         (evidence_dir / "metadata.txt").write_text("exit_status=0\n")
         (evidence_dir / "result.txt").write_text(
             "PASS PROD-004-batch-send: synthetic validator evidence\n"
@@ -743,7 +768,7 @@ def self_test():
     phase6 = [case for case in checked_in["scenarios"] if case["id"] == "P6-V04"]
     assert len(phase6) == 1, "Phase 6 live handoff case must retain its original ID"
     assert phase6[0]["phase"] == 6 and phase6[0]["execution_phase"] == 19
-    assert phase6[0]["live_status"] in {"PENDING_PHASE_19", "PASS"}
+    assert phase6[0]["live_status"] in {"PENDING_PHASE_19", "PASS", "PASS_RECORDED"}
     assert phase6[0]["inputs"]["checks"] == [
         "heartbeat-subscription-change", "unregister", "remaining-shared-user-functional"]
     missing_handoff = {
@@ -813,7 +838,7 @@ def main(argv):
         self_test()
         return 0
     if argv == ["--validate-manifest"]:
-        count = validate_manifest(json.loads(Path("tests/differential/scenarios.yaml").read_text()))
+        count = validate_manifest(json.loads(configured_manifest_path().read_text()))
         print(f"Validated {count} scenarios")
         return 0
     if len(argv) != 2:
