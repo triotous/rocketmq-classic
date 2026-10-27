@@ -1,6 +1,6 @@
 [package]
 name = "rocketmq-classic-remoting"
-version = "0.1.0"
+version.workspace = true
 description = "Asynchronous remoting transport for the RocketMQ Classic Rust client."
 edition.workspace = true
 rust-version.workspace = true

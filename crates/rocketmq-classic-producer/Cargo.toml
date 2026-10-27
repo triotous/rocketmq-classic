@@ -1,6 +1,6 @@
 [package]
 name = "rocketmq-classic-producer"
-version = "0.1.0"
+version.workspace = true
 description = "Producer APIs for the RocketMQ Classic Rust client."
 edition.workspace = true
 rust-version.workspace = true

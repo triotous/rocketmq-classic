@@ -1,6 +1,6 @@
 [package]
 name = "rocketmq-classic-core"
-version = "0.1.0"
+version.workspace = true
 description = "Client runtime and typed RPC operations for RocketMQ Classic."
 edition.workspace = true
 rust-version.workspace = true

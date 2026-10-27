@@ -1,6 +1,6 @@
 # RocketMQ Classic Rust Client
 
-A Rust reimplementation of the Apache RocketMQ 5.5.1 Java client, with RocketMQ server 5.3.4 as the planned local/live validation baseline. Compatibility work is tracked phase by phase in [`plan/2026/09/README.md`](plan/2026/09/README.md); model and protocol status is documented in [`docs/compatibility/JAVA_5_5_1_COMPATIBILITY.md`](docs/compatibility/JAVA_5_5_1_COMPATIBILITY.md).
+A Rust port of the Apache RocketMQ Java client 5.5.1. The Rust workspace packages use version 5.5.1 to identify the Java client release they port; RocketMQ server 5.3.4 is the planned local/live validation baseline. Compatibility work is tracked phase by phase in [`plan/2026/09/README.md`](plan/2026/09/README.md); model and protocol status is documented in [`docs/compatibility/JAVA_5_5_1_COMPATIBILITY.md`](docs/compatibility/JAVA_5_5_1_COMPATIBILITY.md).
 
 ## Current workspace
 

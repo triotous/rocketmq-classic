@@ -515,9 +515,9 @@ source byte comparisons are the provenance evidence recorded here.
 
 This client baseline remains separate from the Phase 19 RocketMQ Broker 5.3.4
 baseline. The Rust workspace metadata review and package-content checks are
-summarized in the provenance record. All workspace packages are currently
-version 0.1.0 and explicitly unpublished; registry availability and any release
-version change remain pre-publication work after Phase 19.
+summarized in the provenance record. Rust workspace packages use version 5.5.1
+to identify the Java client release they port, and remain unpublished. Registry
+availability checks remain pre-publication work after Phase 19.
 
 Phase 8 message records and pull-result processing: source/field mappings and P8-V01–V03 evidence are recorded in [PHASE_8_OFFLINE_METHOD_MATRIX.md](PHASE_8_OFFLINE_METHOD_MATRIX.md). Pinned fixture bytes and source hash are in `fixtures/messages/records.json` and `P8_MESSAGE_FIXTURE_SHA256SUMS.txt`; tests cover both versions, host and compression variants, limits and pull post-processing. No live Broker or Filter Server was contacted; those checks remain Phase 19.
 

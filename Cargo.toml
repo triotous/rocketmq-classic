@@ -12,6 +12,7 @@ members = [
 ]
 
 [workspace.package]
+version = "5.5.1"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
@@ -19,13 +20,13 @@ repository = "https://github.com/triotous/rocketmq-classic"
 publish = false
 
 [workspace.dependencies]
-rocketmq-classic-common = { version = "0.1.0", path = "crates/rocketmq-classic-common" }
-rocketmq-classic-protocol = { version = "0.1.0", path = "crates/rocketmq-classic-protocol" }
-rocketmq-classic-remoting = { version = "0.1.0", path = "crates/rocketmq-classic-remoting" }
-rocketmq-classic-core = { version = "0.1.0", path = "crates/rocketmq-classic-core" }
-rocketmq-classic-producer = { version = "0.1.0", path = "crates/rocketmq-classic-producer" }
-rocketmq-classic-consumer = { version = "0.1.0", path = "crates/rocketmq-classic-consumer" }
-rocketmq-classic = { version = "0.1.0", path = "crates/rocketmq-classic" }
+rocketmq-classic-common = { version = "5.5.1", path = "crates/rocketmq-classic-common" }
+rocketmq-classic-protocol = { version = "5.5.1", path = "crates/rocketmq-classic-protocol" }
+rocketmq-classic-remoting = { version = "5.5.1", path = "crates/rocketmq-classic-remoting" }
+rocketmq-classic-core = { version = "5.5.1", path = "crates/rocketmq-classic-core" }
+rocketmq-classic-producer = { version = "5.5.1", path = "crates/rocketmq-classic-producer" }
+rocketmq-classic-consumer = { version = "5.5.1", path = "crates/rocketmq-classic-consumer" }
+rocketmq-classic = { version = "5.5.1", path = "crates/rocketmq-classic" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["raw_value"] }
 yaml_serde = "0.10.7"

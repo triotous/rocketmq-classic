@@ -1036,7 +1036,7 @@ dependencies = [
 
 [[package]]
 name = "rocketmq-classic"
-version = "0.1.0"
+version = "5.5.1"
 dependencies = [
  "base64",
  "bytes",
@@ -1052,7 +1052,7 @@ dependencies = [
 
 [[package]]
 name = "rocketmq-classic-common"
-version = "0.1.0"
+version = "5.5.1"
 dependencies = [
  "base64",
  "flate2",
@@ -1067,7 +1067,7 @@ dependencies = [
 
 [[package]]
 name = "rocketmq-classic-consumer"
-version = "0.1.0"
+version = "5.5.1"
 dependencies = [
  "base64",
  "bytes",
@@ -1089,7 +1089,7 @@ dependencies = [
 
 [[package]]
 name = "rocketmq-classic-core"
-version = "0.1.0"
+version = "5.5.1"
 dependencies = [
  "base64",
  "bytes",
@@ -1119,7 +1119,7 @@ dependencies = [
 
 [[package]]
 name = "rocketmq-classic-integration"
-version = "0.1.0"
+version = "5.5.1"
 dependencies = [
  "rocketmq-classic",
  "rocketmq-classic-common",
@@ -1132,7 +1132,7 @@ dependencies = [
 
 [[package]]
 name = "rocketmq-classic-producer"
-version = "0.1.0"
+version = "5.5.1"
 dependencies = [
  "base64",
  "bytes",
@@ -1148,7 +1148,7 @@ dependencies = [
 
 [[package]]
 name = "rocketmq-classic-protocol"
-version = "0.1.0"
+version = "5.5.1"
 dependencies = [
  "base64",
  "indexmap",
@@ -1162,7 +1162,7 @@ dependencies = [
 
 [[package]]
 name = "rocketmq-classic-remoting"
-version = "0.1.0"
+version = "5.5.1"
 dependencies = [
  "base64",
  "bytes",
